@@ -48,20 +48,33 @@ Preferred communication style: Simple, everyday language.
 ### Latest Features (Session Nov 23, 2025 - Final)
 
 7. **Weight Formula Display**
-   - Shows calculation breakdown below sheet weight
-   - Formula: Weight = (L × W × Σ GSM × Ply Factor) / 1,000,000
-   - Displays actual calculated values with units
-   - Helps users understand weight calculation methodology
+   - Shows calculation breakdown: Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ...
+   - Formula: Weight = (L × W × Σ GSM) / 1,000,000
+   - Displays actual calculated values with layer-by-layer breakdown
+   - Liner layers add GSM directly; Flute layers multiply by Fluting Factor
 
-8. **Copy Layer Specifications - Smart Exclusion**
-   - Copy buttons now exclude Fluting Factor and Layer Type
-   - Only copies: GSM, BF, RCT Value, Shade, Rate
-   - Preserves layer-specific constants during copy operations
+8. **Burst Strength (BS) Formula - Per Layer Calculation**
+   - Calculates per layer: Liner GSM×BF/1000 + Flute GSM×BF/2000
+   - Shows layer-by-layer breakdown (e.g., "L1: (180×14/1000) + L2: (120×14/2000) + ...")
+   - Formula: BS = Σ (Liner GSM × BF / 1000 + Flute GSM × BF / 2000)
+   - More accurate strength analysis based on layer type
 
-9. **Layout Reorganization**
-   - Moved Conversion Cost and Quantity below RSC Box Dimensions
-   - Better form flow and improved UX
-   - Shows cost per box calculation inline
+9. **Total GSM Display in Calculated Sheet Blank Size**
+   - Shows selected Ply configuration
+   - Lists Layer Specifications with all GSM values
+   - Displays Total GSM (Σ) with fluting factor calculations
+   - Highlighted section for easy visibility
+   - Helps users verify GSM calculations before weight/cost calculations
+
+10. **Copy Layer Specifications - Smart Exclusion**
+    - Copy buttons now exclude Fluting Factor and Layer Type
+    - Only copies: GSM, BF, RCT Value, Shade, Rate
+    - Preserves layer-specific constants during copy operations
+
+11. **Layout Reorganization**
+    - Moved Conversion Cost and Quantity below RSC Box Dimensions
+    - Better form flow and improved UX
+    - Shows cost per box calculation inline
 
 ### Backend Architecture
 

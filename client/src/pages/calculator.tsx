@@ -2006,6 +2006,42 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                     <Separator />
                     
                     <div className="space-y-2">
+                      <div className="text-sm font-semibold text-foreground mb-2">Total GSM:</div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Ply:</span>
+                        <span className="font-medium">{ply}-Ply</span>
+                      </div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Layer Specifications:</span>
+                        <span className="font-medium">{(() => {
+                          if (!result || !result.layerSpecs || result.layerSpecs.length === 0) return "No layers";
+                          return result.layerSpecs.map((spec: any, idx: number) => 
+                            `L${idx + 1}: ${spec.gsm}`
+                          ).join(" + ");
+                        })()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm pl-2 bg-accent/20 p-2 rounded">
+                        <span className="text-muted-foreground font-semibold">Total GSM (Σ):</span>
+                        <span className="font-bold" data-testid="text-total-gsm">
+                          {(() => {
+                            if (!result || !result.layerSpecs) return "0";
+                            const total = result.layerSpecs.reduce((sum: number, spec: any) => {
+                              if (spec.layerType === 'liner') {
+                                return sum + spec.gsm;
+                              } else {
+                                const ff = spec.flutingFactor || 1.5;
+                                return sum + (spec.gsm * ff);
+                              }
+                            }, 0);
+                            return total.toFixed(2);
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <Separator />
+                    
+                    <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Calculated Sheet Weight:</span>
                         <span className="font-medium" data-testid="text-sheet-weight">
