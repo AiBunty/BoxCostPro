@@ -77,11 +77,33 @@ interface CalculationResult {
 const createLayersForPly = (plyNum: number) => {
   const defaultLayers = [];
   for (let i = 0; i < plyNum; i++) {
-    const isFlute = i > 0 && i < plyNum - 1; // Middle layers are flute, outer are liner
+    // For 5-ply: L1, L3, L5 are Liner (odd indices 0, 2, 4), L2, L4 are Flute (even indices 1, 3)
+    // For other plies: alternate or use standard pattern
+    let isFlute = false;
+    let flutingFactorValue = "1.0";
+    
+    if (plyNum === 5) {
+      // 5-ply specific: Liner at L1, L3, L5 (indices 0, 2, 4), Flute at L2, L4 (indices 1, 3)
+      isFlute = i === 1 || i === 3;
+      flutingFactorValue = isFlute ? "1.5" : "1.0";
+    } else if (plyNum === 7) {
+      // 7-ply: L1, L3, L5, L7 Liner (indices 0, 2, 4, 6), L2, L4, L6 Flute (indices 1, 3, 5)
+      isFlute = i === 1 || i === 3 || i === 5;
+      flutingFactorValue = isFlute ? "1.5" : "1.0";
+    } else if (plyNum === 9) {
+      // 9-ply: L1, L3, L5, L7, L9 Liner, others Flute
+      isFlute = i === 1 || i === 3 || i === 5 || i === 7;
+      flutingFactorValue = isFlute ? "1.5" : "1.0";
+    } else {
+      // 1-ply and 3-ply: standard alternating pattern
+      isFlute = i > 0 && i < plyNum - 1;
+      flutingFactorValue = isFlute ? "1.5" : "1.0";
+    }
+    
     defaultLayers.push({
       gsm: "180",
       bf: "12",
-      flutingFactor: isFlute ? "1.5" : "1.0",
+      flutingFactor: flutingFactorValue,
       rctValue: "0",
       rate: "55.00",
       layerType: isFlute ? "flute" as const : "liner" as const,
@@ -848,7 +870,8 @@ export default function Calculator() {
                                 newLayers[idx].flutingFactor = e.target.value;
                                 setLayers(newLayers);
                               }}
-                              className="w-20"
+                              disabled={layer.layerType === "liner"}
+                              className="w-20 disabled:opacity-50 disabled:cursor-not-allowed"
                               data-testid={`input-fluting-factor-${idx}`}
                             />
                           </TableCell>
@@ -892,27 +915,50 @@ export default function Calculator() {
                 <CardTitle>Fixed & Manufacturing Costs</CardTitle>
                 <CardDescription>Additional costs per unit (₹)</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="printing-cost">Printing Cost (₹)</Label>
-                    <Input
-                      id="printing-cost"
-                      type="number"
-                      value={printingCost}
-                      onChange={(e) => setPrintingCost(e.target.value)}
-                      data-testid="input-printing-cost"
-                    />
+              <CardContent className="space-y-6">
+                <div>
+                  <Label className="font-semibold mb-3 block">Printing Cost</Label>
+                  <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
+                    <div className="space-y-2">
+                      <Label htmlFor="printing-cost" className="text-sm">Total Printing Cost (₹)</Label>
+                      <Input
+                        id="printing-cost"
+                        type="number"
+                        placeholder="0.00"
+                        value={printingCost}
+                        onChange={(e) => setPrintingCost(e.target.value)}
+                        data-testid="input-printing-cost"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Cost per sq.m</Label>
+                      <div className="px-3 py-2 bg-muted rounded text-sm">
+                        {printingCost && result ? ((parseFloat(printingCost) / ((result.sheetLength * result.sheetWidth) / 1000000)).toFixed(2)) : "0.00"}
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lamination-cost">Lamination Cost (₹)</Label>
-                    <Input
-                      id="lamination-cost"
-                      type="number"
-                      value={laminationCost}
-                      onChange={(e) => setLaminationCost(e.target.value)}
-                      data-testid="input-lamination-cost"
-                    />
+                </div>
+
+                <div>
+                  <Label className="font-semibold mb-3 block">Lamination Cost</Label>
+                  <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
+                    <div className="space-y-2">
+                      <Label htmlFor="lamination-cost" className="text-sm">Total Lamination Cost (₹)</Label>
+                      <Input
+                        id="lamination-cost"
+                        type="number"
+                        placeholder="0.00"
+                        value={laminationCost}
+                        onChange={(e) => setLaminationCost(e.target.value)}
+                        data-testid="input-lamination-cost"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Cost per sq.m</Label>
+                      <div className="px-3 py-2 bg-muted rounded text-sm">
+                        {laminationCost && result ? ((parseFloat(laminationCost) / ((result.sheetLength * result.sheetWidth) / 1000000)).toFixed(2)) : "0.00"}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 
