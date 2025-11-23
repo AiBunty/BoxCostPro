@@ -460,17 +460,24 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
     return dateMatch && companyMatch && boxNameMatch;
   });
   
-  // Copy layer specs (excluding fluting factor for Liner layers)
+  // Copy layer specs (only GSM, BF, RCT Value, Shade, Rate - NOT layerType or flutingFactor)
   const copyLayerToFollowing = (fromIdx: number) => {
-    const sourceLayers = [...layers];
+    const sourceLayer = layers[fromIdx];
     const newLayers = [...layers];
+    
     for (let i = fromIdx + 1; i < newLayers.length; i++) {
-      // Copy all fields except fluting factor for Liner layers
-      newLayers[i] = { ...sourceLayers[fromIdx] };
-      if (newLayers[i].layerType === "liner") {
-        newLayers[i].flutingFactor = "1";
-      }
+      // Only copy: gsm, bf, rctValue, shade, rate
+      // Do NOT copy: layerType (stays constant per layer) or flutingFactor (stays constant per layer)
+      newLayers[i] = {
+        ...newLayers[i],
+        gsm: sourceLayer.gsm,
+        bf: sourceLayer.bf,
+        rctValue: sourceLayer.rctValue,
+        shade: sourceLayer.shade,
+        rate: sourceLayer.rate,
+      };
     }
+    
     setLayers(newLayers);
     toast({
       title: "Copied",
@@ -1748,11 +1755,17 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                                 variant="ghost"
                                 onClick={() => {
                                   const newLayers = [...layers];
-                                  newLayers[idx] = { ...layers[idx - 1] };
-                                  // Keep fluting factor as 1.0 for Liner layers
-                                  if (newLayers[idx].layerType === "liner") {
-                                    newLayers[idx].flutingFactor = "1";
-                                  }
+                                  const sourceLayer = layers[idx - 1];
+                                  // Only copy: gsm, bf, rctValue, shade, rate
+                                  // Do NOT copy: layerType (stays constant per layer) or flutingFactor (stays constant per layer)
+                                  newLayers[idx] = {
+                                    ...newLayers[idx],
+                                    gsm: sourceLayer.gsm,
+                                    bf: sourceLayer.bf,
+                                    rctValue: sourceLayer.rctValue,
+                                    shade: sourceLayer.shade,
+                                    rate: sourceLayer.rate,
+                                  };
                                   setLayers(newLayers);
                                   toast({ title: "Copied", description: `L${idx + 1} values copied from L${idx}` });
                                 }}
