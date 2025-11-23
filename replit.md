@@ -45,7 +45,17 @@ Preferred communication style: Simple, everyday language.
 - **NEW**: Conversion Cost (INR/Kg) input field for calculating additional manufacturing cost
 - Bulk upload dialog for importing multiple quote items via CSV file with support for all layer specifications
 
-### Latest Features (Session Nov 23, 2025 - Final)
+### Latest Features (Session Nov 23, 2025 - Final - Updated)
+
+13. **Enhanced CSV Upload Feature**
+    - Drag-and-drop file upload support with visual drop zone
+    - Detailed CSV format guide built into the upload dialog
+    - Sample CSV template download for user reference
+    - Supports bulk import of RSC boxes and flat sheets with all layer specifications
+    - Real-time validation and error feedback
+    - Auto-close dialog on successful upload
+
+### Previous Features (Session Nov 23, 2025 - Final)
 
 12. **Paper Cost & Weight Analysis with Layer-Specific Formula**
     - Per-Layer Weight Formula: Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000

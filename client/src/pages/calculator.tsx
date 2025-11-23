@@ -1215,40 +1215,73 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" data-testid="button-bulk-upload">
                     <Upload className="w-4 h-4 mr-2" />
-                    Bulk Upload
+                    Upload CSV
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-2xl">
                   <DialogHeader>
-                    <DialogTitle>Bulk Upload Items</DialogTitle>
-                    <DialogDescription>Upload CSV file with box/sheet details</DialogDescription>
+                    <DialogTitle>Bulk Upload Items from CSV</DialogTitle>
+                    <DialogDescription>Import multiple box/sheet items at once</DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="csv-upload">CSV File</Label>
-                      <Input 
-                        id="csv-upload" 
-                        type="file" 
-                        accept=".csv"
-                        onChange={(e) => {
-                          const file = e.currentTarget.files?.[0];
-                          if (file) handleBulkUploadFile(file);
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="csv-upload" className="text-base font-semibold">Select CSV File</Label>
+                      <div 
+                        className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer bg-muted/50"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const file = e.dataTransfer.files?.[0];
+                          if (file && file.type === 'text/csv' || file.name.endsWith('.csv')) {
+                            handleBulkUploadFile(file);
+                          } else {
+                            toast({ title: "Error", description: "Please drop a CSV file", variant: "destructive" });
+                          }
                         }}
-                        data-testid="input-csv-upload"
-                      />
+                      >
+                        <Input 
+                          id="csv-upload" 
+                          type="file" 
+                          accept=".csv"
+                          onChange={(e) => {
+                            const file = e.currentTarget.files?.[0];
+                            if (file) handleBulkUploadFile(file);
+                          }}
+                          data-testid="input-csv-upload"
+                          className="hidden"
+                        />
+                        <label htmlFor="csv-upload" className="cursor-pointer">
+                          <div className="space-y-2">
+                            <div className="text-2xl">📁</div>
+                            <p className="font-medium">Drag CSV file here or click to browse</p>
+                            <p className="text-xs text-muted-foreground">Supports .csv format</p>
+                          </div>
+                        </label>
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      <p>CSV format: Box Name, Description, Type (RSC/Sheet), Length, Width, Height (if RSC)</p>
-                      <p>For layers: L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate, etc.</p>
+
+                    <div className="space-y-3 bg-muted/50 p-4 rounded-lg">
+                      <p className="font-semibold text-sm">CSV Format Guide:</p>
+                      <div className="text-xs space-y-2 text-muted-foreground font-mono">
+                        <p>Required columns:</p>
+                        <p className="pl-4">• Box Name, Description, Type (RSC/Sheet)</p>
+                        <p className="pl-4">• Length, Width, Height (for RSC boxes)</p>
+                        <p className="pl-4">• Ply (1, 3, 5, 7, or 9)</p>
+                        <p className="mt-2">For each layer (up to 5):</p>
+                        <p className="pl-4">• L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate</p>
+                        <p className="pl-4">• L2_GSM, L2_BF, L2_RCT, L2_Shade, L2_Rate</p>
+                        <p className="pl-4">• ... (repeat for additional layers)</p>
+                      </div>
                     </div>
+
                     <Button 
                       onClick={downloadSampleCSV} 
                       variant="outline" 
-                      size="sm"
+                      className="w-full"
                       data-testid="button-download-sample-csv"
                     >
-                      <Download className="w-3 h-3 mr-2" />
-                      Download Sample CSV
+                      <Download className="w-4 h-4 mr-2" />
+                      Download Sample CSV Template
                     </Button>
                   </div>
                 </DialogContent>
