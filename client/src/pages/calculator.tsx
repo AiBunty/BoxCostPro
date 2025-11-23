@@ -80,6 +80,7 @@ interface CalculationResult {
   boxPerimeter: number;
   ect: number;
   bct: number;
+  layerSpecs: LayerSpec[];
 }
 
 // Helper function to create layers for a given ply count
@@ -624,6 +625,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
       boxPerimeter,
       ect,
       bct,
+      layerSpecs,
     };
   };
   
@@ -679,6 +681,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
       boxPerimeter,
       ect,
       bct,
+      layerSpecs,
     };
   };
   
