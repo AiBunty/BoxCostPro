@@ -1,0 +1,3352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corrugated Box Costing App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Include html2canvas for table image copy -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7fafc;
+        }
+        .input-field {
+            @apply px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 w-full text-sm;
+        }
+        /* Custom style for disabled dynamic cost fields */
+        .dynamic-cost-output {
+            @apply px-3 py-2 border border-gray-200 rounded-lg w-full text-sm bg-gray-100 text-gray-50;
+        }
+        .text-xxs {
+            font-size: 0.65rem; /* Custom tiny size for deep nesting labels */
+        }
+        /* Custom styles for the search panel */
+        .search-panel-container {
+            @apply bg-gray-100 p-6 rounded-lg shadow-inner;
+        }
+        .search-result-item {
+            @apply p-4 border border-gray-200 rounded-lg mb-2 cursor-pointer hover:bg-white transition-colors;
+        }
+        /* Modal styling */
+        .modal-item {
+            @apply p-3 border-b border-gray-200 hover:bg-blue-50 cursor-pointer transition-colors;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app" class="min-h-screen p-4 sm:p-8">
+    <header class="text-center mb-8">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-blue-800">Ventura Packagers Corrugated Box Costing System</h1>
+        <p class="text-gray-600 mt-2">Calculate RSC Box and Sheet costs, manage quotes, and export data.</p>
+    </header>
+
+    <div class="max-w-7xl mx-auto bg-white rounded-xl shadow-2xl p-6 sm:p-10 relative">
+
+        <!-- Tab Navigation -->
+        <div class="flex border-b border-gray-200 mb-6">
+            <button onclick="app.setTab('rsc')" id="tab-rsc"
+                    class="py-3 px-6 text-sm font-medium transition-colors duration-200 rounded-t-lg"
+                    :class="{'text-blue-600 border-b-2 border-blue-600 bg-blue-50': app.currentTab === 'rsc', 'text-gray-500 hover:text-gray-700': app.currentTab !== 'rsc'}">
+                RSC Box Costing
+            </button>
+            <button onclick="app.setTab('sheet')" id="tab-sheet"
+                    class="py-3 px-6 text-sm font-medium transition-colors duration-200 rounded-t-lg"
+                    :class="{'text-blue-600 border-b-2 border-blue-600 bg-blue-50': app.currentTab === 'sheet', 'text-gray-500 hover:text-gray-700': app.currentTab !== 'rsc'}">
+                Sheet Size Costing
+            </button>
+        </div>
+
+        <!-- Input Section -->
+        <section class="mb-8 p-6 rounded-lg" style="background-color: #A9A9A9;">
+            <h2 class="text-xl font-semibold mb-4 text-white">Inputs & Parameters</h2>
+
+            <div class="grid lg:grid-cols-3 md:grid-cols-2 gap-6">
+
+                <!-- Column 1: Dimensions & Allowance -->
+                <div class="space-y-6">
+                    <!-- Quote Details -->
+                    <div class="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="font-medium text-lg mb-3 text-gray-700">Quote Details</h3>
+                        <div class="space-y-3">
+                            <div>
+                                <label for="quote-party-name" class="block text-sm font-medium text-gray-700 mb-1">Party Name (Customer Contact)</label>
+                                <div class="flex space-x-2">
+                                    <input type="text" placeholder="e.g., Mr. John Doe" id="quote-party-name" class="input-field">
+                                    <button onclick="app.showPartyLoadModal()" 
+                                            class="p-2 bg-yellow-500 text-white rounded-lg text-xs font-semibold hover:bg-yellow-600 transition-colors shadow-md whitespace-nowrap">
+                                            Load Settings
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- CUSTOMER FIELDS -->
+                            <div>
+                                <label for="quote-customer-company" class="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                                <input type="text" placeholder="e.g., ABC Enterprises" id="quote-customer-company" class="input-field">
+                            </div>
+                            <div>
+                                <label for="quote-customer-email" class="block text-sm font-medium text-gray-700 mb-1">Company Email</label>
+                                <input type="email" placeholder="e.g., purchase@abc.com" id="quote-customer-email" class="input-field">
+                            </div>
+                            <div>
+                                <label for="quote-customer-mobile" class="block text-sm font-medium text-gray-700 mb-1">Mobile No</label>
+                                <input type="text" placeholder="e.g., 9876543210" id="quote-customer-mobile" class="input-field">
+                            </div>
+
+                            <!-- OWN COMPANY FIELDS -->
+                            <div class="border-t pt-3 mt-3">
+                                <h4 class="font-semibold text-gray-700 mb-2">Own Company Profile</h4>
+                                
+                                <div>
+                                    <label for="quote-company-name" class="block text-sm font-medium text-gray-700 mb-1">Own Company Name</label>
+                                    <div class="flex space-x-2">
+                                        <input type="text" placeholder="e.g., XYZ Packaging" id="quote-company-name" value="Ventura Packagers Private Limited" class="input-field">
+                                        <button onclick="app.showCompanyLoadModal()" 
+                                                class="p-2 bg-blue-500 text-white rounded-lg text-xs font-semibold hover:bg-blue-600 transition-colors shadow-md whitespace-nowrap">
+                                                Load
+                                        </button>
+                                        <button onclick="app.saveCompanyProfile()" 
+                                                class="p-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-md whitespace-nowrap">
+                                                Save New
+                                        </button>
+                                        <button onclick="app.setDefaultCompanyProfile()" 
+                                                class="p-2 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors shadow-md whitespace-nowrap">
+                                                Set Default
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label for="quote-gst-no" class="block text-sm font-medium text-gray-700 mb-1">GST No</label>
+                                    <input type="text" placeholder="e.g., 27AAACV3461F1ZG" id="quote-gst-no" value="27AAACV3461F1ZG" class="input-field">
+                                </div>
+                                <div>
+                                    <label for="quote-address" class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                                    <input type="text" placeholder="e.g., W43H MIDC AMBAD" id="quote-address" value="W43H MIDC AMBAD" class="input-field">
+                                </div>
+                                <div>
+                                    <label for="quote-phone" class="block text-sm font-medium text-gray-700 mb-1">Own Ph / Mobile No</label>
+                                    <input type="text" placeholder="e.g., 0253-4035062" id="quote-phone" value="0253-4035062" class="input-field">
+                                </div>
+
+                                <div>
+                                    <label for="quote-email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                                    <input type="email" placeholder="e.g., info@yourcompany.com" id="quote-email" class="input-field" value="venturapackagers@gmail.com">
+                                </div>
+                                <div>
+                                    <label for="quote-website" class="block text-sm font-medium text-gray-700 mb-1">Website Address</label>
+                                    <input type="text" placeholder="https://www.yourcompany.com" id="quote-website" class="input-field" value="http://www.venturapackagers.com/">
+                                </div>
+                                <div>
+                                    <label for="quote-social-media" class="block text-sm font-medium text-gray-700 mb-1">Social Media</label>
+                                    <input type="text" placeholder="e.g., @YourHandle or link" id="quote-social-media" class="input-field" value="https://www.instagram.com/venturapackagers/">
+                                </div>
+                                <div>
+                                    <label for="quote-google-location" class="block text-sm font-medium text-gray-700 mb-1">Google Location (Share Link)</label>
+                                    <input type="text" placeholder="https://maps.app.goo.gl/..." id="quote-google-location" class="input-field" value="https://maps.app.goo.gl/vYbDHFm3ktAvhszR8">
+                                </div>
+
+                                <!-- Payment and Delivery Terms remain global inputs -->
+                                <div>
+                                    <label for="quote-payment-terms" class="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+                                    <input type="text" placeholder="e.g., 30 Days from delivery" id="quote-payment-terms" value="100% Advance" class="input-field">
+                                </div>
+                                <div>
+                                    <label for="quote-delivery-time" class="block text-sm font-medium text-gray-700 mb-1">Delivery Time</label>
+                                    <input type="text" placeholder="e.g., 10 days" id="quote-delivery-time" value="Delivery 10 days after receipt of Purchase order" class="input-field">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Geometric Inputs (RSC/Sheet) -->
+                    <div id="rsc-inputs" style="display: none;" class="p-4 border border-blue-200 rounded-lg bg-blue-50">
+                        <h3 class="font-medium text-lg mb-3 text-blue-700">RSC Dimensions (L x W x H)</h3>
+
+                        <div class="mb-3">
+                            <label for="quote-box-name-rsc" class="block text-sm font-medium text-gray-700 mb-1">Box Name / Description</label>
+                            <input type="text" placeholder="e.g., 10kg Apple Box" id="quote-box-name-rsc" class="input-field">
+                        </div>
+                        
+                        <!-- NEW OD/ID Selection -->
+                        <div class="mb-4 space-y-2">
+                            <label for="dimension-type" class="block text-sm font-medium text-blue-700 mb-1">Dimension Input Type</label>
+                            <select id="dimension-type" class="input-field" onchange="app.handleDimensionTypeChange()">
+                                <option value="OD">Outer Dimension (OD)</option>
+                                <option value="ID">Internal Dimension (ID)</option>
+                            </select>
+                            <p class="text-xs text-blue-600">Selecting 'ID' calculates OD based on ply thickness.</p>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggle-inches-rsc" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.toggleRscInchesInput()">
+                                <span class="ml-2 text-sm font-medium text-blue-700">Input Dimensions in Inches</span>
+                            </label>
+                        </div>
+    
+                        <div id="inches-inputs-group-rsc" style="display: none;" class="mb-4 p-3 border border-dashed border-blue-300 rounded-lg bg-blue-100">
+                            <h4 class="font-medium text-sm text-blue-800 mb-2" id="inches-label-rsc">Dimensions in Inches (in) - OD</h4>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div><label for="rsc-l-in" class="block text-xs font-medium text-blue-800 mb-1" id="rsc-l-in-label">Length (L) - OD</label><input type="number" step="0.01" placeholder="e.g., 15.75" id="rsc-l-in" class="input-field" oninput="app.convertRscInchesToMM()" maxlength="6"></div>
+                                <div><label for="rsc-w-in" class="block text-xs font-medium text-blue-800 mb-1" id="rsc-w-in-label">Width (W) - OD</label><input type="number" step="0.01" placeholder="e.g., 11.81" id="rsc-w-in" class="input-field" oninput="app.convertRscInchesToMM()" maxlength="6"></div>
+                                <div><label for="rsc-h-in" class="block text-xs font-medium text-blue-800 mb-1" id="rsc-h-in-label">Height (H) - OD</label><input type="number" step="0.01" placeholder="e.g., 7.87" id="rsc-h-in" class="input-field" oninput="app.convertRscInchesToMM()" maxlength="6"></div>
+                            </div>
+                        </div>
+                        
+                        <div id="mm-inputs-group-rsc">
+                            <h4 class="font-medium text-sm text-blue-700 mb-2" id="mm-label-rsc">Dimensions in Millimeters (mm) - OD</h4>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div><label for="rsc-l" class="block text-xs font-medium text-blue-700 mb-1" id="rsc-l-label">Length (L) - OD</label><input type="number" step="0.01" placeholder="e.g., 400" id="rsc-l" value="" class="input-field" maxlength="6"></div>
+                                <div><label for="rsc-w" class="block text-xs font-medium text-blue-700 mb-1" id="rsc-w-label">Width (W) - OD</label><input type="number" step="0.01" placeholder="e.g., 300" id="rsc-w" value="" class="input-field" maxlength="6"></div>
+                                <div><label for="rsc-h" class="block text-xs font-medium text-blue-700 mb-1" id="rsc-h-label">Height (H) - OD</label><input type="number" step="0.01" placeholder="e.g., 200" id="rsc-h" value="" class="input-field" maxlength="6"></div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 p-3 border border-blue-300 rounded-lg bg-blue-100">
+                            <h4 class="font-semibold text-sm text-blue-800 mb-2">Calculated Sheet Blank Size:</h4>
+                            <div class="flex justify-between items-center text-sm font-medium">
+                                <p>Sheet Cut Length (L-blank):</p>
+                                <span id="display-sheet-cut-length" class="text-blue-900 font-bold">0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span></span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm font-medium mt-1">
+                                <p>Reel Size / Deckle (W-blank):</p>
+                                <span id="display-reel-size" class="text-blue-900 font-bold">0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span></span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm font-medium mt-1 border-t border-blue-200 pt-1">
+                                <p>Calculated Sheet Weight:</p>
+                                <span id="display-sheet-weight" class="text-blue-900 font-bold">0.000 Kg</span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm font-medium mt-1 border-t border-blue-200 pt-1">
+                                <p>Calculated Box BS:</p>
+                                <span id="display-bs-rsc" class="text-blue-900 font-bold">0.00 kg/cm²</span>
+                            </div>
+
+                            <button onclick="app.addItemToQuote()"
+                                    class="mt-4 w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-md">
+                                <span>Add RSC Box to Quote</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="sheet-inputs" style="display: none;" class="p-4 border border-blue-200 rounded-lg bg-blue-50">
+                        <h3 class="font-medium text-lg mb-3 text-blue-700">Sheet Dimensions (L x W)</h3>
+
+                        <div class="mb-3">
+                            <label for="quote-box-name-sheet" class="block text-sm font-medium text-gray-700 mb-1">Box Name / Description</label>
+                            <input type="text" placeholder="e.g., 10kg Apple Sheet" id="quote-box-name-sheet" class="input-field">
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggle-inches-sheet" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.toggleSheetInchesInput()">
+                                <span class="ml-2 text-sm font-medium text-blue-700">Input Dimensions in Inches</span>
+                            </label>
+                        </div>
+    
+                        <div id="inches-inputs-group-sheet" style="display: none;" class="mb-4 p-3 border border-dashed border-blue-300 rounded-lg bg-blue-100">
+                            <h4 class="font-medium text-sm text-blue-800 mb-2">Dimensions in Inches (in)</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div><label for="sheet-l-in" class="block text-xs font-medium text-blue-800 mb-1">Length (L)</label><input type="number" step="0.01" placeholder="e.g., 39.37" id="sheet-l-in" class="input-field" oninput="app.convertSheetInchesToMM()"></div>
+                                <div><label for="sheet-w-in" class="block text-xs font-medium text-blue-800 mb-1">Width (W)</label><input type="number" step="0.01" placeholder="e.g., 31.49" id="sheet-w-in" class="input-field" oninput="app.convertSheetInchesToMM()"></div>
+                            </div>
+                        </div>
+
+                        <div id="mm-inputs-group-sheet">
+                            <h4 class="font-medium text-sm text-blue-700 mb-2">Dimensions in Millimeters (mm)</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div><label for="sheet-l" class="block text-xs font-medium text-blue-700 mb-1">Length (L)</label><input type="number" step="0.01" placeholder="e.g., 1000" id="sheet-l" value="" class="input-field"></div>
+                                <div><label for="sheet-w" class="block text-xs font-medium text-blue-700 mb-1">Width (W)</label><input type="number" step="0.01" placeholder="e.g., 800" id="sheet-w" value="" class="input-field"></div>
+                            </div>
+                        </div>
+                        
+                        <div id="sheet-display-section" class="mt-4 p-3 border border-blue-300 rounded-lg bg-blue-100">
+                            <h4 class="font-semibold text-sm text-blue-800 mb-2">Calculated Sheet Blank Size:</h4>
+                            <div class="flex justify-between items-center text-sm font-medium">
+                                <p>Sheet Cut Length (L-blank):</p>
+                                <span id="display-sheet-cut-length-sheet" class="text-blue-900 font-bold">0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span></span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm font-medium mt-1">
+                                <p>Reel Size / Deckle (W-blank):</p>
+                                <span id="display-reel-size-sheet" class="text-blue-900 font-bold">0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span></span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm font-medium mt-1 border-t border-blue-200 pt-1">
+                                <p>Calculated Sheet Weight:</p>
+                                <span id="display-sheet-weight-sheet" class="text-blue-900 font-bold">0.000 Kg</span>
+                            </div>
+                             <div class="flex justify-between items-center text-sm font-medium mt-1 border-t border-blue-200 pt-1">
+                                <p>Calculated Sheet BS:</p>
+                                <span id="display-bs-sheet" class="text-blue-900 font-bold">0.00 kg/cm²</span>
+                            </div>
+                            
+                            <button onclick="app.addItemToQuote()"
+                                    class="mt-4 w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-md">
+                                <span>Add Sheet to Quote</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Manufacturing Allowance -->
+                    <div class="p-4 border border-red-200 rounded-lg bg-red-50">
+                        <h3 class="font-medium text-lg mb-3 text-red-700">Manufacturing Allowances (mm)</h3>
+                        
+                        <div id="allowance-rsc-group">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="col-span-2">
+                                    <p class="text-xs font-medium text-red-700 mb-1">RSC Box Specific Allowances (Base):</p>
+                                </div>
+                                <div>
+                                    <label for="rsc-glue-flap" class="block text-xs font-medium mb-1 text-red-700">Glue Flap + Fold (mm) (Ply Dependent)</label>
+                                    <input type="number" step="0.1" placeholder="e.g., 50.0" id="rsc-glue-flap" value="50.0" class="input-field">
+                                </div>
+                                <div>
+                                    <label for="rsc-deckle-allowance" class="block text-xs font-medium mb-1 text-red-700">Deckle Allowance (mm)</label>
+                                    <input type="number" step="0.1" placeholder="e.g., 25.0" id="rsc-deckle-allowance" value="30.0" class="input-field">
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-3 mt-4 p-3 bg-red-100 rounded-lg border border-red-300">
+                                <div class="col-span-2">
+                                    <p class="text-xs font-medium text-red-800 mb-1">Length-Based Additional Flap:</p>
+                                    <p class="text-xxs text-gray-700">If the calculated Sheet Length exceeds the Maximum Length Threshold, the "Glue Flap + Fold" value is added again as an additional flap. for 2 pcs Boxes</p>
+                                </div>
+                                <div>
+                                    <label for="rsc-max-length-threshold" class="block text-xs font-medium text-red-800 mb-1">Max Length Threshold (mm)</label>
+                                    <input type="number" step="1" placeholder="e.g., 1600" id="rsc-max-length-threshold" value="1600" class="input-field">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="allowance-sheet-group" class="mt-4">
+                            <p class="text-xs font-medium text-red-700 mb-1">Sheet Size Specific Allowance:</p>
+                            <label for="sheet-allowance" class="block text-sm font-medium mb-1 text-red-700">Sheet Allowance (mm)</label>
+                            <input type="number" step="0.1" placeholder="e.g., 10.0" id="sheet-allowance" value="10.0" class="input-field">
+                        </div>
+                        
+                        <p class="text-xs text-red-600 mt-2">These allowances are added to the calculated blank sheet dimensions.</p>
+                    </div>
+
+                </div>
+
+                <!-- Column 2: Ply, Flute & Fixed Costs -->
+                <div class="space-y-6">
+                    <!-- Ply and Flute Selection -->
+                    <div class="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="font-medium text-lg mb-3 text-gray-700">Board Specification</h3>
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            <div>
+                                <label for="ply" class="block text-sm font-medium text-gray-700 mb-1">Ply Option</label>
+                                <select id="ply" class="input-field" onchange="app.handlePlyChange()">
+                                    <option value="3">3 Ply</option>
+                                    <option value="1">1 Ply (MONO)</option>
+                                    <option value="5" selected>5 Ply</option>
+                                    <option value="7">7 Ply</option>
+                                    <option value="9">9 Ply</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="flute-combination" class="block text-sm font-medium text-gray-700 mb-1">Flute Combination</label>
+                                <select id="flute-combination" class="input-field" onchange="app.handleFluteChange()">
+                                    <!-- Options populated by JavaScript -->
+                                </select>
+                            </div>
+                        </div>
+                        <div id="flute-breakdown" class="text-xs text-gray-500"></div>
+                    </div>
+
+                    <!-- Single Paper Rate -->
+                    <div class="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="font-medium text-lg mb-3 text-green-700">Average Paper Cost (INR/Kg)</h3>
+                        <label for="paper-rate" class="block text-sm font-medium text-gray-700 mb-1">Calculated Average Paper Rate (INR/Kg)</label>
+                        <input type="text" id="paper-rate" value="0.00" class="dynamic-cost-output" disabled>
+                        <p class="text-xs text-gray-500 mt-2">This is the calculated average paper rate based on the layer-by-layer properties and their weights.</p>
+                    </div>
+
+                    <div class="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="font-medium text-lg mb-3 text-purple-700">Conversion Cost (INR/Kg)</h3>
+                        <label for="conversion-cost" class="block text-sm font-medium text-gray-700 mb-1">Conversion Rate (INR/Kg)</label>
+                        <input type="number" step="0.01" placeholder="e.g., 10.0" id="conversion-cost" value="10.0" class="input-field">
+                        <p class="text-xs text-gray-500 mt-2">This cost is added to the paper cost, based on total weight.</p>
+                    </div>
+
+                    <div class="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 class="font-medium text-lg mb-3 text-gray-700">Fixed & Manufacturing Costs</h3>
+                        
+                        <div class="mb-4">
+                            <label for="quantity-pcs" class="block text-sm font-medium text-red-600 mb-1">Quantity (No. of Pcs)</label>
+                            <input type="number" step="1" placeholder="e.g., 100" id="quantity-pcs" value="1" class="input-field">
+                        </div>
+
+                        <div class="space-y-4">
+                            <!-- Dynamic Cost: Printing -->
+                            <div class="p-3 border rounded-lg bg-white">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" id="cost-printing-check" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.togglePrintingDetails(this.checked)">
+                                    <span class="text-sm font-medium text-gray-700">Printing Cost (₹)</span>
+                                </label>
+                                
+                                <div id="printing-details" class="pl-6 mt-2 space-y-2" style="display: none;">
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label for="printing-type" class="block text-xxs font-medium text-gray-600 mb-1">Printing Type</label>
+                                            <select id="printing-type" class="input-field !py-1">
+                                                <option value="Flexo">Flexo</option>
+                                                <option value="Offset">Offset</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label for="printing-colors" class="block text-xxs font-medium text-gray-600 mb-1">No. of Colors</label>
+                                            <input type="number" step="1" placeholder="e.g., 4" id="printing-colors" value="1" class="input-field !py-1">
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <div>
+                                            <label for="total-development-cost" class="block text-xxs font-medium text-gray-600 mb-1">Total Dev. Cost (₹)</label>
+                                            <input type="number" step="0.01" placeholder="e.g., 1500" id="total-development-cost" value="0" class="input-field !py-1">
+                                        </div>
+                                        <div>
+                                            <label for="print-cost-per-pcs" class="block text-xxs font-medium text-gray-600 mb-1">Print Cost / Pcs (₹)</label>
+                                            <input type="number" step="0.01" placeholder="e.g., 0.50" id="print-cost-per-pcs" value="0" class="input-field !py-1">
+                                        </div>
+                                        <div>
+                                            <label for="printing-moq" class="block text-xxs font-medium text-gray-600 mb-1">Printing MOQ (Pcs)</label>
+                                            <input type="number" step="1" placeholder="e.g., 500" id="printing-moq" value="0" class="input-field !py-1">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label for="cost-printing" class="block text-xxs font-medium text-gray-600 mb-1">Final Cost Per Unit (₹)</label>
+                                        <input type="text" id="cost-printing" value="0.00" class="dynamic-cost-output !py-1" disabled>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Dynamic Cost: Lamination -->
+                            <div class="p-3 border rounded-lg bg-white">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" id="cost-lamination-check" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.toggleLaminationDetails(this.checked)">
+                                    <span class="text-sm font-medium text-gray-700">Lamination Cost (₹)</span>
+                                </label>
+                                <div id="lamination-details" class="pl-6 mt-2 space-y-2" style="display: none;">
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label for="rate-of-lamination" class="block text-xxs font-medium text-gray-600 mb-1">Rate (₹/sq in)</label>
+                                            <input type="number" step="0.001" placeholder="e.g., 0.05" id="rate-of-lamination" value="0.5" class="input-field !py-1">
+                                        </div>
+                                        <div>
+                                            <label for="cost-lamination" class="block text-xxs font-medium text-gray-600 mb-1">Cost Per Unit (₹)</label>
+                                            <input type="text" id="cost-lamination" value="0.00" class="dynamic-cost-output !py-1" disabled>
+                                        </div>
+                                    </div>
+                                    <div class="pt-2">
+                                        <label class="flex items-center space-x-2 cursor-pointer">
+                                            <input type="checkbox" id="customize-lamination-area-check" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.toggleLaminationCustomArea(this.checked)">
+                                            <span class="text-xs font-medium text-gray-700">Customize Lamination Area</span>
+                                        </label>
+                                        <div id="lamination-custom-area" class="grid grid-cols-2 gap-2 mt-2" style="display: none;">
+                                             <div>
+                                                <label for="lamination-l" class="block text-xxs font-medium text-gray-600 mb-1">Lamination L (mm)</label>
+                                                <input type="number" step="1" placeholder="e.g., 400" id="lamination-l" class="input-field !py-1">
+                                            </div>
+                                            <div>
+                                                <label for="lamination-w" class="block text-xxs font-medium text-gray-600 mb-1">Lamination W (mm)</label>
+                                                <input type="number" step="1" placeholder="e.g., 300" id="lamination-w" class="input-field !py-1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Standard Cost: Varnish -->
+                            <div class="p-3 border rounded-lg bg-white">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" id="cost-varnish-check" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.toggleCostInput(this.checked, 'varnish-input-group')">
+                                    <span class="text-sm font-medium text-gray-700">Varnish Cost (₹)</span>
+                                </label>
+                                <div id="varnish-input-group" class="pl-6 mt-2" style="display: none;">
+                                    <input type="number" step="0.01" placeholder="e.g., 0.50" id="cost-varnish" value="0.5" class="input-field !py-1">
+                                </div>
+                            </div>
+
+                            <!-- Dynamic Cost: Die -->
+                            <div class="p-3 border rounded-lg bg-white">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" id="cost-die-check" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.toggleCostInput(this.checked, 'die-input-group')">
+                                    <span class="text-sm font-medium text-gray-700">Die Cost (₹)</span>
+                                </label>
+                                <div id="die-input-group" class="pl-6 mt-2 space-y-2" style="display: none;">
+                                    <div>
+                                        <label for="total-die-cost" class="block text-xxs font-medium text-gray-600 mb-1">Total Die Cost (₹)</label>
+                                        <input type="number" step="0.01" placeholder="e.g., 2500" id="total-die-cost" value="0" class="input-field !py-1">
+                                    </div>
+                                    <div>
+                                        <label for="cost-die" class="block text-xxs font-medium text-gray-600 mb-1">Final Cost Per Unit (₹)</label>
+                                        <input type="text" id="cost-die" value="0.00" class="dynamic-cost-output !py-1" disabled>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Standard Cost: Punching -->
+                            <div class="p-3 border rounded-lg bg-white">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" id="cost-punching-check" class="form-checkbox h-4 w-4 text-blue-600 rounded" onchange="app.toggleCostInput(this.checked, 'punching-input-group')">
+                                    <span class="text-sm font-medium text-gray-700">Punching Cost (₹)</span>
+                                </label>
+                                <div id="punching-input-group" class="pl-6 mt-2" style="display: none;">
+                                    <input type="number" step="0.01" placeholder="e.g., 1.00" id="cost-punching" value="1.0" class="input-field !py-1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column 3: Dynamic Paper Properties -->
+                <div class="p-4 border border-green-200 rounded-lg bg-green-50 lg:col-span-1">
+                    <h3 class="font-medium text-lg mb-3 text-green-700">Paper Properties (Layer by Layer)</h3>
+
+                    <button onclick="app.copyFluteValues()" class="w-full mb-4 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600 transition-colors shadow-md">
+                        Copy F1 Values to All Layers (Except Outer Liner L1)
+                    </button>
+
+                    <div id="dynamic-paper-inputs" class="space-y-3">
+                        <!-- Dynamic inputs will be rendered here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-8 flex flex-col sm:flex-row justify-center space-y-3 sm:space-y-0 sm:space-x-4 border-t pt-6">
+                <button onclick="app.saveQuoteToDB()"
+                        class="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg">
+                    <span>Save Current Quote</span>
+                </button>
+                <button id="add-item-button" onclick="app.addItemToQuote()"
+                        class="px-8 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-lg">
+                    <span>Add Item to Quote</span>
+                </button>
+                <button id="cancel-edit-button" onclick="app.cancelEdit()" style="display: none;"
+                        class="px-8 py-3 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition-colors shadow-lg">
+                    <span>Cancel Edit</span>
+                </button>
+            </div>
+        </section>
+        
+        <!-- Saved Quotes Database Section -->
+        <section class="mt-8 border-t border-gray-200 pt-6">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Saved Quotes Database</h2>
+            <p class="text-sm text-gray-600 mb-4">View and restore saved quotes (up to 100,000 capacity). Search by date range, party or company name.</p>
+
+            <div class="search-panel-container">
+                <h3 class="font-semibold text-lg mb-3 text-blue-700">Search Saved Quotes</h3>
+                <div class="grid md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label for="search-party" class="block text-xs font-medium text-gray-700 mb-1">Party Name / Contact</label>
+                        <input type="text" id="search-party" class="input-field" placeholder="e.g., John Doe">
+                    </div>
+                    <div>
+                        <label for="search-company" class="block text-xs font-medium text-gray-700 mb-1">Company Name</label>
+                        <input type="text" id="search-company" class="input-field" placeholder="e.g., ABC Enterprises">
+                    </div>
+                    <div>
+                        <label for="search-date" class="block text-xs font-medium text-gray-700 mb-1">Date (YYYY-MM-DD) - *Search latest 10,000*</label>
+                        <input type="date" id="search-date" class="input-field">
+                    </div>
+                </div>
+                <button onclick="app.loadQuotesFromDB()"
+                        class="w-full px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md">
+                    Search & Load Recent Quotes
+                </button>
+                
+                <div id="loading-indicator" class="mt-4 text-center text-blue-500 hidden">Loading saved quotes...</div>
+                
+                <div id="search-results" class="mt-4 max-h-96 overflow-y-auto">
+                    <!-- Search results displayed here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Data Management -->
+        <section class="p-4 border-t border-gray-200 pt-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Data Management (Local Export/Import)</h2>
+            <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+                <button onclick="app.exportToCSV()"
+                        class="flex-1 px-4 py-2 border border-blue-500 text-blue-600 font-medium rounded-lg hover:bg-blue-50 transition-colors">
+                    Download Current Quote (CSV)
+                </button>
+                <input type="file" id="csv-upload" accept=".csv" class="hidden" onchange="app.importFromCSV(event)">
+                <button onclick="document.getElementById('csv-upload').click()"
+                        class="flex-1 px-4 py-2 border border-blue-500 text-blue-600 font-medium rounded-lg hover:bg-blue-50 transition-colors">
+                    Upload & Recall Data (CSV)
+                </button>
+                <button onclick="app.clearQuote(true)"
+                        class="flex-1 px-4 py-2 border border-red-500 text-red-600 font-medium rounded-lg hover:bg-red-50 transition-colors">
+                    Clear All Quote Items
+                </button>
+            </div>
+        </section>
+
+        <!-- Quote Table -->
+        <section class="mt-8">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Final Costing Quote</h2>
+
+            <p id="quote-party-name-display" class="text-lg font-semibold text-gray-700 mb-4" style="display: none;">
+                <strong>Customer:</strong> <span id="party-name-value"></span>
+            </p>
+
+            <div id="quote-table-container">
+                <!-- Table content is rendered here by JavaScript -->
+            </div>
+            
+            <div id="quote-notes" class="mt-4 space-y-1" style="display: none;">
+                <p class="text-sm font-medium text-red-600"><span class="font-bold">Payment Terms:</span> <span id="note-payment-terms"></span></p>
+                <p class="text-sm font-medium text-red-600"><span class="font-bold">Delivery Time:</span> <span id="note-delivery-time"></span></p>
+            </div>
+
+            <!-- Quote Action Buttons -->
+            <div id="quote-action-buttons" class="mt-6 flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4" style="display: ${app.quoteItems.length > 0 ? 'flex' : 'none'};">
+                <button onclick="app.copyWhatsAppMessage()"
+                        class="flex-1 px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors shadow-lg">
+                    Copy WhatsApp Message
+                </button>
+                <button onclick="app.copyEmailContent()"
+                        class="flex-1 px-4 py-2 bg-cyan-600 text-white font-semibold rounded-lg hover:bg-cyan-700 transition-colors shadow-lg">
+                    Copy Email Content
+                </button>
+                <button onclick="app.copyTableAsImage()"
+                        class="flex-1 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg">
+                    Copy Quote Table as Image
+                </button>
+            </div>
+            
+            <!-- Image Copy Fallback/Notification -->
+            <div id="image-copy-fallback" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded-lg hidden">
+                <!-- Fallback link generated here -->
+            </div>
+
+            <!-- Email Message Output -->
+            <div id="email-message-box" class="mt-6 p-4 bg-gray-100 border border-gray-300 rounded-lg hidden">
+                <h4 class="font-semibold text-gray-700 mb-2">Email Content Preview:</h4>
+                <!-- Changed from pre to div for HTML rendering -->
+                <div id="email-message-content" class="text-sm text-gray-800 bg-white p-3 rounded border overflow-auto max-h-[500px]"></div>
+            </div>
+            
+            <!-- WhatsApp Message Output -->
+            <div id="whatsapp-message-box" class="mt-6 p-4 bg-gray-100 border-gray-300 rounded-lg hidden">
+                <h4 class="font-semibold text-gray-700 mb-2">WhatsApp Message Preview:</h4>
+                <pre id="whatsapp-message-content" class="whitespace-pre-wrap text-sm text-gray-800"></pre>
+            </div>
+        </section>
+
+        <!-- Quote Summary Table Section -->
+        <section class="mt-12 border-t pt-8">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Quote Summary Table</h2>
+            <p class="text-sm text-gray-600 mb-4">A simplified table view, perfect for attachments or quick summaries.</p>
+
+            <div id="quote-summary-table-container">
+                <!-- Summary Table content is rendered here by JavaScript -->
+            </div>
+            
+            <div id="quote-summary-notes" class="mt-4 space-y-1" style="display: none;">
+                <p class="text-sm font-medium text-gray-700"><span class="font-bold">Payment Terms:</span> <span id="summary-note-payment-terms"></span></p>
+                <p class="text-sm font-medium text-gray-700"><span class="font-bold">Delivery Time:</span> <span id="summary-note-delivery-time"></span></p>
+                <p class="text-sm font-medium text-gray-700"><span class="font-bold">From:</span> <span id="summary-note-company-name"></span></p>
+            </div>
+
+            <div id="summary-table-action-buttons" class="mt-6" style="display: none;">
+                 <button onclick="app.copySummaryTableAsImage()"
+                        class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg">
+                    Copy Summary Table as Image
+                </button>
+            </div>
+            
+            <div id="summary-image-copy-fallback" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded-lg hidden">
+                <!-- Fallback link generated here -->
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- DATA SELECTION MODAL -->
+<div id="data-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-50 hidden flex items-center justify-center p-4" onclick="app.closeModal(event)">
+    <div id="modal-content-area" class="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+        <!-- Dynamic content goes here -->
+    </div>
+</div>
+
+<script type="module">
+    // NOTE: This file is adapted for Wix Velo. All direct Firebase imports and initialization 
+    // have been removed. Database functions now simulate asynchronous calls to a Velo backend module (`backend/quotes.jsw`).
+    
+    // --- Velo Simulation Imports ---
+    // In a real Wix page, you would include this client-side Velo import:
+    // import { saveQuoteToDB, loadRecentQuotes, loadCompanyProfileByName, saveCompanyProfile, setDefaultCompany, loadDefaultCompanyName } from 'backend/quotes';
+    // Since we are in a sandbox, we simulate these functions:
+    
+    /** SIMULATED Velo Backend Functions */
+    const SIMULATED_DB = {
+        quotes: [],
+        profiles: {},
+        defaults: {}
+    };
+
+    const SIMULATED_PREDEFINED_PROFILES = {
+        "ventura packagers private limited": {
+            companyName: "Ventura Packagers Private Limited",
+            gstNo: "27AAACV3461F1ZG",
+            address: "W43H MIDC AMBAD",
+            phone: "0253-4035062",
+            email: "venturapackagers@gmail.com",
+            website: "http://www.venturapackagers.com/",
+            social: "https://www.instagram.com/venturapackagers/",
+            location: "https://maps.app.goo.gl/vYbDHFm3ktAvhszR8",
+        },
+        "sai seva packaging": {
+            companyName: "Sai Seva Packaging",
+            gstNo: "27ACDFS8095G1ZO",
+            address: "C-24 MIDC MALEGAON, SINNAR,NASHIK",
+            phone: "Santosh +919325141614 / Akash +91 99236 29261",
+            email: "saisevapac@gmail.com",
+            website: "http://www.saisevapackaging.com/",
+            social: "9420295210",
+            location: "https://maps.app.goo.gl/vYbDHFm3ktAvhszR8",
+        }
+    };
+    
+    const saveQuoteToDB = async (quoteData) => {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                const newId = (SIMULATED_DB.quotes.length + 1).toString();
+                const quote = { ...quoteData, _id: newId, timestamp: new Date() };
+                SIMULATED_DB.quotes.unshift(quote); // Add to start (most recent)
+                // Maintain max limit for simulation
+                if (SIMULATED_DB.quotes.length > 10000) {
+                     SIMULATED_DB.quotes.pop();
+                }
+                resolve({ _id: newId });
+            }, 100);
+        });
+    };
+
+    const loadRecentQuotes = async (searchParty, searchCompany) => {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                const results = SIMULATED_DB.quotes.filter(q => {
+                    const partyMatch = !searchParty || (q.partyName && q.partyName.toLowerCase().includes(searchParty.toLowerCase()));
+                    const companyMatch = !searchCompany || (q.customerCompany && q.customerCompany.toLowerCase().includes(searchCompany.toLowerCase()));
+                    return partyMatch || companyMatch;
+                }).slice(0, 10000); // Limit to 10,000 for display/performance simulation
+                
+                resolve(results.map(item => ({ ...item, _id: item._id, timestamp: item.timestamp })));
+            }, 500);
+        });
+    };
+
+    const loadCompanyProfileByName = async (companyName) => {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                const lowerName = companyName.toLowerCase();
+                const profile = SIMULATED_DB.profiles[lowerName] || SIMULATED_PREDEFINED_PROFILES[lowerName] || null;
+                resolve(profile);
+            }, 100);
+        });
+    };
+    
+    const saveCompanyProfile = async (profileData) => {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                const lowerName = profileData.companyName.toLowerCase();
+                SIMULATED_DB.profiles[lowerName] = { ...profileData, lastUpdated: new Date() };
+                resolve({ companyName: profileData.companyName });
+            }, 100);
+        });
+    };
+
+    const setDefaultCompany = async (companyName) => {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                SIMULATED_DB.defaults.default_company = { companyName: companyName, lastSet: new Date() };
+                resolve({ companyName: companyName });
+            }, 100);
+        });
+    };
+    
+    const loadDefaultCompanyName = async () => {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                const defaultName = SIMULATED_DB.defaults.default_company ? SIMULATED_DB.defaults.default_company.companyName : null;
+                resolve(defaultName);
+            }, 100);
+        });
+    };
+    
+    // --- END SIMULATED Velo Backend Functions ---
+
+    
+    // Core Constants (Unchanged)
+    const FLUTE_FACTORS = {
+        'A': 1.6, 
+        'B': 1.5, 
+        'C': 1.55, 
+        'E': 1.45, 
+        'MONO': 1.0 
+    };
+    const GST_RATE = 0.05; 
+    const INCH_TO_MM = 25.4; 
+    const MM2_TO_IN2 = 1 / (INCH_TO_MM * INCH_TO_MM); 
+
+    const RATE_MAP = {
+        '16_Golden': 33.5, '18_Golden': 34.5, '20_Golden': 35.5, '22_Golden': 38.0, '24_Golden': 40.0, '28_Golden': 46.0,
+        '16_Natural/Kraft': 32.5, '18_Natural/Kraft': 33.5, '20_Natural/Kraft': 34.5, '22_Natural/Kraft': 37.0, '24_Natural/Kraft': 39.0, '28_Natural/Kraft': 46.0,
+        '14_Duplex HWC': 46.0, '14_Duplex LWC': 44.0
+    };
+    
+    const GLUE_FLAP_DEFAULTS = {
+        '1': 35.0, '3': 45.0, '5': 50.0, '7': 60.0, '9': 70.0  
+    };
+
+    const PLY_STRUCTURES = {
+        1: { layers: ['L1'], flutes: ['MONO'], breakdown: "1-Ply: Liner 1" },
+        3: { layers: ['L1', 'F1', 'L2'], flutes: ['A', 'B', 'C', 'E', 'MONO'], breakdown: "3-Ply: L1 / Flute 1 / L2" },
+        5: { layers: ['L1', 'F1', 'L2', 'F2', 'L3'], flutes: ['BC', 'AC', 'BE', 'CE', 'AB', 'EB', 'AA', 'BB', 'CC', 'EE'], breakdown: "5-Ply: L1 / F1 / L2 / F2 / L3" },
+        7: { layers: ['L1', 'F1', 'L2', 'F2', 'L3', 'F3', 'L4'], flutes: ['ABC', 'BCC', 'BBE', 'CCE', 'A/B/C', 'A/B/E', 'BBB'], breakdown: "7-Ply: L1 / F1 / L2 / F2 / L3 / F3 / L4" },
+        9: { layers: ['L1', 'F1', 'L2', 'F2', 'L3', 'F3', 'L4', 'F4', 'L5'], flutes: ['ABCC', 'BBCC', 'A/B/C/C', 'B/C/C/E', 'BBBB'], breakdown: "9-Ply: L1 / F1 / L2 / F2 / L3 / F3 / L4 / F4 / L5" }
+    };
+    
+    
+    window.app = {
+        currentTab: 'rsc',
+        quoteItems: [],
+        paperInputs: {}, 
+        rateOverrides: {}, 
+        editingIndex: null, 
+        
+        // --- MODAL FUNCTIONS ---
+
+        openModal(title, contentHTML) {
+            const modal = document.getElementById('data-modal');
+            const contentArea = document.getElementById('modal-content-area');
+            contentArea.innerHTML = `
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                    <h3 class="text-xl font-semibold text-blue-700">${title}</h3>
+                    <button onclick="app.closeModal()" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-4">${contentHTML}</div>
+            `;
+            modal.classList.remove('hidden');
+        },
+
+        closeModal(event) {
+            if (event && event.currentTarget.id !== 'data-modal') return;
+            document.getElementById('data-modal').classList.add('hidden');
+        },
+
+        // --- INIT & DEFAULT COMPANY LOADING ---
+
+        async init() {
+            // Note: In a real Wix implementation, the global inputs would be updated 
+            // after the Velo backend functions resolve in your page code.
+            
+            this.handlePlyChange();
+            await this.loadDefaultCompanyProfile(); // Load default on startup
+
+            document.getElementById('dimension-type').addEventListener('change', this.handleDimensionTypeChange.bind(this));
+
+            ['rsc-l', 'rsc-w', 'rsc-h', 'rsc-glue-flap', 'rsc-deckle-allowance', 'rsc-max-length-threshold', 'sheet-l', 'sheet-w', 'sheet-allowance', 'lamination-l', 'lamination-w', 'quantity-pcs', 'total-development-cost', 'print-cost-per-pcs', 'printing-moq', 'rate-of-lamination', 'total-die-cost'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.addEventListener('input', () => {
+                    if (id.startsWith('rsc')) { this.updateRSCSheetDisplay(); }
+                    else if (id.startsWith('sheet')) { this.updateSheetDisplay(); }
+                    this.updateDynamicCosts(); 
+                }); }
+            });
+            
+            this.render();
+            document.getElementById('ply').value = '5';
+            this.handlePlyChange();
+            this.updateAveragePaperCostDisplay(); 
+            this.showMessage(`Application initialized. Using Velo simulation for DB.`, 'green');
+        },
+
+        // --- COMPANY PROFILE MANAGEMENT (Velo Calls) ---
+        
+        async loadDefaultCompanyProfile() {
+            try {
+                // Calls Velo backend function to get the default company name
+                const defaultCompanyName = await loadDefaultCompanyName();
+                let profileData = null;
+
+                if (defaultCompanyName) {
+                    // Try to load user-saved profile first
+                    profileData = await loadCompanyProfileByName(defaultCompanyName);
+                } 
+                
+                if (!profileData) {
+                    // Fallback: Use hardcoded default (Velo simulation only)
+                    profileData = SIMULATED_PREDEFINED_PROFILES["ventura packagers private limited"];
+                }
+                
+                this.setCompanyInputs(profileData);
+                this.showMessage(`Default Company Profile "${profileData.companyName}" loaded.`, 'blue');
+
+            } catch (error) {
+                console.error('Velo Error loading default company profile:', error);
+                // Fallback to the hardcoded default values
+                this.setCompanyInputs(SIMULATED_PREDEFINED_PROFILES["ventura packagers private limited"]);
+            }
+        },
+
+        async setDefaultCompanyProfile() {
+            const companyName = document.getElementById('quote-company-name').value.trim();
+            
+            if (!companyName) {
+                this.showMessage('Please enter an "Own Company Name" to set the default.', 'yellow');
+                return;
+            }
+            
+            try {
+                const profileData = this.getCompanyInputsAsObject();
+                
+                // 1. Save profile to ensure it exists in the Profiles collection
+                await saveCompanyProfile(profileData);
+                
+                // 2. Set the name as the default reference in the AppDefaults collection
+                await setDefaultCompany(companyName);
+                
+                this.showMessage(`Company Profile "${companyName}" successfully set as default.`, 'green');
+            } catch (error) {
+                console.error('Velo Error setting default company profile:', error);
+                this.showMessage('Failed to set default company profile.', 'red');
+            }
+        },
+
+
+        async saveCompanyProfile() {
+            const companyName = document.getElementById('quote-company-name').value.trim();
+            if (!companyName) {
+                this.showMessage('Please enter an "Own Company Name" to save the profile.', 'yellow');
+                return;
+            }
+            
+            const profileData = this.getCompanyInputsAsObject();
+
+            try {
+                // Calls Velo function to save the profile
+                await saveCompanyProfile(profileData);
+                this.showMessage(`Company Profile "${companyName}" saved successfully.`, 'green');
+            } catch (error) {
+                console.error('Velo Error saving company profile:', error);
+                this.showMessage('Failed to save company profile.', 'red');
+            }
+        },
+        
+        getCompanyInputsAsObject() {
+             return {
+                companyName: document.getElementById('quote-company-name').value.trim(),
+                gstNo: document.getElementById('quote-gst-no').value.trim(),
+                address: document.getElementById('quote-address').value.trim(),
+                phone: document.getElementById('quote-phone').value.trim(),
+                email: document.getElementById('quote-email').value.trim(),
+                website: document.getElementById('quote-website').value.trim(),
+                social: document.getElementById('quote-social-media').value.trim(),
+                location: document.getElementById('quote-google-location').value.trim(),
+            };
+        },
+
+
+        async showCompanyLoadModal() {
+            let results = [];
+            
+            // Start with hardcoded predefined profiles (Velo simulation only)
+            for (const key in SIMULATED_PREDEFINED_PROFILES) {
+                results.push({...SIMULATED_PREDEFINED_PROFILES[key], isPredefined: true, lastUpdated: new Date()});
+            }
+            
+            // Add user-saved profiles from simulation state
+            for (const key in SIMULATED_DB.profiles) {
+                results.push({...SIMULATED_DB.profiles[key], isPredefined: false});
+            }
+
+            if (results.length === 0) {
+                this.showMessage('No company profiles available.', 'yellow');
+                return;
+            }
+            
+            // Sort by last updated (simulated)
+            results.sort((a, b) => b.lastUpdated - a.lastUpdated);
+
+
+            // Generate HTML for the list
+            const listHTML = results.map(profile => {
+                const updated = profile.lastUpdated ? new Date(profile.lastUpdated).toLocaleDateString() : 'Default';
+                return `
+                    <div class="modal-item" onclick="app.loadSelectedCompanyProfile('${profile.companyName}')">
+                        <div class="font-bold text-gray-800">${profile.companyName} ${profile.isPredefined ? '(Default)' : ''}</div>
+                        <div class="text-sm text-gray-600">GST: ${profile.gstNo || 'N/A'} | Updated: ${updated}</div>
+                        <div class="text-xs text-gray-500">${profile.address}</div>
+                    </div>
+                `;
+            }).join('');
+
+            this.openModal("Select Own Company Profile", 
+                `<div>
+                    <p class="mb-3 text-sm text-gray-600">Select a company profile to automatically fill the details below.</p>
+                    <div class="max-h-80 overflow-y-auto border rounded-lg bg-white">
+                        ${listHTML}
+                    </div>
+                </div>`
+            );
+        },
+        
+        async loadSelectedCompanyProfile(companyName) {
+            this.closeModal();
+            let profileData = null;
+
+            try {
+                // Calls Velo backend function to load profile
+                profileData = await loadCompanyProfileByName(companyName);
+            } catch (e) {
+                console.error("Velo Error fetching company profile by name:", e);
+            }
+
+            if (profileData) {
+                this.setCompanyInputs(profileData);
+                this.showMessage(`Company Profile "${companyName}" loaded successfully.`, 'green');
+            } else {
+                 this.showMessage(`Failed to retrieve profile for "${companyName}".`, 'red');
+            }
+        },
+        
+        setCompanyInputs(data) {
+            document.getElementById('quote-company-name').value = data.companyName || '';
+            document.getElementById('quote-gst-no').value = data.gstNo || '';
+            document.getElementById('quote-address').value = data.address || '';
+            document.getElementById('quote-phone').value = data.phone || '';
+            document.getElementById('quote-email').value = data.email || '';
+            document.getElementById('quote-website').value = data.website || '';
+            document.getElementById('quote-social-media').value = data.social || '';
+            document.getElementById('quote-google-location').value = data.location || '';
+        },
+
+        // --- QUOTE (CUSTOMER) MANAGEMENT (Velo Calls) ---
+        
+        async saveQuoteToDB() {
+            const partyName = document.getElementById('quote-party-name').value.trim();
+            const customerCompany = document.getElementById('quote-customer-company').value.trim();
+            
+            if (this.quoteItems.length === 0) {
+                this.showMessage('Cannot save an empty quote.', 'yellow');
+                return;
+            }
+            if (!partyName && !customerCompany) {
+                this.showMessage('Please enter Party Name or Customer Company Name before saving.', 'yellow');
+                return;
+            }
+
+            const totalValue = this.grandTotalBatchValue;
+            const boxSizes = this.quoteItems.map(item => `${item.Ply} Ply ${item.Size}`).join('; ');
+            
+            // Ensure the latest global inputs are attached to the saved object
+            this.updateQuoteItemsGlobals();
+
+            const quoteData = {
+                partyName: partyName,
+                customerCompany: customerCompany,
+                totalValue: totalValue,
+                boxSizes: boxSizes,
+                globalInputs: this.getAllInputs(),
+                quoteItems: this.quoteItems,
+            };
+
+            try {
+                // Calls Velo backend function to save the full quote
+                const response = await saveQuoteToDB(quoteData); 
+                this.showMessage(`Quote saved successfully to DB (ID: ${response._id}).`, 'green');
+            } catch (error) {
+                console.error('Velo Error saving quote:', error);
+                this.showMessage('Failed to save quote to DB.', 'red');
+            }
+        },
+
+
+        async showPartyLoadModal() {
+            const searchParty = document.getElementById('quote-party-name').value.trim();
+            const searchCompany = document.getElementById('quote-customer-company').value.trim();
+            
+            if (!searchParty && !searchCompany) {
+                this.showMessage('Please enter a Party Name or Customer Company Name before loading settings.', 'yellow');
+                return;
+            }
+            
+            this.showMessage('Searching database for recent customer settings...', 'blue');
+            
+            let results = [];
+            try {
+                // Calls Velo backend function to search quotes
+                const quoteResults = await loadRecentQuotes(searchParty, searchCompany);
+                
+                // Velo returns an array of items
+                results = quoteResults.map(data => ({
+                    _id: data._id, // Use Wix's item ID
+                    ...data
+                }));
+            } catch (error) {
+                console.error('Velo Error fetching quotes for modal:', error);
+                this.showMessage('Failed to retrieve customer settings.', 'red');
+            }
+            
+            if (results.length === 0) {
+                this.showMessage('No recent customer quotes matched your input.', 'yellow');
+                return;
+            }
+
+            // Generate HTML for the list
+            const listHTML = results.map(quote => {
+                // Since timestamp is a Date object in the simulation (or a specific Date object in Velo)
+                const date = quote.timestamp ? new Date(quote.timestamp).toLocaleDateString() : 'N/A';
+                return `
+                    <div class="modal-item" onclick="app.loadSelectedCustomerSettings('${quote._id}')">
+                        <div class="font-bold text-gray-800">${quote.partyName || 'N/A'} (${quote.customerCompany || 'N/A'})</div>
+                        <div class="text-sm text-gray-600">Total Value: ₹${quote.totalValue.toFixed(2)} | Date: ${date}</div>
+                        <div class="text-xs text-gray-500">Items: ${quote.boxSizes}</div>
+                    </div>
+                `;
+            }).join('');
+
+            this.openModal("Select Customer Settings", 
+                `<div>
+                    <p class="mb-3 text-sm text-gray-600">Select a previous quote to restore all customer details, paper specs, and fixed costs. (Found ${results.length} results in last 10,000 quotes)</p>
+                    <div class="max-h-80 overflow-y-auto border rounded-lg bg-white">
+                        ${listHTML}
+                    </div>
+                </div>`
+            );
+        },
+        
+        async loadSelectedCustomerSettings(docId) {
+            this.closeModal();
+            
+            try {
+                // In a real Velo app, you'd fetch the document by its _id here.
+                // Since this is simulated, we find it in the SIMULATED_DB.
+                const data = SIMULATED_DB.quotes.find(q => q._id === docId);
+                
+                if (data && data.globalInputs) {
+                    this.setGlobalInputsAndPaper(data.globalInputs);
+                    this.showMessage(`Customer settings restored from quote ID: ${docId}`, 'green');
+                } else {
+                    this.showMessage('Failed to retrieve data for this quote.', 'red');
+                }
+            } catch (error) {
+                console.error('Velo Error fetching quote by ID:', error);
+                this.showMessage('Error restoring settings.', 'red');
+            }
+        },
+
+
+        async loadQuotesFromDB() {
+            const resultsContainer = document.getElementById('search-results');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            loadingIndicator.classList.remove('hidden');
+            resultsContainer.innerHTML = '';
+            
+            const searchParty = document.getElementById('search-party').value.toLowerCase().trim();
+            const searchCompany = document.getElementById('search-company').value.toLowerCase().trim();
+            const searchDateStr = document.getElementById('search-date').value;
+
+            try {
+                // Calls Velo backend function to search and retrieve quotes
+                const quoteResults = await loadRecentQuotes(searchParty, searchCompany);
+                
+                let results = quoteResults.filter(data => {
+                    // Apply date filter locally in simulation since Velo query API is limited
+                    const documentDateStr = data.timestamp ? new Date(data.timestamp).toISOString().split('T')[0] : '';
+                    const matchesDate = !searchDateStr || (documentDateStr === searchDateStr);
+                    return matchesDate;
+                });
+                
+                loadingIndicator.classList.add('hidden');
+                
+                if (results.length === 0) {
+                    resultsContainer.innerHTML = '<p class="text-gray-500 text-center mt-4">No matching quotes found in the last 10,000 saved calculations.</p>';
+                    return;
+                }
+
+                resultsContainer.innerHTML = results.map(result => {
+                    const date = result.timestamp ? new Date(result.timestamp).toLocaleDateString() : 'N/A';
+                    return `
+                        <div class="search-result-item" onclick="app.restoreQuote('${result._id}', event)">
+                            <div class="font-bold text-gray-800">${result.partyName} (${result.customerCompany})</div>
+                            <div class="text-sm text-gray-600">Date: ${date} | Total Value: ₹${result.totalValue.toFixed(2)}</div>
+                            <div class="text-xs text-gray-500">Items: ${result.boxSizes}</div>
+                            <div class="text-xs text-gray-500 mt-1">Click to restore this quote (Full Quote).</div>
+                        </div>
+                    `;
+                }).join('');
+
+                this.showMessage(`Found ${results.length} matching quotes.`, 'blue');
+
+            } catch (error) {
+                loadingIndicator.classList.add('hidden');
+                console.error('Velo Error fetching quotes:', error);
+                this.showMessage('Failed to load quotes from DB. Check console.', 'red');
+            }
+        },
+
+        restoreQuote(docId, event) {
+            // Find the item in the simulated DB
+            const data = SIMULATED_DB.quotes.find(q => q._id === docId);
+
+            if (!data || !data.globalInputs || !data.quoteItems) {
+                 this.showMessage('Data structure is incomplete or doc not found.', 'red');
+                 return;
+            }
+            
+            this.setAllInputs(data.globalInputs);
+            this.quoteItems = data.quoteItems;
+            this.render();
+            
+            this.showMessage(`Quote restored successfully from DB!`, 'green');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+        
+        // --- END Velo Database Operations ---
+
+        setTab(tab) {
+            this.currentTab = tab;
+            this.render();
+        },
+        
+        formatFluteComboWithFactor(fluteCombo) {
+            if (fluteCombo === 'MONO') {
+                return 'MONO (Factor 1.00)';
+            }
+            const fluteChars = fluteCombo.split('/').filter(f => f).join('');
+            
+            let description = [];
+            for (const flute of fluteChars) {
+                const factor = FLUTE_FACTORS[flute];
+                if (factor !== undefined) {
+                    description.push(`${flute}: ${factor.toFixed(2)}`);
+                }
+            }
+            
+            if (description.length === 1 && fluteChars.length === 1) {
+                return `${fluteCombo} (Factor ${FLUTE_FACTORS[fluteChars[0]].toFixed(2)})`;
+            }
+
+            return `${fluteCombo} (${description.join(', ')})`;
+        },
+        
+        updateGlueFlapDefault() {
+            const ply = document.getElementById('ply').value;
+            const defaultFlap = GLUE_FLAP_DEFAULTS[ply] || 50.0; 
+            document.getElementById('rsc-glue-flap').value = defaultFlap.toFixed(1);
+            this.updateRSCSheetDisplay();
+        },
+
+        handleDimensionTypeChange() {
+            const type = document.getElementById('dimension-type').value;
+            
+            document.getElementById('inches-label-rsc').textContent = `Dimensions in Inches (in) - ${type}`;
+            document.getElementById('mm-label-rsc').textContent = `Dimensions in Millimeters (mm) - ${type}`;
+            
+            const lLabel = `Length (L) - ${type}`;
+            const wLabel = `Width (W) - ${type}`;
+            const hLabel = `Height (H) - ${type}`;
+            
+            document.getElementById('rsc-l-label').textContent = lLabel;
+            document.getElementById('rsc-l-in-label').textContent = lLabel;
+            document.getElementById('rsc-w-label').textContent = wLabel;
+            document.getElementById('rsc-w-in-label').textContent = wLabel;
+            document.getElementById('rsc-h-label').textContent = hLabel;
+            document.getElementById('rsc-h-in-label').textContent = hLabel;
+            
+            this.updateRSCSheetDisplay();
+            this.updateDynamicCosts();
+        },
+
+        getRSCSheetDimensions() {
+            const inputL = parseFloat(document.getElementById('rsc-l').value) || 0;
+            const inputW = parseFloat(document.getElementById('rsc-w').value) || 0;
+            const inputH = parseFloat(document.getElementById('rsc-h').value) || 0;
+            const glueFlap = parseFloat(document.getElementById('rsc-glue-flap').value) || 0;
+            const deckleAllowance = parseFloat(document.getElementById('rsc-deckle-allowance').value) || 0;
+            const maxLengthThreshold = parseFloat(document.getElementById('rsc-max-length-threshold').value) || 1600; 
+            const dimensionType = document.getElementById('dimension-type')?.value || 'OD';
+
+            let L = inputL;
+            let W = inputW;
+            let H = inputH;
+
+            if (!L || !W || !H) return { length: 0, width: 0, area: 0, area_mm2: 0 };
+            
+            if (dimensionType === 'ID') {
+                const ply = document.getElementById('ply').value;
+                let lw_add = 0, h_add = 0;
+
+                switch(ply) {
+                    case '3': lw_add = 3; h_add = 5; break; 
+                    case '5': lw_add = 5; h_add = 7; break; 
+                    case '7': lw_add = 7; h_add = 10; break; 
+                    case '9': lw_add = 9; h_add = 13; break; 
+                    case '1': lw_add = 3; h_add = 5; break; 
+                }
+
+                L = inputL + lw_add;
+                W = inputW + lw_add;
+                H = inputH + h_add;
+            }
+            
+            const additionalGlueFlap = glueFlap; 
+
+            let sheetLength_mm = (2 * (L + W)) + glueFlap; 
+            
+            if (sheetLength_mm > maxLengthThreshold) {
+                sheetLength_mm += additionalGlueFlap;
+            }
+
+            const sheetWidth_mm = W + H + deckleAllowance;
+            
+            const area_m2 = (sheetLength_mm / 1000) * (sheetWidth_mm / 1000);
+            const area_mm2 = sheetLength_mm * sheetWidth_mm;
+            
+            return { 
+                length: sheetLength_mm, 
+                width: sheetWidth_mm,   
+                area: area_m2,
+                area_mm2: area_mm2
+            };
+        },
+
+        getFlatSheetDimensions() {
+            const L = parseFloat(document.getElementById('sheet-l').value) || 0;
+            const W = parseFloat(document.getElementById('sheet-w').value) || 0;
+            const allowance = parseFloat(document.getElementById('sheet-allowance').value) || 0;
+
+            if (!L || !W) return { length: 0, width: 0, area: 0, area_mm2: 0 };
+
+            const sheetLength_mm = L + allowance;
+            const sheetWidth_mm = W + allowance;
+            
+            const area_m2 = (sheetLength_mm / 1000) * (sheetWidth_mm / 1000);
+            const area_mm2 = sheetLength_mm * sheetWidth_mm;
+            
+            return { 
+                length: sheetLength_mm, 
+                width: sheetWidth_mm,   
+                area: area_m2,
+                area_mm2: area_mm2
+            };
+        },
+        
+        getCurrentSheetDimensions() {
+            if (this.currentTab === 'rsc') {
+                return this.getRSCSheetDimensions();
+            } else {
+                return this.getFlatSheetDimensions();
+            }
+        },
+
+        getLaminationArea() {
+            const useCustom = document.getElementById('customize-lamination-area-check').checked;
+            let l_mm, w_mm;
+
+            if (useCustom) {
+                l_mm = parseFloat(document.getElementById('lamination-l').value) || 0;
+                w_mm = parseFloat(document.getElementById('lamination-w').value) || 0;
+            } else {
+                const sheetDimensions = this.getCurrentSheetDimensions();
+                l_mm = sheetDimensions.length;
+                w_mm = sheetDimensions.width;
+            }
+
+            if (l_mm <= 0 || w_mm <= 0) {
+                return { area_mm2: 0, area_in2: 0 };
+            }
+
+            const area_mm2 = l_mm * w_mm;
+            const area_in2 = area_mm2 * MM2_TO_IN2;
+
+            return { area_mm2, area_in2 };
+        },
+
+        getCurrentSheetWeight() {
+            const ply = document.getElementById('ply').value;
+            const fluteCombo = document.getElementById('flute-combination').value;
+            
+            const structure = PLY_STRUCTURES[ply];
+            if (!structure) return 0; 
+            
+            const layerTypes = structure.layers;
+            const fluteLettersRaw = fluteCombo.split('/').filter(f => f).join('');
+            const fluteLetters = fluteLettersRaw.length > 0 ? fluteLettersRaw : 'C';
+
+            const sheetDimensions = this.getCurrentSheetDimensions();
+            const area_m2 = sheetDimensions.area;
+
+            if (area_m2 <= 0) {
+                return 0; 
+            }
+
+            let totalWeight_kg = 0;
+            let fluteIndex = 0;
+            let allInputsValid = true;
+
+            for (let i = 0; i < layerTypes.length; i++) {
+                const layerType = layerTypes[i];
+                
+                const gsm = parseFloat(this.paperInputs[`${layerType}-GSM`]);
+
+                if (isNaN(gsm) || gsm <= 0) {
+                    allInputsValid = false;
+                    break;
+                }
+
+                let layer_flute_factor = 1.0;
+                
+                if (layerType.startsWith('L')) {
+                    // Liner
+                } else if (layerType.startsWith('F')) {
+                    let flute = fluteLetters[fluteIndex];
+                    if (!flute) flute = 'C'; 
+                    const factor = FLUTE_FACTORS[flute] || 1.0;
+                    layer_flute_factor = factor;
+                    fluteIndex++;
+                } else if (ply === '1' && layerType === 'L1') {
+                    // Special case for MONO: L1 * 1.0 factor
+                    layer_flute_factor = FLUTE_FACTORS['MONO'] || 1.0;
+                }
+                
+                const layer_weight_kg = (area_m2 * gsm * layer_flute_factor) / 1000;
+                totalWeight_kg += layer_weight_kg;
+            }
+
+            if (!allInputsValid) {
+                return 0; 
+            }
+
+            return totalWeight_kg;
+        },
+        
+        getCurrentBS() {
+            const ply = document.getElementById('ply').value;
+            const structure = PLY_STRUCTURES[ply];
+            if (!structure) return 0;
+
+            const layerTypes = structure.layers;
+            let totalBS = 0;
+
+            for (const layerType of layerTypes) {
+                const gsm = parseFloat(this.paperInputs[`${layerType}-GSM`]) || 0;
+                const bf = parseFloat(this.paperInputs[`${layerType}-BF`]) || 0;
+
+                if (layerType.startsWith('L')) {
+                    // Liner: (GSM * BF) / 1000
+                    totalBS += (gsm * bf) / 1000;
+                } else if (layerType.startsWith('F')) {
+                    // Fluting: GSM / 2000
+                    totalBS += gsm / 2000; 
+                }
+            }
+            return totalBS;
+        },
+
+        updatePaperRate(layerIdPrefix) {
+            const bf = this.paperInputs[`${layerIdPrefix}-BF`];
+            const shade = this.paperInputs[`${layerIdPrefix}-Shade`];
+            const rateInput = document.getElementById(`${layerIdPrefix}-Rate`);
+
+            if (!bf || !shade || !rateInput) return; 
+
+            const key = `${bf}_${shade}`;
+            let newRate;
+
+            if (this.rateOverrides[key] !== undefined) {
+                newRate = this.rateOverrides[key];
+            } else {
+                newRate = RATE_MAP[key] || 0.00; 
+            }
+
+            rateInput.value = newRate.toFixed(2);
+            this.paperInputs[`${layerIdPrefix}-Rate`] = newRate;
+            
+            this.updateAveragePaperCostDisplay();
+        },
+
+        updateAveragePaperCostDisplay() {
+            const ply = document.getElementById('ply').value;
+            const fluteCombo = document.getElementById('flute-combination').value;
+            
+            const structure = PLY_STRUCTURES[ply];
+            if (!structure) return; 
+            
+            const layerTypes = structure.layers;
+            const fluteLettersRaw = fluteCombo.split('/').filter(f => f).join('');
+            const fluteLetters = fluteLettersRaw.length > 0 ? fluteLettersRaw : 'C';
+
+            const sheetDimensions = this.getCurrentSheetDimensions();
+            const area_m2 = sheetDimensions.area;
+
+            if (area_m2 <= 0) {
+                document.getElementById('paper-rate').value = '0.00';
+                return; 
+            }
+
+            let totalWeight_kg = 0;
+            let totalBoardRate = 0;
+            let fluteIndex = 0;
+            let allInputsValid = true;
+
+            for (let i = 0; i < layerTypes.length; i++) {
+                const layerType = layerTypes[i];
+                
+                const gsm = parseFloat(this.paperInputs[`${layerType}-GSM`]);
+                const rate = parseFloat(this.paperInputs[`${layerType}-Rate`]);
+
+                if (isNaN(gsm) || isNaN(rate) || gsm <= 0 || rate < 0) { 
+                    allInputsValid = false;
+                    break;
+                }
+
+                let layer_flute_factor = 1.0;
+                
+                if (layerType.startsWith('L')) {
+                    // Liner
+                } else if (layerType.startsWith('F')) {
+                    let flute = fluteLetters[fluteIndex];
+                    if (!flute) flute = 'C'; 
+                    const factor = FLUTE_FACTORS[flute] || 1.0;
+                    layer_flute_factor = factor;
+                    fluteIndex++;
+                } else if (ply === '1' && layerType === 'L1') {
+                    // Special case for MONO: L1 * 1.0 factor
+                    layer_flute_factor = FLUTE_FACTORS['MONO'] || 1.0;
+                }
+                
+                const layer_weight_kg = (area_m2 * gsm * layer_flute_factor) / 1000;
+                totalWeight_kg += layer_weight_kg;
+                totalBoardRate += (layer_weight_kg * rate);
+            }
+
+            if (!allInputsValid) {
+                document.getElementById('paper-rate').value = '0.00';
+                return; 
+            }
+
+            const averageRatePerKg = totalWeight_kg > 0 ? totalBoardRate / totalWeight_kg : 0;
+            
+            document.getElementById('paper-rate').value = averageRatePerKg.toFixed(2);
+        },
+
+        calculateCostingItem(type, size, ply, fluteCombo, fixedCosts, layerData, quantity, dimensionsInInches, boxName) { 
+            const structure = PLY_STRUCTURES[ply];
+            const layerTypes = structure.layers;
+            
+            const fluteLettersRaw = fluteCombo.split('/').filter(f => f).join('');
+            const fluteLetters = fluteLettersRaw.length > 0 ? fluteLettersRaw : 'C';
+            
+            const sheetDimensions = this.getCurrentSheetDimensions();
+            const area_m2 = sheetDimensions.area;
+
+            if (area_m2 <= 0) return null; 
+            
+            let totalGSM = 0;
+            let sumLinerGSMxBF = 0;
+            let sumFlutingGSM = 0;
+            let fluteIndex = 0;
+            
+            let totalWeight_kg = 0;
+            let totalBoardRate = 0;
+            
+            let paperSpec = { L1: null, F1: null, InnerL: null };
+
+            for (let i = 0; i < layerTypes.length; i++) {
+                const layerType = layerTypes[i];
+                const gsm = layerData[`${layerType}-GSM`];
+                const bf = layerData[`${layerType}-BF`];
+                const shade = layerData[`${layerType}-Shade`]; 
+                const rate = layerData[`${layerType}-Rate`]; 
+
+                if (!gsm || !bf || isNaN(rate) || rate < 0) return null; 
+
+                if (layerType === 'L1') paperSpec.L1 = { gsm, bf, shade, rate };
+                if (layerType === 'F1') paperSpec.F1 = { gsm, bf, shade, rate };
+                if (layerType.startsWith('L') && i === layerTypes.length - 1 && i > 0) paperSpec.InnerL = { gsm, bf, shade, rate };
+
+                let layer_flute_factor = 1.0;
+                
+                if (layerType.startsWith('L')) {
+                    totalGSM += gsm;
+                    sumLinerGSMxBF += (gsm * bf) / 1000;
+                } else if (layerType.startsWith('F')) {
+                    let flute = fluteLetters[fluteIndex];
+                    if (!flute) flute = 'C'; 
+                    const factor = FLUTE_FACTORS[flute] || 1.0;
+                    
+                    layer_flute_factor = factor; 
+                    
+                    totalGSM += gsm * factor;
+                    sumFlutingGSM += gsm / 2000;
+                    fluteIndex++;
+                } else if (ply === '1' && layerType === 'L1') {
+                    layer_flute_factor = FLUTE_FACTORS['MONO'] || 1.0;
+                    totalGSM += gsm * layer_flute_factor;
+                    sumLinerGSMxBF += (gsm * bf) / 1000;
+                }
+                
+                const layer_weight_kg = (area_m2 * gsm * layer_flute_factor) / 1000;
+                totalWeight_kg += layer_weight_kg;
+                totalBoardRate += (layer_weight_kg * rate);
+            }
+            
+            const calculatedBoardBF = sumLinerGSMxBF + sumFlutingGSM;
+
+            const conversionCostPerKg = parseFloat(document.getElementById('conversion-cost').value) || 0;
+            const totalConversionCost = totalWeight_kg * conversionCostPerKg;
+
+            const averageRatePerKg = totalWeight_kg > 0 ? totalBoardRate / totalWeight_kg : 0;
+
+            const totalFixedCost = fixedCosts.printing + fixedCosts.lamination + fixedCosts.die + fixedCosts.punching + fixedCosts.varnish;
+
+            const totalRate = totalBoardRate + totalConversionCost + totalFixedCost; 
+            const gstValue = totalRate * GST_RATE;
+            const totalValue = totalRate + gstValue;
+            const totalBatchCost = totalValue * quantity;
+
+            return {
+                Type: type,
+                BoxName: boxName, 
+                Size: size, 
+                Ply: ply,
+                Flute: fluteCombo,
+                PaperSpec: paperSpec, 
+                Weight: totalWeight_kg, 
+                BF: calculatedBoardBF,
+                RatePerKg: averageRatePerKg, 
+                BoardRate: totalBoardRate, 
+                ConversionCost: totalConversionCost, 
+                PrintingCost: fixedCosts.printing,
+                LaminationCost: fixedCosts.lamination,
+                DieCost: fixedCosts.die,
+                PunchingCost: fixedCosts.punching,
+                VarnishCost: fixedCosts.varnish,
+                TotalRate: totalRate,
+                GSTValue: gstValue,
+                TotalValue: totalValue,
+                Qty: quantity,
+                TotalBatchCost: totalBatchCost,
+                rawInputs: this.getAllInputs()
+            };
+        },
+        
+        updateDynamicCosts() {
+            this.updateAveragePaperCostDisplay(); 
+            
+            const quantity = parseFloat(document.getElementById('quantity-pcs').value) || 1;
+            
+            // 1. Printing Cost
+            const devCost = parseFloat(document.getElementById('total-development-cost').value) || 0;
+            const printCostPerPcs = parseFloat(document.getElementById('print-cost-per-pcs').value) || 0;
+            const printingMOQ = parseFloat(document.getElementById('printing-moq').value) || 0;
+
+            const devCostPerUnit = (quantity > 0) ? (devCost / quantity) : 0;
+
+            let effectivePrintCostPerUnit = 0;
+            if (quantity < printingMOQ && quantity > 0) {
+                effectivePrintCostPerUnit = (printingMOQ * printCostPerPcs) / quantity;
+            } else {
+                effectivePrintCostPerUnit = (quantity > 0) ? printCostPerPcs : 0;
+            }
+
+            const printingCostPerUnit = devCostPerUnit + effectivePrintCostPerUnit;
+            document.getElementById('cost-printing').value = printingCostPerUnit.toFixed(2);
+            
+            // 2. Lamination Cost
+            const laminationArea = this.getLaminationArea(); 
+            const area_in2 = laminationArea.area_in2;
+            
+            const laminationRate = parseFloat(document.getElementById('rate-of-lamination').value) || 0;
+            // Conversion: INR/sq in to INR/unit (area_in2)
+            const laminationCostPerUnit = (area_in2 * laminationRate); 
+            document.getElementById('cost-lamination').value = laminationCostPerUnit.toFixed(2);
+            
+            // 3. Die Cost
+            const totalDieCost = parseFloat(document.getElementById('total-die-cost').value) || 0;
+            const dieCostPerUnit = (quantity > 0) ? (totalDieCost / quantity) : 0;
+            document.getElementById('cost-die').value = dieCostPerUnit.toFixed(2);
+        },
+
+        toggleRscInchesInput() {
+            const checked = document.getElementById('toggle-inches-rsc').checked;
+            const inchesGroup = document.getElementById('inches-inputs-group-rsc');
+            const mmInputs = [
+                document.getElementById('rsc-l'),
+                document.getElementById('rsc-w'),
+                document.getElementById('rsc-h'),
+            ];
+            
+            if (checked) {
+                inchesGroup.style.display = 'block';
+                mmInputs.forEach(input => {
+                    input.disabled = true;
+                    input.classList.add('bg-gray-200');
+                });
+                this.convertRscInchesToMM();
+            } else {
+                inchesGroup.style.display = 'none';
+                mmInputs.forEach(input => {
+                    input.disabled = false;
+                    input.classList.remove('bg-gray-200');
+                });
+            }
+            this.updateRSCSheetDisplay();
+            this.updateDynamicCosts();
+        },
+
+        convertRscInchesToMM() {
+            if (!document.getElementById('toggle-inches-rsc').checked) return;
+
+            const dimensions = ['l', 'w', 'h'];
+            let needsUpdate = false;
+
+            dimensions.forEach(dim => {
+                const inchInput = document.getElementById(`rsc-${dim}-in`);
+                const mmInput = document.getElementById(`rsc-${dim}`);
+
+                const inches = parseFloat(inchInput.value);
+                
+                if (!isNaN(inches) && inches > 0) {
+                    const mm = inches * INCH_TO_MM;
+                    if (mmInput.value !== mm.toFixed(2)) {
+                        mmInput.value = mm.toFixed(2);
+                        needsUpdate = true;
+                    }
+                } else {
+                    if (mmInput.value !== '0.00' && mmInput.value !== '') {
+                        mmInput.value = ''; 
+                        needsUpdate = true;
+                    }
+                }
+            });
+            
+            if (needsUpdate) {
+                this.updateRSCSheetDisplay();
+                this.updateDynamicCosts();
+            }
+        },
+        
+        toggleSheetInchesInput() {
+            const checked = document.getElementById('toggle-inches-sheet').checked;
+            const inchesGroup = document.getElementById('inches-inputs-group-sheet');
+            const mmInputs = [
+                document.getElementById('sheet-l'),
+                document.getElementById('sheet-w'),
+            ];
+            
+            if (checked) {
+                inchesGroup.style.display = 'block';
+                mmInputs.forEach(input => {
+                    input.disabled = true;
+                    input.classList.add('bg-gray-200');
+                });
+                this.convertSheetInchesToMM();
+            } else {
+                inchesGroup.style.display = 'none';
+                mmInputs.forEach(input => {
+                    input.disabled = false;
+                    input.classList.remove('bg-gray-200');
+                });
+            }
+            this.updateSheetDisplay();
+            this.updateDynamicCosts();
+        },
+
+        convertSheetInchesToMM() {
+            if (!document.getElementById('toggle-inches-sheet').checked) return;
+
+            const dimensions = ['l', 'w'];
+            let needsUpdate = false;
+
+            dimensions.forEach(dim => {
+                const inchInput = document.getElementById(`sheet-${dim}-in`);
+                const mmInput = document.getElementById(`sheet-${dim}`);
+
+                const inches = parseFloat(inchInput.value);
+                
+                if (!isNaN(inches) && inches > 0) {
+                    const mm = inches * INCH_TO_MM;
+                    if (mmInput.value !== mm.toFixed(2)) {
+                        mmInput.value = mm.toFixed(2);
+                        needsUpdate = true;
+                    }
+                } else {
+                    if (mmInput.value !== '0.00' && mmInput.value !== '') {
+                        mmInput.value = ''; 
+                        needsUpdate = true;
+                    }
+                }
+            });
+            
+            if (needsUpdate) {
+                this.updateSheetDisplay();
+                this.updateDynamicCosts();
+            }
+        },
+
+        copyFluteValues() {
+            const ply = document.getElementById('ply').value;
+            const layers = PLY_STRUCTURES[ply].layers;
+
+            const f1Layer = layers.find(layer => layer.startsWith('F'));
+
+            if (!f1Layer) {
+                this.showMessage('No fluting layer found to copy values from.', 'red');
+                return;
+            }
+
+            const f1GsmInput = document.getElementById(`${f1Layer}-GSM`);
+            const f1BfInput = document.getElementById(`${f1Layer}-BF`);
+            const f1ShadeInput = document.getElementById(`${f1Layer}-Shade`); 
+            const f1RateInput = document.getElementById(`${f1Layer}-Rate`); 
+
+            const f1Gsm = parseFloat(f1GsmInput?.value);
+            const f1Bf = parseFloat(f1BfInput?.value);
+            const f1Shade = f1ShadeInput?.value; 
+            const f1Rate = parseFloat(f1RateInput?.value); 
+
+            if (isNaN(f1Gsm) || isNaN(f1Bf) || f1Gsm <= 0 || f1Bf <= 0 || !f1Shade || isNaN(f1Rate) || f1Rate <= 0) { 
+                this.showMessage(`Please enter valid GSM, BF, Shade, and Rate values for ${f1Layer} first.`, 'red');
+                return;
+            }
+
+            layers.forEach(layer => {
+                if (layer !== 'L1') {
+                    const gsmId = `${layer}-GSM`;
+                    const bfId = `${layer}-BF`;
+                    const shadeId = `${layer}-Shade`; 
+                    const rateId = `${layer}-Rate`; 
+
+                    const gsmInput = document.getElementById(gsmId);
+                    const bfInput = document.getElementById(bfId);
+                    const shadeInput = document.getElementById(shadeId); 
+                    const rateInput = document.getElementById(rateId); 
+                    
+                    if (gsmInput && bfInput && shadeInput && rateInput) { 
+                        gsmInput.value = f1Gsm;
+                        bfInput.value = f1Bf;
+                        shadeInput.value = f1Shade; 
+                        rateInput.value = f1Rate; 
+                    }
+
+                    this.paperInputs[gsmId] = f1Gsm;
+                    this.paperInputs[bfId] = f1Bf;
+                    this.paperInputs[shadeId] = f1Shade; 
+                    this.paperInputs[rateId] = f1Rate; 
+                }
+            });
+
+            this.showMessage(`Values copied from ${f1Layer} to all other layers (except L1).`, 'blue');
+        },
+        
+        updateRSCSheetDisplay() {
+            const dimensions = this.getRSCSheetDimensions();
+            
+            const cutLengthSpan = document.getElementById('display-sheet-cut-length');
+            const reelSizeSpan = document.getElementById('display-reel-size');
+            const weightSpan = document.getElementById('display-sheet-weight'); 
+            const bsSpan = document.getElementById('display-bs-rsc');
+            
+            const weight_kg = this.getCurrentSheetWeight();
+            const currentBS = this.getCurrentBS();
+
+            const lengthIn = dimensions.length / INCH_TO_MM;
+            const widthIn = dimensions.width / INCH_TO_MM;
+
+            if (dimensions.length > 0) {
+                cutLengthSpan.innerHTML = `${dimensions.length.toFixed(2)} mm <span class="text-xs text-blue-600 font-normal">(${lengthIn.toFixed(2)} in)</span>`;
+                reelSizeSpan.innerHTML = `${dimensions.width.toFixed(2)} mm <span class="text-xs text-blue-600 font-normal">(${widthIn.toFixed(2)} in)</span>`;
+                weightSpan.textContent = `${weight_kg.toFixed(3)} Kg`; 
+                bsSpan.textContent = `${currentBS.toFixed(2)} kg/cm²`;
+            } else {
+                cutLengthSpan.innerHTML = '0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span>';
+                reelSizeSpan.innerHTML = '0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span>';
+                weightSpan.textContent = '0.000 Kg'; 
+                bsSpan.textContent = '0.00 kg/cm²';
+            }
+        },
+
+        updateSheetDisplay() {
+            const dimensions = this.getFlatSheetDimensions();
+            
+            const cutLengthSpan = document.getElementById('display-sheet-cut-length-sheet');
+            const reelSizeSpan = document.getElementById('display-reel-size-sheet');
+            const weightSpan = document.getElementById('display-sheet-weight-sheet'); 
+            const bsSpan = document.getElementById('display-bs-sheet');
+            
+            const weight_kg = this.getCurrentSheetWeight();
+            const currentBS = this.getCurrentBS();
+            
+            const lengthIn = dimensions.length / INCH_TO_MM;
+            const widthIn = dimensions.width / INCH_TO_MM;
+
+            if (dimensions.length > 0) {
+                cutLengthSpan.innerHTML = `${dimensions.length.toFixed(2)} mm <span class="text-xs text-blue-600 font-normal">(${lengthIn.toFixed(2)} in)</span>`;
+                reelSizeSpan.innerHTML = `${dimensions.width.toFixed(2)} mm <span class="text-xs text-blue-600 font-normal">(${widthIn.toFixed(2)} in)</span>`;
+                weightSpan.textContent = `${weight_kg.toFixed(3)} Kg`; 
+                bsSpan.textContent = `${currentBS.toFixed(2)} kg/cm²`;
+            } else {
+                cutLengthSpan.innerHTML = '0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span>';
+                reelSizeSpan.innerHTML = '0.00 mm <span class="text-xs text-blue-600 font-normal">(0.00 in)</span>';
+                weightSpan.textContent = '0.000 Kg'; 
+                bsSpan.textContent = '0.00 kg/cm²';
+            }
+        },
+        
+        toggleCostInput(checked, elementId) {
+            document.getElementById(elementId).style.display = checked ? 'block' : 'none';
+        },
+        
+        togglePrintingDetails(checked) {
+            this.toggleCostInput(checked, 'printing-details');
+        },
+        
+        toggleLaminationDetails(checked) {
+            this.toggleCostInput(checked, 'lamination-details');
+            if (!checked) {
+                document.getElementById('customize-lamination-area-check').checked = false;
+                this.toggleLaminationCustomArea(false);
+            }
+        },
+        
+        toggleLaminationCustomArea(checked) {
+            this.toggleCostInput(checked, 'lamination-custom-area');
+            this.updateDynamicCosts(); 
+        },
+
+        handlePlyChange() {
+            const ply = document.getElementById('ply').value;
+            this.renderFluteOptions(ply);
+            this.renderDynamicPaperInputs(ply);
+            this.updateGlueFlapDefault(); 
+            this.render(); 
+            this.updateAveragePaperCostDisplay(); 
+            this.handleDimensionTypeChange(); 
+        },
+        
+        handleFluteChange() {
+            const ply = document.getElementById('ply').value;
+            this.renderDynamicPaperInputs(ply); 
+            this.render(); 
+            this.updateAveragePaperCostDisplay(); 
+        },
+
+        renderFluteOptions(ply) {
+            const fluteSelect = document.getElementById('flute-combination');
+            const options = PLY_STRUCTURES[ply].flutes;
+
+            fluteSelect.innerHTML = options.map(f => 
+                `<option value="${f}">${this.formatFluteComboWithFactor(f)}</option>`
+            ).join('');
+
+            if (ply === '5') {
+                 fluteSelect.value = 'BC';
+            } else {
+                 fluteSelect.value = options[0] || '';
+            }
+
+            document.getElementById('flute-breakdown').textContent = PLY_STRUCTURES[ply].breakdown;
+        },
+
+        renderDynamicPaperInputs(ply) {
+            const container = document.getElementById('dynamic-paper-inputs');
+            const layers = PLY_STRUCTURES[ply].layers;
+            
+            container.innerHTML = '';
+            this.paperInputs = {};
+
+            const fluteCombo = document.getElementById('flute-combination').value;
+            let fluteIndex = 0;
+            
+            const bfOptions = [14, 16, 18, 20, 22, 24, 28, 35, 40]; 
+
+            const inputsHTML = layers.map((layer, index) => {
+                let label, defaultGSM, defaultBF;
+
+                if (layer.startsWith('L')) {
+                    label = index === 0 ? 'Outer Liner (L1)' : (index === layers.length - 1 ? 'Inner Liner (L' + (layers.filter(l=>l.startsWith('L')).length) + ')' : 'Middle Liner (' + layer + ')');
+                    
+                    if (layer === 'L1') {
+                        defaultGSM = 180;
+                        defaultBF = 24; 
+                    } else if (layer === 'L3') { 
+                        defaultGSM = 120;
+                        defaultBF = 18; 
+                    } else { 
+                        defaultGSM = 150;
+                        defaultBF = 18; 
+                    }
+                    
+                } else {
+                    let fluteLetter = (fluteCombo === 'MONO' || fluteCombo.includes('/')) ? (fluteIndex < fluteCombo.length ? fluteCombo[fluteIndex] : 'C') : fluteCombo[fluteIndex];
+                    if (!fluteLetter || fluteLetter === '/') fluteLetter = 'C'; 
+                    label = `Fluting/Media (${layer}, ${fluteLetter}-Flute)`;
+                    
+                    if (ply == '3') {
+                        defaultGSM = 150;
+                    } else if (ply == '5') {
+                        defaultGSM = 120;
+                    } else {
+                        defaultGSM = 150; 
+                    }
+
+                    defaultBF = 18; 
+                    fluteIndex++;
+                }
+
+                let defaultShade = 'Natural/Kraft'; 
+
+                if (layer.startsWith('L') && index === 0) { 
+                    defaultShade = 'Golden'; 
+                } else if (layer.startsWith('F')) { 
+                    defaultShade = 'Natural/Kraft'; 
+                } else { 
+                    defaultShade = 'Natural/Kraft'; 
+                }
+
+                const rateKey = `${defaultBF}_${defaultShade}`;
+                const defaultRate = RATE_MAP[rateKey] || 0.00; 
+
+                this.paperInputs[`${layer}-GSM`] = defaultGSM;
+                this.paperInputs[`${layer}-BF`] = defaultBF;
+                this.paperInputs[`${layer}-Shade`] = defaultShade;
+                this.paperInputs[`${layer}-Rate`] = defaultRate;
+
+                const bfDropdownHTML = `
+                    <select id="${layer}-BF" class="input-field !py-1" oninput="app.updatePaperInput(this.id, this.value)">
+                        ${bfOptions.map(bf => `<option value="${bf}" ${bf === defaultBF ? 'selected' : ''}>${bf}</option>`).join('')}
+                    </select>
+                `;
+
+                return `
+                    <div class="p-3 border border-green-300 rounded-lg">
+                        <label class="block text-xs font-semibold text-green-700 mb-2">${label}</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label for="${layer}-GSM" class="block text-xxs font-medium text-gray-600 mb-1">GSM</label>
+                                <input type="number" step="1" placeholder="e.g., 150" id="${layer}-GSM" value="${defaultGSM}" class="input-field !py-1" oninput="app.updatePaperInput(this.id, this.value)">
+                            </div>
+                            <div>
+                                <label for="${layer}-BF" class="block text-xxs font-medium text-gray-600 mb-1">BF</label>
+                                ${bfDropdownHTML}
+                            </div>
+                            <div>
+                                <label for="${layer}-Shade" class="block text-xxs font-medium text-gray-600 mb-1">Shade</label>
+                                <select id="${layer}-Shade" class="input-field !py-1" oninput="app.updatePaperInput(this.id, this.value)">
+                                    <option value="Golden" ${defaultShade === 'Golden' ? 'selected' : ''}>Golden</option>
+                                    <option value="Natural/Kraft" ${defaultShade === 'Natural/Kraft' ? 'selected' : ''}>Natural/Kraft</option>
+                                    <option value="Duplex LWC" ${defaultShade === 'Duplex LWC' ? 'selected' : ''}>Duplex LWC</option>
+                                    <option value="Duplex HWC" ${defaultShade === 'Duplex HWC' ? 'selected' : ''}>Duplex HWC</option>
+                                    <option value="Duplex White Back" ${defaultShade === 'Duplex White Back' ? 'selected' : ''}>Duplex White Back</option>
+                                    <option value="White Kraft Line" ${defaultShade === 'White Kraft Line' ? 'selected' : ''}>White Kraft Line</option>
+                                    <option value="Virgin Kraft Liner" ${defaultShade === 'Virgin Kraft Liner' ? 'selected' : ''}>Virgin Kraft Liner</option>
+                                    <option value="Bagass" ${defaultShade === 'Bagass' ? 'selected' : ''}>Bagass</option>
+                                    <option value="SBS" ${defaultShade === 'SBS' ? 'selected' : ''}>SBS</option>
+                                    <option value="FBB" ${defaultShade === 'FBB' ? 'selected' : ''}>FBB</option>
+                                </select>
+                            </div>
+                             <div>
+                                <label for="${layer}-Rate" class="block text-xxs font-medium text-gray-600 mb-1">Rate (₹/Kg)</label>
+                                <input type="number" step="0.01" placeholder="e.g., 40.0" id="${layer}-Rate" value="${defaultRate.toFixed(2)}" class="input-field !py-1" oninput="app.updatePaperInput(this.id, this.value)" maxlength="5">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = inputsHTML;
+            
+            layers.forEach(layer => {
+                this.updatePaperRate(layer);
+            });
+        },
+
+        updatePaperInput(id, value) {
+            const isNumeric = !id.endsWith('-Shade');
+                this.paperInputs[id] = isNumeric ? parseFloat(value) : value;
+
+            const prefix = id.split('-').slice(0, -1).join('-'); 
+
+            if (id.endsWith('-BF') || id.endsWith('-Shade')) {
+                this.updatePaperRate(prefix);
+            } else if (id.endsWith('-Rate')) {
+                const bf = this.paperInputs[`${prefix}-BF`];
+                const shade = this.paperInputs[`${prefix}-Shade`];
+                if (bf && shade) {
+                    const key = `${bf}_${shade}`;
+                    this.rateOverrides[key] = parseFloat(value);
+                }
+                this.updateAveragePaperCostDisplay();
+            } else if (id.endsWith('-GSM')) {
+                this.updateAveragePaperCostDisplay();
+            }
+
+            if (this.currentTab === 'rsc') {
+                this.updateRSCSheetDisplay();
+            } else {
+                this.updateSheetDisplay();
+            }
+        },
+
+        getLayerData() {
+            const data = {};
+            let allPresent = true;
+
+            for (const key in this.paperInputs) {
+                const value = this.paperInputs[key];
+                
+                if (key.endsWith('-GSM') || key.endsWith('-BF') || key.endsWith('-Rate')) {
+                    if (key.endsWith('-Rate')) {
+                        if (isNaN(value) || value < 0) { 
+                            allPresent = false;
+                            break;
+                        }
+                    } else {
+                        if (isNaN(value) || value <= 0) {
+                            allPresent = false;
+                            break;
+                        }
+                    }
+                } else if (key.endsWith('-Shade')) {
+                    if (!value || String(value).trim() === '') {
+                        allPresent = false;
+                        break;
+                    }
+                }
+                
+                data[key] = value;
+            }
+            if (!allPresent) return null;
+            return data;
+        },
+
+        getAllInputs() {
+            const ply = document.getElementById('ply').value;
+            const layers = PLY_STRUCTURES[ply].layers;
+            const paperData = {};
+            layers.forEach(layer => {
+                paperData[`${layer}-GSM`] = document.getElementById(`${layer}-GSM`).value;
+                paperData[`${layer}-BF`] = document.getElementById(`${layer}-BF`).value;
+                paperData[`${layer}-Shade`] = document.getElementById(`${layer}-Shade`).value; 
+                paperData[`${layer}-Rate`] = document.getElementById(`${layer}-Rate`).value; 
+            });
+
+            return {
+                partyName: document.getElementById('quote-party-name').value,
+                customerCompany: document.getElementById('quote-customer-company').value,
+                customerEmail: document.getElementById('quote-customer-email').value,
+                customerMobile: document.getElementById('quote-customer-mobile').value,
+                boxNameRsc: document.getElementById('quote-box-name-rsc').value, 
+                boxNameSheet: document.getElementById('quote-box-name-sheet').value, 
+                
+                // Own Company Details
+                companyName: document.getElementById('quote-company-name').value,
+                gstNo: document.getElementById('quote-gst-no').value,
+                address: document.getElementById('quote-address').value,
+                phone: document.getElementById('quote-phone').value,
+                email: document.getElementById('quote-email').value,
+                website: document.getElementById('quote-website').value,
+                social: document.getElementById('quote-social-media').value,
+                location: document.getElementById('quote-google-location').value,
+
+                paymentTerms: document.getElementById('quote-payment-terms').value,
+                deliveryTime: document.getElementById('quote-delivery-time').value,
+                
+                rscL: document.getElementById('rsc-l').value,
+                rscW: document.getElementById('rsc-w').value,
+                rscH: document.getElementById('rsc-h').value,
+                rscL_in: document.getElementById('rsc-l-in').value,
+                rscW_in: document.getElementById('rsc-w-in').value,
+                rscH_in: document.getElementById('rsc-h-in').value,
+                rscInchesToggle: document.getElementById('toggle-inches-rsc').checked,
+                dimensionTypeRsc: document.getElementById('dimension-type').value,
+
+                sheetL: document.getElementById('sheet-l').value,
+                sheetW: document.getElementById('sheet-w').value,
+                sheetL_in: document.getElementById('sheet-l-in').value,
+                sheetW_in: document.getElementById('sheet-w-in').value,
+                sheetInchesToggle: document.getElementById('toggle-inches-sheet').checked,
+
+                rscGlueFlap: document.getElementById('rsc-glue-flap').value,
+                rscDeckleAllowance: document.getElementById('rsc-deckle-allowance').value,
+                rscMaxLengthThreshold: document.getElementById('rsc-max-length-threshold').value,
+                sheetAllowance: document.getElementById('sheet-allowance').value,
+
+                ply: ply,
+                fluteCombo: document.getElementById('flute-combination').value,
+                conversionCost: document.getElementById('conversion-cost').value, 
+
+                quantity: document.getElementById('quantity-pcs').value,
+                
+                printCheck: document.getElementById('cost-printing-check').checked,
+                printType: document.getElementById('printing-type').value,
+                printColors: document.getElementById('printing-colors').value,
+                devCost: document.getElementById('total-development-cost').value,
+                printCostPerPcs: document.getElementById('print-cost-per-pcs').value, 
+                printingMOQ: document.getElementById('printing-moq').value, 
+                
+                laminationCheck: document.getElementById('cost-lamination-check').checked,
+                laminationRate: document.getElementById('rate-of-lamination').value,
+                laminationCustomCheck: document.getElementById('customize-lamination-area-check').checked,
+                laminationL: document.getElementById('lamination-l').value,
+                laminationW: document.getElementById('lamination-w').value,
+                
+                varnishCheck: document.getElementById('cost-varnish-check').checked,
+                varnishCost: document.getElementById('cost-varnish').value,
+                
+                dieCheck: document.getElementById('cost-die-check').checked,
+                totalDieCost: document.getElementById('total-die-cost').value, 
+                
+                punchCheck: document.getElementById('cost-punching-check').checked,
+                punchCost: document.getElementById('cost-punching').value,
+                
+                paperData: paperData,
+                
+                currentTab: this.currentTab
+            };
+        },
+
+        // Function to restore global form settings (excluding quote items)
+        setGlobalInputsAndPaper(inputs) {
+            // Customer Inputs
+            document.getElementById('quote-party-name').value = inputs.partyName;
+            document.getElementById('quote-customer-company').value = inputs.customerCompany || '';
+            document.getElementById('quote-customer-email').value = inputs.customerEmail || '';
+            document.getElementById('quote-customer-mobile').value = inputs.customerMobile || '';
+            document.getElementById('quote-box-name-rsc').value = inputs.boxNameRsc || ''; 
+            document.getElementById('quote-box-name-sheet').value = inputs.boxNameSheet || ''; 
+            
+            // Own Company Details
+            this.setCompanyInputs(inputs);
+            document.getElementById('quote-payment-terms').value = inputs.paymentTerms;
+            document.getElementById('quote-delivery-time').value = inputs.deliveryTime;
+
+            // Dimension Inputs
+            document.getElementById('rsc-l').value = inputs.rscL;
+            document.getElementById('rsc-w').value = inputs.rscW;
+            document.getElementById('rsc-h').value = inputs.rscH;
+            document.getElementById('rsc-l-in').value = inputs.rscL_in;
+            document.getElementById('rsc-w-in').value = inputs.rscW_in;
+            document.getElementById('rsc-h-in').value = inputs.rscH_in;
+            document.getElementById('toggle-inches-rsc').checked = inputs.rscInchesToggle;
+
+            document.getElementById('sheet-l').value = inputs.sheetL;
+            document.getElementById('sheet-w').value = inputs.sheetW;
+            document.getElementById('sheet-l-in').value = inputs.sheetL_in;
+            document.getElementById('sheet-w-in').value = inputs.sheetW_in;
+            document.getElementById('toggle-inches-sheet').checked = inputs.sheetInchesToggle;
+
+            document.getElementById('rsc-glue-flap').value = inputs.rscGlueFlap;
+            document.getElementById('rsc-deckle-allowance').value = inputs.rscDeckleAllowance;
+            document.getElementById('rsc-max-length-threshold').value = inputs.rscMaxLengthThreshold;
+            document.getElementById('sheet-allowance').value = inputs.sheetAllowance;
+
+            document.getElementById('quantity-pcs').value = inputs.quantity;
+            
+            // Fixed Costs
+            document.getElementById('cost-printing-check').checked = inputs.printCheck;
+            document.getElementById('printing-type').value = inputs.printType;
+            document.getElementById('printing-colors').value = inputs.printColors;
+            document.getElementById('total-development-cost').value = inputs.devCost;
+            document.getElementById('print-cost-per-pcs').value = inputs.printCostPerPcs;
+            document.getElementById('printing-moq').value = inputs.printingMOQ;
+            
+            document.getElementById('cost-lamination-check').checked = inputs.laminationCheck;
+            document.getElementById('rate-of-lamination').value = inputs.laminationRate;
+            document.getElementById('customize-lamination-area-check').checked = inputs.laminationCustomCheck;
+            document.getElementById('lamination-l').value = inputs.laminationL;
+            document.getElementById('lamination-w').value = inputs.laminationW;
+            
+            document.getElementById('cost-varnish-check').checked = inputs.varnishCheck;
+            document.getElementById('cost-varnish').value = inputs.varnishCost;
+            
+            document.getElementById('cost-die-check').checked = inputs.dieCheck;
+            document.getElementById('total-die-cost').value = inputs.totalDieCost;
+            
+            document.getElementById('cost-punching-check').checked = inputs.punchCheck;
+            document.getElementById('cost-punching').value = inputs.punchCost;
+
+            this.toggleCostInput(inputs.printCheck, 'printing-details');
+            this.toggleCostInput(inputs.laminationCheck, 'lamination-details');
+            this.toggleCostInput(inputs.laminationCustomCheck, 'lamination-custom-area');
+            this.toggleCostInput(inputs.varnishCheck, 'varnish-input-group');
+            this.toggleCostInput(inputs.dieCheck, 'die-input-group');
+            this.toggleCostInput(inputs.punchCheck, 'punching-input-group');
+
+            // Paper Inputs
+            document.getElementById('ply').value = inputs.ply;
+            this.handlePlyChange(); 
+
+            document.getElementById('flute-combination').value = inputs.fluteCombo;
+            this.handleFluteChange(); 
+            
+            document.getElementById('conversion-cost').value = inputs.conversionCost || '10.0'; 
+            
+            document.getElementById('dimension-type').value = inputs.dimensionTypeRsc || 'OD';
+            this.handleDimensionTypeChange(); 
+
+            for (const key in inputs.paperData) {
+                const el = document.getElementById(key);
+                if (el) {
+                    el.value = inputs.paperData[key];
+                    this.updatePaperInput(key, inputs.paperData[key]);
+                }
+            }
+            
+            this.setTab(inputs.currentTab);
+            this.updateAveragePaperCostDisplay(); 
+        },
+
+        // Original function, now calls setGlobalInputsAndPaper before restoring quoteItems
+        setAllInputs(inputs) {
+            this.setGlobalInputsAndPaper(inputs);
+        },
+        
+        updateQuoteItemsGlobals() {
+            const globals = {
+                partyName: document.getElementById('quote-party-name').value,
+                customerCompany: document.getElementById('quote-customer-company').value,
+                customerEmail: document.getElementById('quote-customer-email').value,
+                customerMobile: document.getElementById('quote-customer-mobile').value,
+                
+                companyName: document.getElementById('quote-company-name').value,
+                gstNo: document.getElementById('quote-gst-no').value,
+                address: document.getElementById('quote-address').value,
+                phone: document.getElementById('quote-phone').value,
+                paymentTerms: document.getElementById('quote-payment-terms').value,
+                deliveryTime: document.getElementById('quote-delivery-time').value,
+                website: document.getElementById('quote-website').value,
+                email: document.getElementById('quote-email').value,
+                social: document.getElementById('quote-social-media').value,
+                location: document.getElementById('quote-google-location').value
+            };
+
+            this.quoteItems.forEach(item => {
+                if (item.rawInputs) {
+                    Object.assign(item.rawInputs, globals);
+                }
+            });
+        },
+
+
+        addItemToQuote() {
+            const ply = document.getElementById('ply').value;
+            const fluteCombo = document.getElementById('flute-combination').value;
+            const quantity = parseFloat(document.getElementById('quantity-pcs').value) || 1;
+            
+            let boxName; 
+            if (this.currentTab === 'rsc') {
+                boxName = document.getElementById('quote-box-name-rsc').value || '';
+            } else {
+                boxName = document.getElementById('quote-box-name-sheet').value || '';
+            }
+
+            const layerData = this.getLayerData();
+            if (!layerData) {
+                this.showMessage('Please ensure all paper GSM/BF values are valid and greater than zero.', 'red');
+                return;
+            }
+            
+            this.updateDynamicCosts(); 
+            
+            const fixedCosts = {
+                printing: document.getElementById('cost-printing-check').checked ? parseFloat(document.getElementById('cost-printing').value) : 0,
+                lamination: document.getElementById('cost-lamination-check').checked ? parseFloat(document.getElementById('cost-lamination').value) : 0,
+                varnish: document.getElementById('cost-varnish-check').checked ? parseFloat(document.getElementById('cost-varnish').value) : 0,
+                die: document.getElementById('cost-die-check').checked ? parseFloat(document.getElementById('cost-die').value) : 0,
+                punching: document.getElementById('cost-punching-check').checked ? parseFloat(document.getElementById('cost-punching').value) : 0,
+            };
+
+            let item, size, type, dimensionsInInches;
+
+            if (this.currentTab === 'rsc') {
+                type = 'RSC Box';
+                dimensionsInInches = document.getElementById('toggle-inches-rsc').checked;
+                const dimType = document.getElementById('dimension-type').value;
+
+                if (dimensionsInInches) {
+                    const L = document.getElementById('rsc-l-in').value;
+                    const W = document.getElementById('rsc-w-in').value;
+                    const H = document.getElementById('rsc-h-in').value;
+                    if (!L || !W || !H || L <= 0 || W <= 0 || H <= 0) {
+                        this.showMessage('Please enter valid RSC dimensions (L, W, H).', 'red'); return;
+                    }
+                    size = `${L}x${W}x${H} ${dimType} in`;
+                } else {
+                    const L = document.getElementById('rsc-l').value;
+                    const W = document.getElementById('rsc-w').value;
+                    const H = document.getElementById('rsc-h').value;
+                    if (!L || !W || !H || L <= 0 || W <= 0 || H <= 0) {
+                        this.showMessage('Please enter valid RSC dimensions (L, W, H).', 'red'); return;
+                    }
+                    size = `${L}x${W}x${H} ${dimType} mm`;
+                }
+            } else {
+                type = 'Sheet Size';
+                dimensionsInInches = document.getElementById('toggle-inches-sheet').checked;
+                if (dimensionsInInches) {
+                    const L = document.getElementById('sheet-l-in').value;
+                    const W = document.getElementById('sheet-w-in').value;
+                    if (!L || !W || L <= 0 || W <= 0) {
+                        this.showMessage('Please enter valid Sheet dimensions (L, W).', 'red'); return;
+                    }
+                    size = `${L}x${W} in`;
+                } else {
+                    const L = document.getElementById('sheet-l').value;
+                    const W = document.getElementById('sheet-w').value;
+                     if (!L || !W || L <= 0 || W <= 0) {
+                        this.showMessage('Please enter valid Sheet dimensions (L, W).', 'red'); return;
+                    }
+                    size = `${L}x${W} mm`;
+                }
+            }
+            
+            item = this.calculateCostingItem(type, size, ply, fluteCombo, fixedCosts, layerData, quantity, dimensionsInInches, boxName); 
+
+            if (item) {
+                if (this.editingIndex !== null) {
+                    this.quoteItems[this.editingIndex] = item;
+                    this.showMessage('Quote item updated successfully.', 'green');
+                    this.cancelEdit(); 
+                } else {
+                    this.quoteItems.push(item);
+                    this.showMessage('Item added to quote successfully.', 'green');
+                }
+            } else {
+                this.showMessage('Please enter valid dimensions and ensure all inputs are filled.', 'red');
+            }
+
+            this.render();
+        },
+        
+        editItem(index) {
+            if (this.editingIndex !== null) {
+                this.showMessage('Please save or cancel your current edit first.', 'yellow');
+                return;
+            }
+            
+            const item = this.quoteItems[index];
+            if (!item.rawInputs) {
+                this.showMessage('This item cannot be edited (missing raw data). Please remove and add it again.', 'red');
+                return;
+            }
+            
+            this.setAllInputs(item.rawInputs);
+            
+            this.editingIndex = index;
+            
+            document.getElementById('add-item-button').innerHTML = '<span>Update Quote Item</span>';
+            document.getElementById('add-item-button').classList.replace('bg-green-600', 'bg-blue-600');
+            document.getElementById('add-item-button').classList.replace('hover:bg-green-700', 'hover:bg-blue-700');
+            document.getElementById('cancel-edit-button').style.display = 'inline-block';
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            this.showMessage(`Editing Item ${index + 1}.`, 'blue');
+        },
+        
+        cancelEdit() {
+            this.editingIndex = null;
+            
+            document.getElementById('add-item-button').innerHTML = '<span>Add Item to Quote</span>';
+            document.getElementById('add-item-button').classList.replace('bg-blue-600', 'bg-green-600');
+            document.getElementById('add-item-button').classList.replace('hover:bg-blue-700', 'hover:bg-green-700');
+            document.getElementById('cancel-edit-button').style.display = 'none';
+            
+            this.showMessage('Edit canceled.', 'blue');
+        },
+
+
+        removeItem(index) {
+            this.quoteItems.splice(index, 1);
+            if (this.editingIndex === index) {
+                this.cancelEdit();
+            }
+            this.render();
+        },
+
+        clearQuote(confirmRequired = false) {
+            // Using custom modal is recommended instead of native confirm()
+            if (!confirmRequired || window.confirm("Are you sure you want to clear all items from the quote?")) {
+                this.quoteItems = [];
+                this.cancelEdit(); 
+                this.render();
+                this.showMessage('Quote cleared successfully.', 'blue');
+            }
+        },
+        
+        getPaperSpecSummary(item) {
+            if (!item.PaperSpec) return '';
+            
+            const { L1, F1, InnerL } = item.PaperSpec;
+            let spec = '';
+            
+            const innerLinerName = 'L' + Math.ceil(parseInt(item.Ply) / 2);
+
+            if (L1) {
+                spec += `\n  - Outer (L1): ${L1.gsm} GSM / ${L1.bf} BF (${L1.shade})`;
+            }
+            if (F1) {
+                spec += `\n  - Flute (F1): ${F1.gsm} GSM / ${F1.bf} BF (${F1.shade})`;
+            }
+            if (InnerL) {
+                spec += `\n  - Inner (${innerLinerName}): ${InnerL.gsm} GSM / ${InnerL.bf} BF (${InnerL.shade})`;
+            }
+
+            return spec ? `\n📝 *Paper Spec:*${spec}` : '';
+        },
+
+        generateWhatsAppMessage() {
+            this.updateQuoteItemsGlobals(); 
+            
+            if (this.quoteItems.length === 0) return "⚠️ No items in the quote to share.";
+
+            const partyName = document.getElementById('quote-party-name').value || 'Valued Customer';
+            const customerCompany = document.getElementById('quote-customer-company').value;
+            const companyName = document.getElementById('quote-company-name').value || '[Your Company]';
+            const paymentTerms = document.getElementById('quote-payment-terms').value;
+            const deliveryTime = document.getElementById('quote-delivery-time').value;
+            
+            const website = document.getElementById('quote-website').value;
+            const email = document.getElementById('quote-email').value;
+            const social = document.getElementById('quote-social-media').value;
+            const location = document.getElementById('quote-google-location').value;
+ 
+            const toEmojiNum = (num) => {
+                const emojis = {'0':'0️⃣', '1':'1️⃣', '2':'2️⃣', '3':'3️⃣', '4':'4️⃣', '5':'5️⃣', '6':'6️⃣', '7':'7️⃣', '8':'8️⃣', '9':'9️⃣', '.':'.'};
+                return num.toString().split('').map(c => emojis[c] || c).join('');
+            };
+
+            let grandTotalBatchCost = 0;
+            
+            let recipient = partyName;
+            if (customerCompany) recipient += ` (${customerCompany})`;
+
+            let message = `👋 Dear ${recipient},\n\n📄 Here is your quote from *${companyName}*:\n\n`;
+
+            this.quoteItems.forEach((item, index) => {
+                const sizeLabel = item.Type === 'RSC Box' ? '📦 *Box Size :*' : '📄 *Sheet Size :*';
+                const { rawInputs } = item;
+                
+                message += `➖➖➖➖➖➖➖➖➖➖\n`;
+                message += `*Item ${index + 1}*\n`;
+                message += `${sizeLabel} (${item.Size})\n`;
+                if (item.BoxName) message += `🏷️ *Item Name:* ${item.BoxName}\n`; 
+                message += `🏗️ *Board:* ${item.Ply} Ply\n`;
+                message += `🌊 *Flute:* ${item.Flute}\n`;
+                
+                if (rawInputs.printCheck) {
+                    message += `🎨 *Printing:* ${rawInputs.printType}, ${rawInputs.printColors} Color(s)\n`;
+                } else {
+                    message += `🎨 *Printing:* Plain Box\n`;
+                }
+                
+                message += this.getPaperSpecSummary(item) + '\n';
+                
+                message += `\n🔢 *Quantity:* ${item.Qty.toLocaleString('en-IN')} Pcs\n`;
+                
+                const rateExcl = item.TotalRate.toFixed(2);
+                const rateIncl = item.TotalValue.toFixed(2);
+
+                message += `💰 *Total Rate (Excl. GST):* ₹${toEmojiNum(rateExcl)} /pc\n`;
+                message += `💵 *Total Rate (Incl. GST 5%):* ₹${toEmojiNum(rateIncl)} /pc\n`;
+                grandTotalBatchCost += item.TotalBatchCost;
+            });
+
+            message += `➖➖➖➖➖➖➖➖➖➖\n`;
+            message += `🏆 *Grand Total Value (Incl. GST): ₹${grandTotalBatchCost.toFixed(2)}*\n\n`;
+            
+            if (paymentTerms) message += `📝 *Payment Terms:* ${paymentTerms}\n`;
+            if (deliveryTime) message += `🚚 *Delivery Time:* ${deliveryTime}\n`;
+
+            message += `\n🙏 Thank you for considering our quote!\n\n*${companyName}*\n`;
+            
+            const gstNo = document.getElementById('quote-gst-no').value;
+            const address = document.getElementById('quote-address').value;
+            const phone = document.getElementById('quote-phone').value;
+            
+            if (phone) message += `📞 ${phone}`;
+            if (email) message += `\n📧 ${email}`;
+            if (address) message += `\n🇮🇳 ${address}`;
+            if (gstNo) message += `\n🏢 GST: ${gstNo}`;
+            if (website) message += `\n🌐 ${website}`;
+            if (social) message += `\n📱 ${social}`;
+            if (location) message += `\n📍 ${location}`;
+
+            return message;
+        },
+
+        copyWhatsAppMessage() {
+            const message = this.generateWhatsAppMessage();
+            document.getElementById('whatsapp-message-content').textContent = message;
+            document.getElementById('whatsapp-message-box').classList.remove('hidden');
+
+            try {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = message;
+                tempInput.style.position = 'absolute';
+                tempInput.style.left = '-9999px';
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+                this.showMessage('WhatsApp message copied to clipboard!', 'green');
+            } catch (err) {
+                console.error('Could not copy text using execCommand: ', err);
+                this.showMessage('Failed to copy. Please manually copy the message from the preview box.', 'red');
+            }
+        },
+
+        copyEmailContent() {
+            const emailHTML = this.generateEmailContent();
+            const previewBox = document.getElementById('email-message-content');
+            const containerBox = document.getElementById('email-message-box');
+            
+            previewBox.innerHTML = emailHTML;
+            containerBox.classList.remove('hidden');
+            
+            const tempElement = document.createElement('div');
+            tempElement.innerHTML = emailHTML;
+            tempElement.style.position = 'fixed';
+            tempElement.style.left = '-9999px';
+            document.body.appendChild(tempElement);
+            
+            try {
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(tempElement);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    this.showMessage('Email content copied to clipboard!', 'green');
+                } else {
+                    this.showMessage('Copy failed. Please select and copy the preview manually.', 'red');
+                }
+            } catch (err) {
+                console.error('Copy error:', err);
+                this.showMessage('Copy failed. Please use the preview.', 'red');
+            } finally {
+                window.getSelection().removeAllRanges();
+                document.body.removeChild(tempElement);
+            }
+        },
+        
+        generateEmailContent() {
+            this.updateQuoteItemsGlobals(); 
+            
+            const partyName = document.getElementById('quote-party-name').value || 'Valued Customer';
+            const customerCompany = document.getElementById('quote-customer-company').value;
+            const customerEmail = document.getElementById('quote-customer-email').value;
+            const customerMobile = document.getElementById('quote-customer-mobile').value;
+
+            const companyName = document.getElementById('quote-company-name').value || '[Your Company]';
+            
+            const phone = document.getElementById('quote-phone').value;
+            const emailValue = document.getElementById('quote-email').value;
+            const contactInfo = [phone, emailValue].filter(Boolean).join(', ');
+
+            const paymentTerms = document.getElementById('quote-payment-terms').value;
+            const deliveryTime = document.getElementById('quote-delivery-time').value;
+            
+            const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+            const dateStr = new Date().toLocaleDateString('en-US', dateOptions);
+
+            let subject = "Quote for Corrugated Packaging";
+            if (this.quoteItems.length > 0) {
+                if (this.quoteItems.length === 1) {
+                    const item = this.quoteItems[0];
+                    subject = `Quote for ${item.Ply}-Ply ${item.Type === 'RSC Box' ? 'Corrugated Boxes' : 'Sheets'} (${item.Size})`;
+                } else {
+                    subject = `Quote for Corrugated Packaging (${this.quoteItems.length} Items)`;
+                }
+            }
+            
+            let emailBody = `
+                <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
+                    <h2 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; margin-bottom: 20px;">Quotation for Corrugated Shipping Boxes</h2>
+                    
+                    <table style="width: 100%; margin-bottom: 20px;">
+                        <tr>
+                            <td style="padding: 2px 0; width: 100px;"><strong>Date:</strong></td>
+                            <td style="padding: 2px 0;">${dateStr}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px 0; vertical-align: top;"><strong>To:</strong></td>
+                            <td style="padding: 2px 0; vertical-align: top;">${partyName}${customerCompany ? '<br>' + customerCompany : ''}${customerMobile ? '<br>Mobile: ' + customerMobile : ''}${customerEmail ? '<br>Email: ' + customerEmail : ''}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px 0;"><strong>From:</strong></td>
+                            <td style="padding: 2px 0;">${companyName}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px 0;"><strong>Contact:</strong></td>
+                            <td style="padding: 2px 0;">${contactInfo}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px 0;"><strong>Subject:</strong></td>
+                            <td style="padding: 2px 0;">${subject}</td>
+                        </tr>
+                    </table>
+
+                    <p style="margin-bottom: 20px;">We are pleased to provide you with the following quotation for the supply of high-quality, heavy-duty corrugated shipping boxes as per your specifications:</p>
+            `;
+
+            emailBody += `
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+                    <thead>
+                        <tr style="background-color: #1e40af; color: white;">
+                            <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Description</th>
+                            <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Specifications</th>
+                            <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Box Style</th>
+                            <th style="border: 1px solid #ccc; padding: 10px; text-align: center;">BS (kg/cm²)</th>
+                            <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Unit Price (₹)</th>
+                            <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Quantity</th>
+                            <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Total Price (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            let subtotal = 0;
+            let totalQty = 0;
+
+            this.quoteItems.forEach(item => {
+                const description = item.BoxName || (item.Type === 'RSC Box' ? 'Corrugated Box' : 'Corrugated Sheet');
+
+                let specSummary = this.getPaperSpecSummary(item)
+                    .replace('\n*Paper Spec:*', '') 
+                    .replace(/\n/g, '') 
+                    .replace(/  - /g, '<br>&nbsp;&nbsp;• '); 
+
+                if (specSummary.startsWith('<br>')) specSummary = specSummary.substring(4);
+
+                let finalSpecHTML = `
+                    <strong>Size:</strong> ${item.Size}<br>
+                    <strong>Ply:</strong> ${item.Ply}-Ply (Heavy Duty)<br>
+                    <strong>Paper Specs:</strong>${specSummary}
+                `;
+
+                const boxStyle = item.Type === 'RSC Box' ? 'RSC' : 'Sheet';
+                const unitPrice = item.TotalRate; 
+                const lineTotal = unitPrice * item.Qty;
+                
+                subtotal += lineTotal;
+                totalQty += item.Qty;
+
+                emailBody += `
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 10px; vertical-align: top;">${description}</td>
+                        <td style="border: 1px solid #ccc; padding: 10px; vertical-align: top;">${finalSpecHTML}</td>
+                        <td style="border: 1px solid #ccc; padding: 10px; vertical-align: top;">${boxStyle}</td>
+                        <td style="border: 1px solid #ccc; padding: 10px; vertical-align: top; text-align: center;">${item.BF.toFixed(2)}</td>
+                        <td style="border: 1px solid #ccc; padding: 10px; text-align: right; vertical-align: top;">${unitPrice.toFixed(2)}</td>
+                        <td style="border: 1px solid #ccc; padding: 10px; text-align: right; vertical-align: top;">${item.Qty.toLocaleString('en-IN')}</td>
+                        <td style="border: 1px solid #ccc; padding: 10px; text-align: right; vertical-align: top;">${lineTotal.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+
+            const gstAmount = subtotal * 0.05;
+            const grandTotal = subtotal + gstAmount;
+
+            emailBody += `
+                    <tr>
+                        <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>Subtotal</strong></td>
+                        <td style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>${subtotal.toFixed(2)}</strong></td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;">Goods and Services Tax (GST) 5% on Subtotal</td>
+                        <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">${gstAmount.toFixed(2)}</td>
+                    </tr>
+                    <tr style="background-color: #f0f9ff;">
+                        <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>Grand Total</strong></td>
+                        <td style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>${grandTotal.toFixed(2)}</strong></td>
+                    </tr>
+                    </tbody>
+                </table>
+            `;
+
+            emailBody += `
+                <div style="margin-top: 30px; border-top: 2px solid #eee; padding-top: 20px;">
+                    <h3 style="color: #1e40af; font-size: 16px; margin-bottom: 10px; text-decoration: underline;">Terms & Conditions</h3>
+                    <ul style="padding-left: 20px; margin: 0; line-height: 1.8;">
+                        <li><strong>Validity:</strong> This quote is valid for 30 days from the date of issue.</li>
+                        <li><strong>Delivery:</strong> ${deliveryTime || 'Ex-Works, within 7 working days'}</li>
+                        <li><strong>Payment:</strong> ${paymentTerms || '50% Advance, Balance on Delivery'}</li>
+                        <li><strong>Minimum Order Quantity (MOQ):</strong> The quoted price is based on the stated quantity of ${totalQty.toLocaleString('en-IN')} units. Any change in quantity may affect the unit price.</li>
+                    </ul>
+                </div>
+                
+                <div style="margin-top: 40px;">
+                    <p>Thank you for considering our quote. Please feel free to contact us if you have any questions or require any modifications.</p>
+                    <p style="margin-top: 30px; font-weight: bold;">${companyName}</p>
+                    <p style="margin-top: 50px; border-top: 1px dashed #999; width: 200px; padding-top: 5px;">[Signature Line]</p>
+                </div>
+                </div>
+            `;
+
+            return emailBody;
+        },
+        
+        copySummaryTableAsImage() {
+            const tableContainer = document.getElementById('quote-summary-table-container');
+            const self = this; 
+            const fallbackContainer = document.getElementById('summary-image-copy-fallback');
+            fallbackContainer.classList.add('hidden'); 
+            fallbackContainer.innerHTML = '';
+            
+            if (tableContainer.innerHTML.trim() === '' || !this.quoteItems.length) {
+                self.showMessage('No summary table data to copy.', 'red');
+                return;
+            }
+            
+            self.showMessage('Generating summary image...', 'blue');
+
+            html2canvas(tableContainer, {
+                scale: 2, 
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            }).then(canvas => {
+                
+                const dataURL = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = dataURL;
+                link.download = 'quote_summary.png';
+                link.textContent = 'Click to Download Summary Image';
+                link.className = 'mt-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 text-sm block text-center';
+
+                fallbackContainer.innerHTML = '<p class="text-sm font-medium text-blue-800">Image successfully generated. Click the link below to download:</p>';
+                fallbackContainer.appendChild(link);
+                fallbackContainer.classList.remove('hidden');
+
+                self.showMessage('Summary image download link created.', 'green');
+                
+            }).catch(err => {
+                console.error('html2canvas error:', err);
+                self.showMessage('Error capturing summary table image.', 'red');
+            });
+        },
+        
+        copyTableAsImage() {
+            const tableContainer = document.getElementById('quote-table-container');
+            const self = this;
+            const fallbackContainer = document.getElementById('image-copy-fallback');
+            fallbackContainer.classList.add('hidden');
+            fallbackContainer.innerHTML = '';
+
+            if (!tableContainer || tableContainer.innerText.trim() === '' || !this.quoteItems.length) {
+                self.showMessage('No quote table to copy.', 'red');
+                return;
+            }
+            
+            self.showMessage('Generating quote image...', 'blue');
+
+            html2canvas(tableContainer, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            }).then(canvas => {
+                const dataURL = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = dataURL;
+                link.download = 'quote_table.png';
+                link.textContent = 'Click to Download Quote Image';
+                link.className = 'mt-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 text-sm block text-center';
+                
+                fallbackContainer.innerHTML = '<p class="text-sm font-medium text-blue-800">Image generated. Click below to download:</p>';
+                fallbackContainer.appendChild(link);
+                fallbackContainer.classList.remove('hidden');
+                
+                self.showMessage('Quote image download link created.', 'green');
+            }).catch(err => {
+                console.error('html2canvas error:', err);
+                self.showMessage('Error capturing quote table image.', 'red');
+            });
+        },
+
+        exportToCSV() {
+            this.updateQuoteItemsGlobals(); 
+            const csvData = this.convertToCSV();
+            if (csvData === '') {
+                this.showMessage('No data to export.', 'yellow');
+                return;
+            }
+
+            const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            if (link.download !== undefined) { 
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'costing_quote.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                this.showMessage('Quote exported to CSV.', 'green');
+            } else {
+                this.showMessage('CSV export is not supported in this browser.', 'red');
+            }
+        },
+
+        convertToCSV() {
+            if (this.quoteItems.length === 0) return '';
+
+            const baseHeaders = ['Type', 'BoxName', 'Size', 'Ply', 'Flute', 'Weight', 'BF', 'RatePerKg', 'BoardRate', 'ConversionCost', 'PrintingCost', 'LaminationCost', 'DieCost', 'PunchingCost', 'VarnishCost', 'Qty', 'TotalRate', 'GSTValue', 'TotalValue', 'TotalBatchCost']; 
+            const headers = [...baseHeaders, 'PaperSpec', 'rawInputs']; 
+            
+            const csvRows = [];
+            csvRows.push(headers.join(','));
+
+            for (const item of this.quoteItems) {
+                const values = headers.map(header => {
+                    let value = item[header];
+                    if ((header === 'rawInputs' || header === 'PaperSpec') && typeof value === 'object') { 
+                        value = JSON.stringify(value).replace(/"/g, '""'); 
+                    }
+                    const escaped = ('' + value).replace(/"/g, '""'); 
+                    return `"${escaped}"`;
+                });
+                csvRows.push(values.join(','));
+            }
+            return csvRows.join('\n');
+        },
+
+        importFromCSV(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const csvText = e.target.result;
+                    const lines = csvText.split('\n').filter(line => line.trim() !== '');
+                    if (lines.length < 2) {
+                        this.showMessage('CSV is empty or invalid.', 'red');
+                        return;
+                    }
+
+                    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+                    const newItems = [];
+
+                    const parseLine = (line) => {
+                        const values = [];
+                        let currentField = '';
+                        let inQuote = false;
+
+                        for (let i = 0; i < line.length; i++) {
+                            const char = line[i];
+
+                            if (char === '"') {
+                                if (inQuote && i < line.length - 1 && line[i + 1] === '"') {
+                                    currentField += '"';
+                                    i++; 
+                                } else {
+                                    inQuote = !inQuote;
+                                }
+                            } else if (char === ',' && !inQuote) {
+                                values.push(currentField);
+                                currentField = '';
+                            } else {
+                                currentField += char;
+                            }
+                        }
+                        values.push(currentField); 
+                        
+                        return values.map(v => {
+                            if (v.startsWith('"') && v.endsWith('"')) {
+                                v = v.substring(1, v.length - 1);
+                            }
+                            return v.replace(/""/g, '"');
+                        });
+                    };
+
+
+                    for (let i = 1; i < lines.length; i++) {
+                        const values = parseLine(lines[i]);
+                        if (values.length < headers.length) continue; 
+                        
+                        const item = {};
+                        for (let j = 0; j < headers.length; j++) {
+                            const header = headers[j];
+                            let value = values[j];
+                            
+                            if ((header === 'rawInputs' || header === 'PaperSpec') && value.startsWith('{') && value.endsWith('}')) { 
+                                try {
+                                    item[header] = JSON.parse(value);
+                                } catch (jsonError) {
+                                    console.error('Failed to parse rawInputs JSON:', jsonError, value);
+                                    item[header] = null; 
+                                }
+                            }
+                            else if (header !== 'Size' && header !== 'Type' && header !== 'Flute' && header !== 'BoxName' && header !== 'phone' && header !== 'customerMobile' && header !== 'gstNo' && !isNaN(parseFloat(value)) && isFinite(value)) { 
+                                item[header] = parseFloat(value);
+                            } else {
+                                item[header] = value;
+                            }
+                        }
+                        
+                        if (item.rawInputs) {
+                            newItems.push(item);
+                        }
+                    }
+
+                    this.quoteItems = newItems;
+                    
+                    if (this.quoteItems.length > 0 && this.quoteItems[0].rawInputs) {
+                        this.setAllInputs(this.quoteItems[0].rawInputs);
+                    }
+
+                    this.render();
+                    this.showMessage(`Successfully imported ${newItems.length} items from CSV.`, 'green');
+
+                } catch (error) {
+                    console.error('CSV import error:', error);
+                    this.showMessage('Error processing CSV file. Please ensure the file is correctly formatted.', 'red');
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file);
+        },
+
+        get grandTotalPcs() {
+            return this.quoteItems.reduce((sum, item) => sum + item.Qty, 0);
+        },
+        
+        get grandTotalWeight() {
+             return this.quoteItems.reduce((sum, item) => sum + (item.Weight * item.Qty), 0);
+        },
+        
+        get grandTotalBatchValueExclGST() {
+            return this.quoteItems.reduce((sum, item) => sum + (item.TotalRate * item.Qty), 0);
+        },
+
+        get grandTotalBatchValue() {
+            return this.quoteItems.reduce((sum, item) => sum + item.TotalBatchCost, 0);
+        },
+
+        showMessage(message, type) {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+            // In a real app, this would update a visible message box.
+        },
+
+        render() {
+            document.getElementById('rsc-inputs').style.display = this.currentTab === 'rsc' ? 'block' : 'none';
+            document.getElementById('sheet-inputs').style.display = this.currentTab === 'sheet' ? 'block' : 'none';
+
+            ['rsc', 'sheet'].forEach(tab => {
+                const btn = document.getElementById(`tab-${tab}`);
+                if (this.currentTab === tab) {
+                    btn.className = 'py-3 px-6 text-sm font-medium transition-colors duration-200 rounded-t-lg text-white border-b-2';
+                    btn.style.backgroundColor = '#3EB489'; 
+                    btn.style.borderColor = '#2d8a6b'; 
+                } else {
+                    btn.className = 'py-3 px-6 text-sm font-medium transition-colors duration-200 rounded-t-lg text-gray-500 hover:text-gray-700';
+                    btn.style.backgroundColor = ''; 
+                    btn.style.borderColor = ''; 
+                }
+            });
+
+            const rscGroup = document.getElementById('allowance-rsc-group');
+            const sheetGroup = document.getElementById('allowance-sheet-group');
+
+            const rscAllowanceInputs = [
+                document.getElementById('rsc-glue-flap'),
+                document.getElementById('rsc-deckle-allowance'),
+                document.getElementById('rsc-max-length-threshold'),
+            ];
+            const sheetInput = document.getElementById('sheet-allowance');
+
+            if (this.currentTab === 'rsc') {
+                rscGroup.style.display = 'block'; 
+                sheetGroup.style.display = 'none';
+
+                rscAllowanceInputs.forEach(input => {
+                    input.disabled = false;
+                    input.classList.remove('bg-gray-200');
+                });
+
+                this.toggleRscInchesInput();
+                this.updateRSCSheetDisplay(); 
+                
+                document.getElementById('inches-inputs-group-sheet').style.display = 'none';
+
+            } else {
+                rscGroup.style.display = 'none';
+                sheetGroup.style.display = 'block';
+                
+                rscAllowanceInputs.forEach(input => {
+                    input.disabled = true;
+                    input.classList.add('bg-gray-200');
+                });
+                
+                sheetInput.disabled = false;
+                sheetInput.classList.remove('bg-gray-200');
+
+                const rscMmInputs = [
+                    document.getElementById('rsc-l'),
+                    document.getElementById('rsc-w'),
+                    document.getElementById('rsc-h'),
+                ];
+                rscMmInputs.forEach(input => {
+                    input.disabled = false;
+                    input.classList.remove('bg-gray-200');
+                });
+
+                this.toggleSheetInchesInput();
+                this.updateSheetDisplay(); 
+                
+                document.getElementById('inches-inputs-group-rsc').style.display = 'none';
+            }
+            
+            this.renderQuoteTable();
+            this.renderSummaryTable(); 
+            
+            document.getElementById('quote-action-buttons').style.display = this.quoteItems.length > 0 ? 'flex' : 'none';
+            document.getElementById('summary-table-action-buttons').style.display = this.quoteItems.length > 0 ? 'block' : 'none'; 
+            
+            document.getElementById('whatsapp-message-box').classList.add('hidden'); 
+            document.getElementById('email-message-box').classList.add('hidden'); 
+            document.getElementById('image-copy-fallback').classList.add('hidden'); 
+            document.getElementById('summary-image-copy-fallback').classList.add('hidden'); 
+            
+            if (this.currentTab === 'rsc') {
+                this.updateRSCSheetDisplay();
+            } else {
+                this.updateSheetDisplay();
+            }
+            
+            const notesContainer = document.getElementById('quote-notes');
+            if (this.quoteItems.length > 0) {
+                 const paymentTerms = document.getElementById('quote-payment-terms').value;
+                const deliveryTime = document.getElementById('quote-delivery-time').value;
+                document.getElementById('note-payment-terms').textContent = paymentTerms || 'N/A';
+                document.getElementById('note-delivery-time').textContent = deliveryTime || 'N/A';
+                notesContainer.style.display = 'block';
+            } else {
+                notesContainer.style.display = 'none';
+            }
+            
+            this.updateDynamicCosts();
+        },
+
+        renderQuoteTable() {
+            const container = document.getElementById('quote-table-container');
+            const partyNameDisplay = document.getElementById('quote-party-name-display');
+            const partyNameValue = document.getElementById('party-name-value');
+            const partyNameInput = document.getElementById('quote-party-name').value;
+
+            if (this.quoteItems.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center p-10 bg-gray-50 rounded-lg text-gray-500 border border-dashed border-gray-300">
+                        Add RSC Boxes or Sheets using the form above to generate a quote.
+                    </div>
+                `;
+                partyNameDisplay.style.display = 'none';
+                return;
+            }
+
+            if (partyNameInput) {
+                partyNameValue.textContent = partyNameInput;
+                partyNameDisplay.style.display = 'block';
+            } else {
+                partyNameDisplay.style.display = 'none'; 
+            }
+
+            const tableHTML = `
+                <div class="overflow-x-auto rounded-lg shadow-xl">
+                    <table class="min-w-full border-collapse border border-gray-400" id="costing-table">
+                        <thead class="bg-blue-700 text-white">
+                            <tr>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Sr. No.</th> 
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Box Name</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Box Type</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Box Size</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Ply / Flute</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Weight (Kg)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Bursting Strength (kg/cm²)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Qty (Pcs)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Board Rate (₹)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Conversion Cost (₹)</th> 
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Fixed Costs (₹)</th>
+                                <th classs="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Total Rate (₹)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Total Value (₹)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-blue-500">Total Batch Cost (₹)</th>
+                                <th class="py-3 px-3 border border-blue-500"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white">
+                            ${this.quoteItems.map((item, index) => {
+                                const totalFixedCost = item.PrintingCost + item.LaminationCost + item.DieCost + item.PunchingCost + item.VarnishCost;
+                                return `
+                                <tr class="even:bg-gray-100 hover:bg-blue-50 transition-colors">
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-gray-900 border border-gray-300 text-center">${index + 1}</td> 
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-gray-900 border border-gray-300 text-left">${item.BoxName || 'N/A'}
+                                    </td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-blue-600 font-normal border border-gray-300 text-left">(${item.Type})
+                                    </td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-gray-600 font-normal border border-gray-300 text-left">(${item.Size})
+                                    </td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-gray-600 border border-gray-300">${item.Ply} / ${item.Flute}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-gray-600 border border-gray-300">${item.Weight.toFixed(3)}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-gray-600 border border-gray-300">${item.BF.toFixed(3)}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-gray-800 border border-gray-300">${item.Qty.toLocaleString('en-IN')}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-green-700 border border-gray-300">${item.BoardRate.toFixed(2)}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-purple-700 border border-gray-300">${item.ConversionCost.toFixed(2)}</td> 
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-gray-600 border border-gray-300">${totalFixedCost.toFixed(2)}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-bold text-blue-700 border border-gray-300">${item.TotalRate.toFixed(2)}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-bold text-green-800 border border-gray-300">${item.TotalValue.toFixed(2)}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-extrabold text-indigo-800 border border-gray-300">${item.TotalBatchCost.toFixed(2)}</td>
+                                    <td class="py-3 px-3 space-x-2 border border-gray-300">
+                                        <button onclick="app.editItem(${index})" class="text-blue-500 hover:text-blue-700 transition-colors" title="Edit Item">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                                                <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" />
+                                            </svg>
+                                        </button>
+                                        <button onclick="app.removeItem(${index})" class="text-red-500 hover:text-red-700 transition-colors" title="Remove Item">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
+                                            </svg>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex flex-wrap justify-end items-baseline space-x-4 sm:space-x-6">
+                    <p class="text-sm font-medium text-gray-700">Total Items: <span class="text-lg font-bold text-blue-800">${this.quoteItems.length}</span></p>
+                    <p class="text-sm font-medium text-gray-700">Total Pcs: <span class="text-lg font-bold text-blue-800">${this.grandTotalPcs.toLocaleString('en-IN')}</span></p>
+                    <p class="text-sm font-medium text-gray-700">Total Weight (Kg): <span class="text-lg font-bold text-blue-800">${this.grandTotalWeight.toFixed(3)}</span></p>
+                    <p class="text-sm font-medium text-gray-700">Grand Total Value (₹): <span class="text-xl font-extrabold text-green-700">${this.grandTotalBatchValue.toFixed(2)}</span></p>
+                </div>
+            `;
+            container.innerHTML = tableHTML;
+        },
+        
+        renderSummaryTable() {
+            const container = document.getElementById('quote-summary-table-container');
+
+            const summaryNotesContainer = document.getElementById('quote-summary-notes');
+            const summaryPaymentTerms = document.getElementById('summary-note-payment-terms');
+            const summaryDeliveryTime = document.getElementById('summary-note-delivery-time');
+            const summaryCompanyName = document.getElementById('summary-note-company-name');
+
+            if (this.quoteItems.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center p-10 bg-gray-50 rounded-lg text-gray-500 border border-dashed border-gray-300">
+                        Add items to the main quote to see a summary here.
+                    </div>
+                `;
+                summaryNotesContainer.style.display = 'none';
+                return;
+            }
+
+            const paymentTerms = document.getElementById('quote-payment-terms').value;
+            const deliveryTime = document.getElementById('quote-delivery-time').value;
+            const companyName = document.getElementById('quote-company-name').value;
+
+            summaryPaymentTerms.textContent = paymentTerms || 'N/A';
+            summaryDeliveryTime.textContent = deliveryTime || 'N/A';
+            summaryCompanyName.textContent = companyName || 'N/A';
+            
+            summaryNotesContainer.style.display = 'block';
+
+            const tableHTML = `
+                <div class="overflow-x-auto rounded-lg shadow-xl" id="summary-table-for-copy">
+                    <table class="min-w-full border-collapse border border-gray-400">
+                        <thead class="bg-gray-700 text-white">
+                            <tr>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Sr. No.</th> 
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Box Name</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Box Type</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Box Size</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Ply / Flute</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Qty (Pcs)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Per Pcs Rate (₹)</th>
+                                <th class="py-3 px-3 text-left text-xs font-bold uppercase tracking-wider border border-gray-600">Total Batch Cost (Incl. GST)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white">
+                            ${this.quoteItems.map((item, index) => `
+                                <tr class="even:bg-gray-100 hover:bg-blue-50 transition-colors">
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-gray-900 border border-gray-300 text-center">${index + 1}</td> 
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-gray-900 border border-gray-300 text-left">${item.BoxName || 'N/A'}
+                                    </td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-blue-600 font-normal border border-gray-300 text-left">(${item.Type})
+                                    </td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-gray-600 font-normal border border-gray-300 text-left">(${item.Size})
+                                    </td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm text-gray-600 border border-gray-300">${item.Ply} / ${item.Flute}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-medium text-gray-800 border border-gray-300">${item.Qty.toLocaleString('en-IN')}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-bold text-blue-700 border border-gray-300">${item.TotalRate.toFixed(2)}</td>
+                                    <td class="py-3 px-3 whitespace-nowrap text-sm font-extrabold text-indigo-800 border border-gray-300">${item.TotalBatchCost.toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                        <tfoot class="bg-gray-100">
+                            <tr>
+                                <td colspan="5" class="py-3 px-3 text-right text-sm font-bold text-gray-800 border border-gray-300">Grand Totals:</td>
+                                <td class="py-3 px-3 text-left text-sm font-bold text-gray-800 border border-gray-300">${this.grandTotalPcs.toLocaleString('en-IN')}</td>
+                                <td class="py-3 px-3 text-left text-sm font-bold text-blue-700 border border-gray-300">---</td>
+                                <td class="py-3 px-3 text-left text-sm font-extrabold text-indigo-800 border border-gray-300">${this.grandTotalBatchValue.toFixed(2)}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = tableHTML;
+        },
+
+
+        // init() {
+        //     this.initFirebase(); 
+        //     this.handlePlyChange();
+
+        //     // Initial load of the default profile (Ventura)
+        //     this.setCompanyInputs(PREDEFINED_COMPANY_PROFILES["ventura packagers private limited"]);
+
+        //     document.getElementById('dimension-type').addEventListener('change', this.handleDimensionTypeChange.bind(this));
+
+        //     ['rsc-l', 'rsc-w', 'rsc-h', 'rsc-glue-flap', 'rsc-deckle-allowance', 'rsc-max-length-threshold', 'sheet-l', 'sheet-w', 'sheet-allowance', 'lamination-l', 'lamination-w', 'quantity-pcs', 'total-development-cost', 'print-cost-per-pcs', 'printing-moq', 'rate-of-lamination', 'total-die-cost'].forEach(id => {
+        //         const el = document.getElementById(id);
+        //         if (el) { el.addEventListener('input', () => {
+        //             if (id.startsWith('rsc')) { this.updateRSCSheetDisplay(); }
+        //             else if (id.startsWith('sheet')) { this.updateSheetDisplay(); }
+        //             this.updateDynamicCosts(); 
+        //         }); }
+        //     });
+            
+        //     this.render();
+        //     document.getElementById('ply').value = '5';
+        //     this.handlePlyChange();
+        //     this.updateAveragePaperCostDisplay(); 
+        // }
+    };
+
+    window.onload = () => {
+        window.app.init();
+    };
+</script>
+</body>
+</html>
