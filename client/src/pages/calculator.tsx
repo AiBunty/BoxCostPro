@@ -192,6 +192,7 @@ export default function Calculator() {
   const [showPartyProfile, setShowPartyProfile] = useState(false);
   
   // Business Profile state
+  const [businessCompanyName, setBusinessCompanyName] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
   const [businessEmail, setBusinessEmail] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
@@ -199,6 +200,8 @@ export default function Calculator() {
   const [businessWebsite, setBusinessWebsite] = useState("");
   const [businessSocial, setBusinessSocial] = useState("");
   const [businessLocation, setBusinessLocation] = useState("");
+  const [editingProfileId, setEditingProfileId] = useState<string>("");
+  const [businessSearchTerm, setBusinessSearchTerm] = useState("");
   
   // Party Profile state
   const [partyPersonName, setPartyPersonName] = useState("");
@@ -207,6 +210,15 @@ export default function Calculator() {
   const [partyEmail, setPartyEmail] = useState("");
   const [partyGst, setPartyGst] = useState("");
   const [partyAddress, setPartyAddress] = useState("");
+  const [editingPartyId, setEditingPartyId] = useState<string>("");
+  const [partySearchTerm, setPartySearchTerm] = useState("");
+  
+  // Quote search state
+  const [quoteSearchCompany, setQuoteSearchCompany] = useState("");
+  const [quoteSearchDate, setQuoteSearchDate] = useState("");
+  const [quoteSearchBoxSize, setQuoteSearchBoxSize] = useState("");
+  const [quoteSearchSheetSize, setQuoteSearchSheetSize] = useState("");
+  const [quoteSearchBoxName, setQuoteSearchBoxName] = useState("");
   
   // Multiple profiles support
   const [allCompanyProfiles, setAllCompanyProfiles] = useState<CompanyProfile[]>([]);
@@ -287,15 +299,27 @@ export default function Calculator() {
   // Save business profile mutation
   const saveBusinessProfileMutation = useMutation({
     mutationFn: async (data: Partial<CompanyProfile>) => {
+      if (editingProfileId) {
+        return await apiRequest("PATCH", `/api/company-profiles/${editingProfileId}`, data);
+      }
       return await apiRequest("POST", "/api/company-profiles", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-profiles/default"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profiles"] });
       toast({
         title: "Saved",
         description: "Business profile saved successfully.",
       });
       setShowBusinessProfile(false);
+      setEditingProfileId("");
+      setBusinessCompanyName("");
+      setBusinessPhone("");
+      setBusinessEmail("");
+      setBusinessAddress("");
+      setBusinessGst("");
+      setBusinessWebsite("");
+      setBusinessSocial("");
+      setBusinessLocation("");
     },
     onError: () => {
       toast({
@@ -305,10 +329,34 @@ export default function Calculator() {
       });
     },
   });
+  
+  // Delete business profile mutation
+  const deleteBusinessProfileMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/company-profiles/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profiles"] });
+      toast({
+        title: "Deleted",
+        description: "Business profile deleted successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete business profile.",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Save party profile mutation
   const savePartyProfileMutation = useMutation({
     mutationFn: async (data: any) => {
+      if (editingPartyId) {
+        return await apiRequest("PATCH", `/api/party-profiles/${editingPartyId}`, data);
+      }
       return await apiRequest("POST", "/api/party-profiles", data);
     },
     onSuccess: () => {
@@ -318,6 +366,7 @@ export default function Calculator() {
         description: "Party profile saved successfully.",
       });
       setShowPartyProfile(false);
+      setEditingPartyId("");
       setPartyPersonName("");
       setPartyCompanyName("");
       setPartyMobile("");
@@ -334,9 +383,31 @@ export default function Calculator() {
     },
   });
   
+  // Delete party profile mutation
+  const deletePartyProfileMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/party-profiles/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/party-profiles"] });
+      toast({
+        title: "Deleted",
+        description: "Party profile deleted successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete party profile.",
+        variant: "destructive",
+      });
+    },
+  });
+  
   // Sync business profile when company profile loads
   useEffect(() => {
-    if (companyProfile) {
+    if (companyProfile && !editingProfileId) {
+      setBusinessCompanyName(companyProfile.companyName || "");
       setBusinessPhone(companyProfile.phone || "");
       setBusinessEmail(companyProfile.email || "");
       setBusinessAddress(companyProfile.address || "");
@@ -345,7 +416,34 @@ export default function Calculator() {
       setBusinessSocial(companyProfile.socialMedia || "");
       setBusinessLocation(companyProfile.googleLocation || "");
     }
-  }, [companyProfile]);
+  }, [companyProfile, editingProfileId]);
+  
+  // Download sample bulk upload CSV
+  const downloadSampleCSV = () => {
+    const sample = `Box Name,Description,Type,Length,Width,Height,L1_GSM,L1_BF,L1_RCT,L1_Shade,L1_Rate,L2_GSM,L2_BF,L2_RCT,L2_Shade,L2_Rate,L3_GSM,L3_BF,L3_RCT,L3_Shade,L3_Rate,L4_GSM,L4_BF,L4_RCT,L4_Shade,L4_Rate,L5_GSM,L5_BF,L5_RCT,L5_Shade,L5_Rate
+10kg Apple Box,Heavy duty corrugated,RSC,300,200,150,180,20,40,Kraft/Natural,55,150,16,25,Kraft/Natural,52,180,20,40,Kraft/Natural,55
+5kg Vegetable Box,Standard corrugated,RSC,250,180,120,180,18,38,Golden (Brown),54,140,14,22,Golden (Brown),50
+A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,25,White Kraft Liner,53`;
+    
+    const blob = new Blob([sample], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sample_bulk_upload.csv';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    toast({ title: "Downloaded", description: "Sample CSV file downloaded successfully." });
+  };
+  
+  // Filter quotes based on search criteria
+  const filteredQuotes = savedQuotes.filter(quote => {
+    const dateMatch = !quoteSearchDate || new Date(quote.createdAt || "").toLocaleDateString().includes(quoteSearchDate);
+    const companyMatch = !quoteSearchCompany || quote.customerCompany.toLowerCase().includes(quoteSearchCompany.toLowerCase());
+    const boxNameMatch = !quoteSearchBoxName || quote.items?.some(item => item.boxName?.toLowerCase().includes(quoteSearchBoxName.toLowerCase()));
+    return dateMatch && companyMatch && boxNameMatch;
+  });
   
   // Copy layer specs (excluding fluting factor for Liner layers)
   const copyLayerToFollowing = (fromIdx: number) => {
@@ -814,11 +912,20 @@ export default function Calculator() {
                     Business Profile
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>Business Profile</DialogTitle>
+                    <DialogTitle>{editingProfileId ? "Edit" : "Create New"} Business Profile</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
+                    {editingProfileId ? (
+                      <div className="mb-4 p-3 bg-muted rounded text-sm">
+                        Editing profile: {businessCompanyName}
+                      </div>
+                    ) : null}
+                    <div>
+                      <Label htmlFor="business-company">Company Name</Label>
+                      <Input id="business-company" value={businessCompanyName} onChange={(e) => setBusinessCompanyName(e.target.value)} data-testid="input-business-company" placeholder="Your Company Name" />
+                    </div>
                     <div>
                       <Label htmlFor="business-phone">Phone</Label>
                       <Input id="business-phone" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} data-testid="input-business-phone" />
@@ -847,24 +954,75 @@ export default function Calculator() {
                       <Label htmlFor="business-location">Location</Label>
                       <Input id="business-location" value={businessLocation} onChange={(e) => setBusinessLocation(e.target.value)} data-testid="input-business-location" />
                     </div>
-                    <Button 
-                      onClick={() => {
-                        saveBusinessProfileMutation.mutate({
-                          phone: businessPhone,
-                          email: businessEmail,
-                          address: businessAddress,
-                          gstNo: businessGst,
-                          website: businessWebsite,
-                          socialMedia: businessSocial,
-                          googleLocation: businessLocation,
-                          isDefault: true,
-                        });
-                      }}
-                      disabled={saveBusinessProfileMutation.isPending}
-                      data-testid="button-save-business-profile"
-                    >
-                      {saveBusinessProfileMutation.isPending ? "Saving..." : "Save"}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => {
+                          saveBusinessProfileMutation.mutate({
+                            companyName: businessCompanyName,
+                            phone: businessPhone,
+                            email: businessEmail,
+                            address: businessAddress,
+                            gstNo: businessGst,
+                            website: businessWebsite,
+                            socialMedia: businessSocial,
+                            googleLocation: businessLocation,
+                            isDefault: !editingProfileId,
+                          });
+                        }}
+                        disabled={saveBusinessProfileMutation.isPending}
+                        data-testid="button-save-business-profile"
+                        className="flex-1"
+                      >
+                        {saveBusinessProfileMutation.isPending ? "Saving..." : "Save"}
+                      </Button>
+                      {editingProfileId && (
+                        <Button 
+                          onClick={() => {
+                            if (confirm("Delete this profile?")) {
+                              deleteBusinessProfileMutation.mutate(editingProfileId);
+                              setShowBusinessProfile(false);
+                              setEditingProfileId("");
+                            }
+                          }}
+                          variant="destructive"
+                          size="sm"
+                          data-testid="button-delete-business-profile"
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {!editingProfileId && allCompanyProfiles.length > 0 && (
+                      <div>
+                        <Label className="text-sm font-semibold mb-2 block">Existing Profiles</Label>
+                        <Input 
+                          placeholder="Search profiles..." 
+                          value={businessSearchTerm} 
+                          onChange={(e) => setBusinessSearchTerm(e.target.value)}
+                          data-testid="input-search-business-profile"
+                          className="mb-2"
+                        />
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {allCompanyProfiles.filter(p => p.companyName.toLowerCase().includes(businessSearchTerm.toLowerCase())).map(profile => (
+                            <Card key={profile.id} className="p-2 cursor-pointer hover-elevate" onClick={() => {
+                              setEditingProfileId(profile.id);
+                              setBusinessCompanyName(profile.companyName);
+                              setBusinessPhone(profile.phone || "");
+                              setBusinessEmail(profile.email || "");
+                              setBusinessAddress(profile.address || "");
+                              setBusinessGst(profile.gstNo || "");
+                              setBusinessWebsite(profile.website || "");
+                              setBusinessSocial(profile.socialMedia || "");
+                              setBusinessLocation(profile.googleLocation || "");
+                            }}>
+                              <div className="text-sm font-medium">{profile.companyName}</div>
+                              <div className="text-xs text-muted-foreground">{profile.phone} • {profile.email}</div>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </DialogContent>
               </Dialog>
@@ -889,11 +1047,16 @@ export default function Calculator() {
                     Party Profile
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>Party Profile</DialogTitle>
+                    <DialogTitle>{editingPartyId ? "Edit" : "Create New"} Party Profile</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
+                    {editingPartyId ? (
+                      <div className="mb-4 p-3 bg-muted rounded text-sm">
+                        Editing party: {partyPersonName}
+                      </div>
+                    ) : null}
                     <div>
                       <Label htmlFor="party-name">Name of Person</Label>
                       <Input id="party-name" value={partyPersonName} onChange={(e) => setPartyPersonName(e.target.value)} data-testid="input-party-name" />
@@ -918,22 +1081,70 @@ export default function Calculator() {
                       <Label htmlFor="party-address">Address</Label>
                       <Input id="party-address" value={partyAddress} onChange={(e) => setPartyAddress(e.target.value)} data-testid="input-party-address" />
                     </div>
-                    <Button 
-                      onClick={() => {
-                        savePartyProfileMutation.mutate({
-                          name: partyPersonName,
-                          companyName: partyCompanyName,
-                          mobile: partyMobile,
-                          email: partyEmail,
-                          gstNo: partyGst,
-                          address: partyAddress,
-                        });
-                      }}
-                      disabled={savePartyProfileMutation.isPending}
-                      data-testid="button-save-party-profile"
-                    >
-                      {savePartyProfileMutation.isPending ? "Saving..." : "Save"}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => {
+                          savePartyProfileMutation.mutate({
+                            name: partyPersonName,
+                            companyName: partyCompanyName,
+                            mobile: partyMobile,
+                            email: partyEmail,
+                            gstNo: partyGst,
+                            address: partyAddress,
+                          });
+                        }}
+                        disabled={savePartyProfileMutation.isPending}
+                        data-testid="button-save-party-profile"
+                        className="flex-1"
+                      >
+                        {savePartyProfileMutation.isPending ? "Saving..." : "Save"}
+                      </Button>
+                      {editingPartyId && (
+                        <Button 
+                          onClick={() => {
+                            if (confirm("Delete this party profile?")) {
+                              deletePartyProfileMutation.mutate(editingPartyId);
+                              setShowPartyProfile(false);
+                              setEditingPartyId("");
+                            }
+                          }}
+                          variant="destructive"
+                          size="sm"
+                          data-testid="button-delete-party-profile"
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {!editingPartyId && allPartyProfiles.length > 0 && (
+                      <div>
+                        <Label className="text-sm font-semibold mb-2 block">Existing Parties</Label>
+                        <Input 
+                          placeholder="Search parties..." 
+                          value={partySearchTerm} 
+                          onChange={(e) => setPartySearchTerm(e.target.value)}
+                          data-testid="input-search-party-profile"
+                          className="mb-2"
+                        />
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {allPartyProfiles.filter((p: any) => (p.name + p.companyName).toLowerCase().includes(partySearchTerm.toLowerCase())).map((profile: any) => (
+                            <Card key={profile.id} className="p-2 cursor-pointer hover-elevate" onClick={() => {
+                              setEditingPartyId(profile.id);
+                              setPartyPersonName(profile.name);
+                              setPartyCompanyName(profile.companyName);
+                              setPartyMobile(profile.mobile || "");
+                              setPartyEmail(profile.email || "");
+                              setPartyGst(profile.gstNo || "");
+                              setPartyAddress(profile.address || "");
+                            }}>
+                              <div className="text-sm font-medium">{profile.name} ({profile.companyName})</div>
+                              <div className="text-xs text-muted-foreground">{profile.mobile} • {profile.email}</div>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </DialogContent>
               </Dialog>
@@ -968,6 +1179,15 @@ export default function Calculator() {
                       <p>CSV format: Box Name, Description, Type (RSC/Sheet), Length, Width, Height (if RSC)</p>
                       <p>For layers: L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate, etc.</p>
                     </div>
+                    <Button 
+                      onClick={downloadSampleCSV} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-download-sample-csv"
+                    >
+                      <Download className="w-3 h-3 mr-2" />
+                      Download Sample CSV
+                    </Button>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -983,20 +1203,42 @@ export default function Calculator() {
                   <DialogHeader>
                     <DialogTitle>Saved Quotes</DialogTitle>
                     <DialogDescription>
-                      Load a previously saved quote
+                      Search and load a previously saved quote
                     </DialogDescription>
                   </DialogHeader>
+                  
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    <Input 
+                      placeholder="Search by company..." 
+                      value={quoteSearchCompany} 
+                      onChange={(e) => setQuoteSearchCompany(e.target.value)}
+                      data-testid="input-search-quote-company"
+                    />
+                    <Input 
+                      placeholder="Search by box name..." 
+                      value={quoteSearchBoxName} 
+                      onChange={(e) => setQuoteSearchBoxName(e.target.value)}
+                      data-testid="input-search-quote-boxname"
+                    />
+                    <Input 
+                      type="date"
+                      value={quoteSearchDate}
+                      onChange={(e) => setQuoteSearchDate(e.target.value)}
+                      data-testid="input-search-quote-date"
+                    />
+                  </div>
+                  
                   <div className="space-y-2">
                     {isLoadingQuotes ? (
                       <p className="text-sm text-muted-foreground text-center py-8">
                         Loading quotes...
                       </p>
-                    ) : savedQuotes.length === 0 ? (
+                    ) : filteredQuotes.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-8">
-                        No saved quotes found
+                        {savedQuotes.length === 0 ? "No saved quotes found" : "No quotes match your search criteria"}
                       </p>
                     ) : (
-                      savedQuotes.map((quote) => (
+                      filteredQuotes.map((quote) => (
                         <Card
                           key={quote.id}
                           className="cursor-pointer hover-elevate"
