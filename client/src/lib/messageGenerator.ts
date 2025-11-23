@@ -1,39 +1,93 @@
-import type { QuoteItem } from "@shared/schema";
+import type { QuoteItem, CompanyProfile } from "@shared/schema";
 
-export function generateWhatsAppMessage(items: QuoteItem[], customerName: string, companyName: string): string {
+export function generateWhatsAppMessage(
+  items: QuoteItem[],
+  customerName: string,
+  companyProfile: CompanyProfile | null
+): string {
   const lines = [
-    `Hello ${customerName},`,
+    `👋 Dear ${customerName},`,
     ``,
-    `Thank you for your interest in our corrugated box solutions.`,
+    `Here is your quote from ${companyProfile?.companyName || 'Ventura Packagers Private Limited'}:`,
     ``,
-    `Here's your quote summary:`,
-    `Company: ${companyName}`,
-    ``,
+    `➖➖➖➖➖➖➖➖➖➖`,
   ];
 
   items.forEach((item, index) => {
-    lines.push(`*Item ${index + 1}: ${item.boxName}*`);
-    lines.push(`Type: ${item.type === 'rsc' ? 'RSC Box' : 'Sheet'}`);
-    lines.push(`Ply: ${item.ply}-Ply`);
-    lines.push(`Sheet Size: ${item.sheetLength.toFixed(2)}mm × ${item.sheetWidth.toFixed(2)}mm`);
-    lines.push(`Weight: ${item.sheetWeight.toFixed(3)} Kg`);
-    lines.push(`Quantity: ${item.quantity}`);
-    lines.push(`Cost per unit: ₹${item.totalCostPerBox.toFixed(2)}`);
-    lines.push(`Total: ₹${item.totalValue.toFixed(2)}`);
+    lines.push(`📦 Item ${index + 1}`);
+    lines.push(`📏 Box Size : (${item.length.toFixed(0)}×${item.width.toFixed(0)}${item.height ? `×${item.height.toFixed(0)}` : ''} ${item.inputUnit === 'inches' ? 'in' : 'mm'})`);
+    lines.push(`🏗 Board: ${item.ply}-Ply`);
+    lines.push(`〰 Flute Type: BC`);
+    lines.push(`🎨 Printing: ${item.boxDescription || 'Plain Box'}`);
     lines.push(``);
+    lines.push(`Paper Spec:`);
+    
+    item.layerSpecs.forEach((spec, idx) => {
+      const layerLabel = idx === 0 ? 'Outer' : idx === item.layerSpecs.length - 1 ? 'Inner' : `Flute`;
+      lines.push(`  - ${layerLabel} (L${idx + 1}): ${spec.gsm} GSM / ${spec.bf} BF (${spec.shade})`);
+    });
+    
+    lines.push(``);
+    lines.push(`🔢 Quantity: ${item.quantity.toLocaleString()} Pcs`);
+    lines.push(`💰 Rate (Incl. GST): ${formatCurrencyWithEmoji(item.totalCostPerBox)} /pc`);
+    lines.push(`➖➖➖➖➖➖➖➖➖➖`);
   });
 
   const grandTotal = items.reduce((sum, item) => sum + item.totalValue, 0);
-  lines.push(`*Grand Total: ₹${grandTotal.toFixed(2)}*`);
-  lines.push(``,
-    `Looking forward to your confirmation.`,
-    `Best regards`
-  );
+  lines.push(`🏆 Grand Total Value: ${formatCurrencyWithEmoji(grandTotal)}`);
+  lines.push(``);
+  
+  if (companyProfile) {
+    lines.push(`💳 Payment Terms: ${companyProfile.paymentTerms || '100% Advance'}`);
+    lines.push(`🚚 Delivery Time: ${companyProfile.deliveryTime || '10 days after receipt of PO'}`);
+    lines.push(``);
+  }
+  
+  lines.push(`🙏 Thank you for considering our quote!`);
+  lines.push(`${companyProfile?.companyName || 'Ventura Packagers Private Limited'}`);
+  
+  if (companyProfile) {
+    if (companyProfile.phone) lines.push(`📞 Phone: ${companyProfile.phone}`);
+    if (companyProfile.email) lines.push(`📧 Email: ${companyProfile.email}`);
+    if (companyProfile.address) lines.push(`🇮🇳 Address: ${companyProfile.address}`);
+    if (companyProfile.gstNo) lines.push(`📄 GST: ${companyProfile.gstNo}`);
+    if (companyProfile.website) lines.push(`🌐 Website: ${companyProfile.website}`);
+    if (companyProfile.socialMedia) lines.push(`📱 Social: ${companyProfile.socialMedia}`);
+    if (companyProfile.googleLocation) lines.push(`📍 Location: ${companyProfile.googleLocation}`);
+  }
 
   return lines.join('\n');
 }
 
-export function generateEmailContent(items: QuoteItem[], customerName: string, customerCompany: string, companyProfile: any): { subject: string; body: string } {
+function formatCurrencyWithEmoji(value: number): string {
+  const valueStr = value.toFixed(2);
+  const parts = valueStr.split('');
+  const digits = parts.filter(c => c !== '.' && c !== '-');
+  
+  let result = '₹';
+  let digitIndex = 0;
+  
+  for (const part of parts) {
+    if (part === '.') {
+      result += '.';
+    } else if (part === '-') {
+      result += '-';
+    } else {
+      const digit = digits[digitIndex];
+      result += digit + (digits.length > 3 && digitIndex < digits.length - 2 ? '️⃣' : '️⃣');
+      digitIndex++;
+    }
+  }
+  
+  return result;
+}
+
+export function generateEmailContent(
+  items: QuoteItem[],
+  customerName: string,
+  customerCompany: string,
+  companyProfile: CompanyProfile | null
+): { subject: string; body: string } {
   const subject = `Quote for Corrugated Boxes - ${customerCompany}`;
 
   const body = `
@@ -71,6 +125,9 @@ STRENGTH ANALYSIS (McKee Formula):
   Calculated ECT: ${item.ect.toFixed(2)} kN/m
   Predicted BCT: ${item.bct.toFixed(1)} Kg
   Burst Strength: ${item.bs.toFixed(2)} kg/cm
+
+PAPER SPECIFICATIONS:
+${item.layerSpecs.map((spec, idx) => `  Layer ${idx + 1} (${spec.layerType.toUpperCase()}): ${spec.gsm} GSM / ${spec.bf} BF / RCT ${spec.rctValue} - ${spec.shade}`).join('\n')}
 
 COSTS:
   Paper Cost: ₹${item.paperCost.toFixed(2)}

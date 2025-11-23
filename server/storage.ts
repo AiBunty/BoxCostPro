@@ -1,6 +1,8 @@
 import { 
   type CompanyProfile, 
   type InsertCompanyProfile,
+  type PartyProfile,
+  type InsertPartyProfile,
   type Quote,
   type InsertQuote,
   type QuoteItem,
@@ -18,6 +20,13 @@ export interface IStorage {
   updateCompanyProfile(id: string, profile: Partial<InsertCompanyProfile>): Promise<CompanyProfile | undefined>;
   setDefaultCompanyProfile(id: string): Promise<void>;
   
+  // Party Profiles
+  getPartyProfile(id: string): Promise<PartyProfile | undefined>;
+  getAllPartyProfiles(): Promise<PartyProfile[]>;
+  createPartyProfile(profile: InsertPartyProfile): Promise<PartyProfile>;
+  updatePartyProfile(id: string, profile: Partial<InsertPartyProfile>): Promise<PartyProfile | undefined>;
+  deletePartyProfile(id: string): Promise<boolean>;
+  
   // Quotes
   getQuote(id: string): Promise<Quote | undefined>;
   getAllQuotes(): Promise<Quote[]>;
@@ -33,11 +42,13 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private companyProfiles: Map<string, CompanyProfile>;
+  private partyProfiles: Map<string, PartyProfile>;
   private quotes: Map<string, Quote>;
   private appSettings: AppSettings;
 
   constructor() {
     this.companyProfiles = new Map();
+    this.partyProfiles = new Map();
     this.quotes = new Map();
     
     // Add default company profile
@@ -126,6 +137,42 @@ export class MemStorage implements IStorage {
     if (profile) {
       profile.isDefault = true;
     }
+  }
+
+  // Party Profiles
+  async getPartyProfile(id: string): Promise<PartyProfile | undefined> {
+    return this.partyProfiles.get(id);
+  }
+
+  async getAllPartyProfiles(): Promise<PartyProfile[]> {
+    const values: PartyProfile[] = [];
+    this.partyProfiles.forEach(profile => values.push(profile));
+    return values;
+  }
+
+  async createPartyProfile(insertProfile: InsertPartyProfile): Promise<PartyProfile> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const profile: PartyProfile = { 
+      ...insertProfile, 
+      id,
+      createdAt: now,
+    };
+    this.partyProfiles.set(id, profile);
+    return profile;
+  }
+
+  async updatePartyProfile(id: string, updates: Partial<InsertPartyProfile>): Promise<PartyProfile | undefined> {
+    const existing = this.partyProfiles.get(id);
+    if (!existing) return undefined;
+    
+    const updated: PartyProfile = { ...existing, ...updates };
+    this.partyProfiles.set(id, updated);
+    return updated;
+  }
+
+  async deletePartyProfile(id: string): Promise<boolean> {
+    return this.partyProfiles.delete(id);
   }
 
   // Quotes

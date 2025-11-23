@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertCompanyProfileSchema, insertQuoteSchema, insertAppSettingsSchema } from "@shared/schema";
+import { insertCompanyProfileSchema, insertPartyProfileSchema, insertQuoteSchema, insertAppSettingsSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -69,6 +69,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(400).json({ error: "Failed to set default profile" });
+    }
+  });
+
+  // Party Profiles
+  app.get("/api/party-profiles", async (req, res) => {
+    try {
+      const profiles = await storage.getAllPartyProfiles();
+      res.json(profiles);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch party profiles" });
+    }
+  });
+
+  app.post("/api/party-profiles", async (req, res) => {
+    try {
+      const data = insertPartyProfileSchema.parse(req.body);
+      const profile = await storage.createPartyProfile(data);
+      res.status(201).json(profile);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid party profile data" });
+    }
+  });
+
+  app.patch("/api/party-profiles/:id", async (req, res) => {
+    try {
+      const data = insertPartyProfileSchema.partial().parse(req.body);
+      const profile = await storage.updatePartyProfile(req.params.id, data);
+      if (!profile) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+      res.json(profile);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update party profile" });
+    }
+  });
+
+  app.delete("/api/party-profiles/:id", async (req, res) => {
+    try {
+      const success = await storage.deletePartyProfile(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete party profile" });
     }
   });
 

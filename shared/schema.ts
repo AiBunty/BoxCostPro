@@ -23,6 +23,22 @@ export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).om
 export type InsertCompanyProfile = z.infer<typeof insertCompanyProfileSchema>;
 export type CompanyProfile = typeof companyProfiles.$inferSelect;
 
+// Party/Customer Profiles
+export const partyProfiles = pgTable("party_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  personName: text("person_name").notNull(),
+  companyName: text("company_name"),
+  mobileNo: text("mobile_no"),
+  email: text("email"),
+  gstNo: text("gst_no"),
+  address: text("address"),
+  createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const insertPartyProfileSchema = createInsertSchema(partyProfiles).omit({ id: true, createdAt: true });
+export type InsertPartyProfile = z.infer<typeof insertPartyProfileSchema>;
+export type PartyProfile = typeof partyProfiles.$inferSelect;
+
 // Quotes with embedded items
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

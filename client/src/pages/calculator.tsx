@@ -7,12 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { QuoteItem, CompanyProfile, Quote, AppSettings, LayerSpec } from "@shared/schema";
 import { generateWhatsAppMessage, generateEmailContent } from "@/lib/messageGenerator";
+import { downloadExcel } from "@/lib/excelExport";
 import {
   mmToInches,
   inchesToMm,
@@ -1324,20 +1325,19 @@ export default function Calculator() {
                     <CardTitle>Quote Items</CardTitle>
                     <CardDescription>{quoteItems.length} items</CardDescription>
                   </div>
-                  {quoteItems.length > 0 && <div className="flex gap-2">
+                  {quoteItems.length > 0 && <div className="flex gap-2 flex-wrap">
                     <Button 
                       size="sm" 
                       variant="outline"
                       onClick={() => {
-                        const message = generateWhatsAppMessage(quoteItems, partyName || "Customer", customerCompany || "Company");
+                        const message = generateWhatsAppMessage(quoteItems, partyName || "Customer", companyProfile);
                         navigator.clipboard.writeText(message);
-                        toast({ title: "Copied to clipboard", description: "WhatsApp message ready to share" });
-                        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+                        toast({ title: "Copied", description: "WhatsApp message copied to clipboard" });
                       }}
-                      data-testid="button-whatsapp"
+                      data-testid="button-copy-whatsapp"
                     >
-                      <MessageCircle className="w-4 h-4 mr-2" />
-                      WhatsApp
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy WhatsApp
                     </Button>
                     
                     <Button 
@@ -1345,12 +1345,25 @@ export default function Calculator() {
                       variant="outline"
                       onClick={() => {
                         const { subject, body } = generateEmailContent(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile);
-                        window.location.href = `mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                        navigator.clipboard.writeText(body);
+                        toast({ title: "Copied", description: "Email template copied to clipboard" });
                       }}
-                      data-testid="button-email"
+                      data-testid="button-copy-email"
                     >
-                      <Mail className="w-4 h-4 mr-2" />
-                      Email
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy Email
+                    </Button>
+                    
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => {
+                        downloadExcel(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile, `quote-${new Date().toISOString().split('T')[0]}.csv`);
+                      }}
+                      data-testid="button-download-excel"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download CSV
                     </Button>
 
                     <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
