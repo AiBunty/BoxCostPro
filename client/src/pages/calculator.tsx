@@ -73,6 +73,24 @@ interface CalculationResult {
   bct: number;
 }
 
+// Helper function to create layers for a given ply count
+const createLayersForPly = (plyNum: number) => {
+  const defaultLayers = [];
+  for (let i = 0; i < plyNum; i++) {
+    const isFlute = i > 0 && i < plyNum - 1; // Middle layers are flute, outer are liner
+    defaultLayers.push({
+      gsm: "180",
+      bf: "12",
+      flutingFactor: isFlute ? "1.5" : "1.0",
+      rctValue: "0",
+      rate: "55.00",
+      layerType: isFlute ? "flute" as const : "liner" as const,
+      shade: "Brown",
+    });
+  }
+  return defaultLayers;
+};
+
 export default function Calculator() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"rsc" | "sheet">("rsc");
@@ -94,33 +112,20 @@ export default function Calculator() {
   const [sheetWidth, setSheetWidth] = useState<string>("");
   
   // Allowances
-  const [glueFlap, setGlueFlap] = useState<string>("50");
+  const [glueFlap, setGlueFlap] = useState<string>("60");
   const [deckleAllowance, setDeckleAllowance] = useState<string>("30");
   const [sheetAllowance, setSheetAllowance] = useState<string>("10");
   const [maxLengthThreshold, setMaxLengthThreshold] = useState<string>("1500");
   
-  // Paper specifications - Layer by layer (dynamic based on ply)
+  // Paper specifications - Layer by layer (initialized with 5 layers for default ply=5)
   const [layers, setLayers] = useState<Array<{ gsm: string; bf: string; flutingFactor: string; rctValue: string; rate: string; layerType: "liner" | "flute"; shade: string }>>(
-    [{ gsm: "180", bf: "12", flutingFactor: "1.5", rctValue: "0", rate: "55.00", layerType: "liner", shade: "Brown" }]
+    createLayersForPly(5)
   );
   
-  // Initialize layers when ply changes
+  // Update layers when ply changes
   const updateLayersForPly = (newPly: string) => {
     const plyNum = parseInt(newPly);
-    const defaultLayers = [];
-    for (let i = 0; i < plyNum; i++) {
-      const isFlute = i > 0 && i < plyNum - 1; // Middle layers are flute, outer are liner
-      defaultLayers.push({
-        gsm: "180",
-        bf: "12",
-        flutingFactor: isFlute ? "1.5" : "1.0",
-        rctValue: "0",
-        rate: "55.00",
-        layerType: isFlute ? "flute" as const : "liner" as const,
-        shade: "Brown",
-      });
-    }
-    setLayers(defaultLayers);
+    setLayers(createLayersForPly(plyNum));
   };
   
   // Manufacturing costs

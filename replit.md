@@ -27,6 +27,9 @@ Preferred communication style: Simple, everyday language.
 - Real-time calculation of sheet dimensions, weight, and costs based on user inputs
 - Modal dialogs for managing company profiles and viewing quote details
 - Responsive grid layouts (3-column desktop, 2-column tablet, single-column mobile)
+- Layer-by-layer paper specifications table with dynamic row generation based on ply selection
+- Each layer includes: GSM, BF, Fluting Factor (manual), RCT Value, and Rate inputs
+- WhatsApp and Email message generation for quotes with formatted content and hyperlinks
 
 ### Backend Architecture
 
