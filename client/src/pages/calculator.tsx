@@ -1460,6 +1460,34 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                         />
                       </div>
                     </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="conversion-cost">Conversion Cost (₹/Kg)</Label>
+                        <Input
+                          id="conversion-cost"
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={conversionCost}
+                          onChange={(e) => setConversionCost(e.target.value)}
+                          data-testid="input-conversion-cost"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Cost/Box: ₹{conversionCostPerBox.toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="quantity">Quantity (pcs)</Label>
+                        <Input
+                          id="quantity"
+                          type="number"
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                          data-testid="input-quantity"
+                        />
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -1917,33 +1945,6 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                     />
                   </div>
                 </div>
-                
-                <div>
-                  <Label className="font-semibold mb-3 block">Conversion Cost</Label>
-                  <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
-                    <div className="space-y-2">
-                      <Label htmlFor="conversion-cost" className="text-sm">Conversion Cost (₹/Kg)</Label>
-                      <Input
-                        id="conversion-cost"
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={conversionCost}
-                        onChange={(e) => setConversionCost(e.target.value)}
-                        data-testid="input-conversion-cost"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground">Cost Per Box</Label>
-                      <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
-                        ₹{conversionCostPerBox.toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Calculated as: Weight ({result?.sheetWeight.toFixed(2)} Kg) × ₹{parseFloat(conversionCost || "0").toFixed(2)}/Kg
-                  </p>
-                </div>
               </CardContent>
             </Card>
           </div>
@@ -2066,17 +2067,6 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                         <span className="font-bold text-lg" data-testid="text-cost-per-unit">
                           ₹{totalCostPerBox.toFixed(2)}
                         </span>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="quantity">Quantity</Label>
-                        <Input
-                          id="quantity"
-                          type="number"
-                          value={quantity}
-                          onChange={(e) => setQuantity(e.target.value)}
-                          data-testid="input-quantity"
-                        />
                       </div>
                       
                       <div className="flex justify-between pt-2 border-t">
