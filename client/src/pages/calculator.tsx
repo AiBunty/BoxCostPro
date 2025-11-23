@@ -2090,7 +2090,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
                         <div className="font-semibold mb-1">Weight Formula:</div>
                         <div>Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ... where FF = Fluting Factor</div>
-                        <div>Weight = (Length in mm/1000) × (Width in mm/1000) × Total GSM) / 1,000</div>
+                        <div>Weight = (L in Meters × W in Meters × Total GSM) / 1,000</div>
                         <div className="mt-1">
                           Σ GSM = {(() => {
                             if (!result || !result.layerSpecs) return "0";

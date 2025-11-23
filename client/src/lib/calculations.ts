@@ -118,7 +118,7 @@ export function calculateLayerWeight(params: {
   return (gsm * flutingFactor * reelSize * sheetLength) / 1_000_000; // Kg
 }
 
-// Calculate sheet weight using formula: Weight = (Length × Width × Total GSM) / 1,000,000
+// Calculate sheet weight using formula: Weight = (Length in m × Width in m × Total GSM) / 1,000
 export function calculateSheetWeight(params: {
   sheetLength: number; // mm
   sheetWidth: number; // mm
@@ -133,15 +133,17 @@ export function calculateSheetWeight(params: {
     return sum + (spec.gsm * flutingFactor);
   }, 0);
   
-  // Calculate weight using standard formula: (Length × Width × Total GSM) / 1,000,000
-  const totalWeight = (sheetLength * sheetWidth * totalGSM) / 1_000_000; // Kg
+  // Convert mm to meters: divide by 1000
+  // Calculate weight: (Length in m × Width in m × Total GSM) / 1000
+  // Which equals: (sheetLength × sheetWidth × totalGSM) / (1000 × 1000 × 1000)
+  const totalWeight = (sheetLength * sheetWidth * totalGSM) / 1_000_000_000; // Kg
   
   // For breakdown, calculate individual layer weights proportionally
   const layerWeights = layerSpecs.map(spec => {
     const flutingFactor = spec.layerType === 'liner' ? 1.0 : (spec.flutingFactor || 1.5);
     const layerGSM = spec.gsm * flutingFactor;
     // Each layer's weight is proportional to its GSM contribution
-    return (sheetLength * sheetWidth * layerGSM) / 1_000_000;
+    return (sheetLength * sheetWidth * layerGSM) / 1_000_000_000;
   });
   
   return { totalWeight, layerWeights }; // Kg
