@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { QuoteItem, CompanyProfile, Quote, AppSettings, LayerSpec } from "@shared/schema";
 import { generateWhatsAppMessage, generateEmailContent } from "@/lib/messageGenerator";
-import { downloadExcel } from "@/lib/excelExport";
+import { downloadExcel, downloadQuotePDF } from "@/lib/excelExport";
 import {
   mmToInches,
   inchesToMm,
@@ -48,10 +48,18 @@ const PLY_OPTIONS = ["1", "3", "5", "7", "9"] as const;
 
 const GLUE_FLAP_DEFAULTS: Record<string, number> = {
   '1': 50.0,
-  '3': 50.0,
-  '5': 60.0,
-  '7': 70.0,
-  '9': 80.0,
+  '3': 45.0,
+  '5': 50.0,
+  '7': 60.0,
+  '9': 70.0,
+};
+
+const DECKLE_ALLOWANCE_DEFAULTS: Record<string, number> = {
+  '1': 30.0,
+  '3': 25.0,
+  '5': 30.0,
+  '7': 35.0,
+  '9': 40.0,
 };
 
 const PLY_THICKNESS: Record<string, number> = {
@@ -185,6 +193,13 @@ export default function Calculator() {
   const [customerEmail, setCustomerEmail] = useState<string>("");
   const [customerMobile, setCustomerMobile] = useState<string>("");
   
+  // Payment and Delivery terms
+  const [paymentTerms, setPaymentTerms] = useState<string>(localStorage.getItem("lastPaymentTerms") || "");
+  const [deliveryDays, setDeliveryDays] = useState<string>(localStorage.getItem("lastDeliveryDays") || "");
+  
+  // Transport Charge
+  const [transportCharge, setTransportCharge] = useState<string>("");
+  const [transportRemark, setTransportRemark] = useState<string>("");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showQuotesDialog, setShowQuotesDialog] = useState(false);
   const [showMessageDialog, setShowMessageDialog] = useState<"whatsapp" | "email" | null>(null);
@@ -846,14 +861,40 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
       return;
     }
     
+    if (!paymentTerms.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter payment terms.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!deliveryDays.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter delivery days.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    localStorage.setItem("lastPaymentTerms", paymentTerms);
+    localStorage.setItem("lastDeliveryDays", deliveryDays);
+    
     const total = quoteItems.reduce((sum, item) => sum + item.totalValue, 0);
+    const transportCost = parseFloat(transportCharge) || 0;
     
     saveQuoteMutation.mutate({
       partyName: partyName,
       customerCompany: customerCompany || "",
       customerEmail: customerEmail || "",
       customerMobile: customerMobile || "",
-      totalValue: total,
+      paymentTerms: paymentTerms,
+      deliveryDays: deliveryDays,
+      transportCharge: transportCost > 0 ? transportCost : undefined,
+      transportRemark: transportCharge ? transportRemark : undefined,
+      totalValue: total + transportCost,
       items: quoteItems,
     });
   };
@@ -1084,13 +1125,21 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                     <div className="flex gap-2">
                       <Button 
                         onClick={() => {
+                          if (!partyPersonName.trim() && !partyCompanyName.trim()) {
+                            toast({
+                              title: "Error",
+                              description: "Please enter at least Party Name or Company Name",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
                           savePartyProfileMutation.mutate({
-                            name: partyPersonName,
-                            companyName: partyCompanyName,
-                            mobile: partyMobile,
-                            email: partyEmail,
-                            gstNo: partyGst,
-                            address: partyAddress,
+                            name: partyPersonName || "N/A",
+                            companyName: partyCompanyName || "N/A",
+                            mobile: partyMobile || "",
+                            email: partyEmail || "",
+                            gstNo: partyGst || "",
+                            address: partyAddress || "",
                           });
                         }}
                         disabled={savePartyProfileMutation.isPending}
@@ -1485,6 +1534,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                     <Select value={ply} onValueChange={(v) => {
                       setPly(v);
                       setGlueFlap(GLUE_FLAP_DEFAULTS[v].toString());
+                      setDeckleAllowance(DECKLE_ALLOWANCE_DEFAULTS[v].toString());
                       updateLayersForPly(v);
                     }}>
                       <SelectTrigger id="ply" data-testid="select-ply">
@@ -2102,6 +2152,33 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       <Download className="w-4 h-4 mr-2" />
                       Download CSV
                     </Button>
+                    
+                    {customerMobile && (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => {
+                          const message = generateWhatsAppMessage(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile);
+                          const encodedMessage = encodeURIComponent(message);
+                          const whatsappUrl = `https://wa.me/${customerMobile.replace(/\D/g, '')}?text=${encodedMessage}`;
+                          window.open(whatsappUrl, '_blank');
+                        }}
+                        data-testid="button-whatsapp-direct"
+                      >
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        WhatsApp
+                      </Button>
+                    )}
+                    
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => downloadQuotePDF(quoteItems, partyName, customerCompany, companyProfile, paymentTerms, deliveryDays, transportCharge, transportRemark)}
+                      data-testid="button-download-pdf"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download PDF
+                    </Button>
 
                     <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
                       <DialogTrigger asChild>
@@ -2131,6 +2208,22 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                           <div className="space-y-2">
                             <Label htmlFor="customer-mobile">Mobile</Label>
                             <Input id="customer-mobile" placeholder="9876543210" value={customerMobile} onChange={(e) => setCustomerMobile(e.target.value)} data-testid="input-customer-mobile" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="payment-terms">Payment Terms</Label>
+                            <Input id="payment-terms" placeholder="e.g., 50% Advance, 50% Before Delivery" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} data-testid="input-payment-terms" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="delivery-days">Delivery Time (Days)</Label>
+                            <Input id="delivery-days" type="number" placeholder="e.g., 7" value={deliveryDays} onChange={(e) => setDeliveryDays(e.target.value)} data-testid="input-delivery-days" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="transport-charge">Transport Charge (₹) - Optional</Label>
+                            <Input id="transport-charge" type="number" placeholder="0" value={transportCharge} onChange={(e) => setTransportCharge(e.target.value)} data-testid="input-transport-charge" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="transport-remark">Transport Remark (Optional)</Label>
+                            <Input id="transport-remark" placeholder="e.g., FOB, CIF, etc." value={transportRemark} onChange={(e) => setTransportRemark(e.target.value)} data-testid="input-transport-remark" />
                           </div>
                           <Button onClick={handleSaveQuote} className="w-full" disabled={saveQuoteMutation.isPending} data-testid="button-confirm-save">
                             {saveQuoteMutation.isPending ? "Saving..." : "Save Quote"}

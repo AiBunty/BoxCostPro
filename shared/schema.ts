@@ -46,6 +46,10 @@ export const quotes = pgTable("quotes", {
   customerCompany: text("customer_company"),
   customerEmail: text("customer_email"),
   customerMobile: text("customer_mobile"),
+  paymentTerms: text("payment_terms"),
+  deliveryDays: text("delivery_days"),
+  transportCharge: real("transport_charge"),
+  transportRemark: text("transport_remark"),
   totalValue: real("total_value").notNull(),
   items: jsonb("items").notNull(), // Array of quote items
   companyProfileId: varchar("company_profile_id"),

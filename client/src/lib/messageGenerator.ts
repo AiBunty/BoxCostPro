@@ -3,6 +3,7 @@ import type { QuoteItem, CompanyProfile } from "@shared/schema";
 export function generateWhatsAppMessage(
   items: QuoteItem[],
   customerName: string,
+  customerCompany: string,
   companyProfile: CompanyProfile | null
 ): string {
   const lines = [
