@@ -74,6 +74,7 @@ interface CalculationResult {
   sheetLength: number;
   sheetWidth: number;
   sheetWeight: number;
+  layerWeights: number[];
   bs: number;
   paperCost: number;
   boardThickness: number;
@@ -605,9 +606,9 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
     }));
     
     // Calculate weight, BS, and costs
-    const weight = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
+    const weightResult = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
     const bs = calculateBurstStrength(layerSpecs);
-    const paperCost = calculatePaperCost(weight, layerSpecs);
+    const paperCost = calculatePaperCost(weightResult.totalWeight, layerSpecs);
     
     // Calculate strength metrics
     const boardThickness = customBoardThickness ? parseFloat(customBoardThickness) : calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
@@ -618,7 +619,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
     return {
       sheetLength: sheetLen,
       sheetWidth: sheetWid,
-      sheetWeight: weight,
+      sheetWeight: weightResult.totalWeight,
+      layerWeights: weightResult.layerWeights,
       bs,
       paperCost,
       boardThickness,
@@ -661,9 +663,9 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
     }));
     
     // Calculate weight, BS, and costs
-    const weight = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
+    const weightResult = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
     const bs = calculateBurstStrength(layerSpecs);
-    const paperCost = calculatePaperCost(weight, layerSpecs);
+    const paperCost = calculatePaperCost(weightResult.totalWeight, layerSpecs);
     
     // Calculate strength metrics (for reference, though less relevant for sheets)
     const boardThickness = customBoardThickness ? parseFloat(customBoardThickness) : calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
@@ -674,7 +676,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
     return {
       sheetLength: sheetLen,
       sheetWidth: sheetWid,
-      sheetWeight: weight,
+      sheetWeight: weightResult.totalWeight,
+      layerWeights: weightResult.layerWeights,
       bs,
       paperCost,
       boardThickness,
@@ -2164,16 +2167,16 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
             <Card>
               <CardHeader>
                 <CardTitle>Paper Cost & Weight Analysis</CardTitle>
-                <CardDescription>Per-layer breakdown and paper combinations</CardDescription>
+                <CardDescription>Formula: Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {result && result.layerSpecs && result.layerSpecs.length > 0 ? (
+                {result && result.layerSpecs && result.layerSpecs.length > 0 && result.layerWeights && result.layerWeights.length > 0 ? (
                   <>
                     <div className="space-y-3">
                       <div className="text-sm font-semibold">Per-Layer Breakdown:</div>
                       <div className="space-y-2">
                         {result.layerSpecs.map((spec: any, idx: number) => {
-                          const layerWeight = result.sheetWeight / result.layerSpecs.length;
+                          const layerWeight = result.layerWeights[idx];
                           const layerCost = layerWeight * spec.rate;
                           return (
                             <div key={idx} className="flex justify-between text-xs p-2 bg-muted rounded">
@@ -2219,7 +2222,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                           
                           result.layerSpecs.forEach((spec: any, idx: number) => {
                             const key = `${spec.gsm}-${spec.bf}-${spec.shade}`;
-                            const layerWeight = result.sheetWeight / result.layerSpecs.length;
+                            const layerWeight = result.layerWeights[idx];
                             const weight = layerWeight * qty;
                             
                             if (groupedPapers[key]) {

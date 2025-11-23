@@ -47,13 +47,16 @@ Preferred communication style: Simple, everyday language.
 
 ### Latest Features (Session Nov 23, 2025 - Final)
 
-12. **Paper Cost & Weight Analysis**
-    - Per-Layer Breakdown showing weight and cost for each layer
+12. **Paper Cost & Weight Analysis with Layer-Specific Formula**
+    - Per-Layer Weight Formula: Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000
+    - Per-Layer Breakdown showing individual layer weight and cost
     - Total Average Paper Cost (per unit) - sum of all layers
     - Total Sheet Weight (per unit) and Total KGs for full order quantity
     - Grouped Paper Combinations by GSM+BF+Shade with aggregated weights
     - Clubs identical paper combinations to show total quantity needed of each type
     - Displays total cost for each paper combination
+    - Liner layers: Fluting factor = 1.0
+    - Flute layers: Fluting factor = user-specified value (default 1.5)
 
 7. **Weight Formula Display**
    - Shows calculation breakdown: Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ...

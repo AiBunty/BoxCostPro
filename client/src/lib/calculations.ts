@@ -106,33 +106,41 @@ export function calculateFlatSheet(params: {
   };
 }
 
+// Calculate weight of individual layer using: Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000
+export function calculateLayerWeight(params: {
+  gsm: number;
+  flutingFactor: number;
+  reelSize: number; // mm (W-blank / Deckle)
+  sheetLength: number; // mm (L-blank)
+}): number {
+  const { gsm, flutingFactor, reelSize, sheetLength } = params;
+  // Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000
+  return (gsm * flutingFactor * reelSize * sheetLength) / 1_000_000; // Kg
+}
+
 // Calculate sheet weight with fluting factor for each layer
 export function calculateSheetWeight(params: {
   sheetLength: number; // mm
   sheetWidth: number; // mm
   layerSpecs: LayerSpec[];
   ply: string;
-}): number {
+}): { totalWeight: number; layerWeights: number[] } {
   const { sheetLength, sheetWidth, layerSpecs, ply } = params;
-  const area_m2 = (sheetLength / 1000) * (sheetWidth / 1000);
   
-  // Calculate total GSM with fluting factors: Liner layers add GSM directly, Flute layers multiply by fluting factor
-  const totalGsm = layerSpecs.length > 0
-    ? layerSpecs.reduce((sum, spec) => {
-        if (spec.layerType === 'liner') {
-          return sum + spec.gsm;
-        } else {
-          // For flute layers, multiply GSM by fluting factor
-          const flutingFactor = spec.flutingFactor || 1.5;
-          return sum + (spec.gsm * flutingFactor);
-        }
-      }, 0)
-    : 180; // default
+  // Calculate weight for each layer individually
+  const layerWeights = layerSpecs.map(spec => {
+    const flutingFactor = spec.layerType === 'liner' ? 1.0 : (spec.flutingFactor || 1.5);
+    return calculateLayerWeight({
+      gsm: spec.gsm,
+      flutingFactor,
+      reelSize: sheetWidth, // W-blank / Deckle
+      sheetLength
+    });
+  });
   
-  const plyNum = parseInt(ply);
-  const weight = area_m2 * totalGsm / 1000;
+  const totalWeight = layerWeights.reduce((sum, w) => sum + w, 0);
   
-  return weight; // Kg
+  return { totalWeight, layerWeights }; // Kg
 }
 
 // Calculate Burst Strength (BS) - per layer: Liner GSM*BF/1000 + Flute GSM*BF/2000
