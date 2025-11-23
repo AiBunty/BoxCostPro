@@ -51,7 +51,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/company-profiles/:id", async (req, res) => {
     try {
-      const profile = await storage.updateCompanyProfile(req.params.id, req.body);
+      // Validate the update data (partial schema)
+      const data = insertCompanyProfileSchema.partial().parse(req.body);
+      const profile = await storage.updateCompanyProfile(req.params.id, data);
       if (!profile) {
         return res.status(404).json({ error: "Profile not found" });
       }
@@ -113,7 +115,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/quotes/:id", async (req, res) => {
     try {
-      const quote = await storage.updateQuote(req.params.id, req.body);
+      // Validate the update data (partial schema)
+      const data = insertQuoteSchema.partial().parse(req.body);
+      const quote = await storage.updateQuote(req.params.id, data);
       if (!quote) {
         return res.status(404).json({ error: "Quote not found" });
       }

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator, Package, FileText, Plus, Trash2, Save, Building2 } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -85,12 +85,12 @@ export default function Calculator() {
   const [showQuotesDialog, setShowQuotesDialog] = useState(false);
   
   // Fetch default company profile
-  const { data: companyProfile } = useQuery<CompanyProfile>({
+  const { data: companyProfile, isLoading: isLoadingProfile } = useQuery<CompanyProfile>({
     queryKey: ["/api/company-profiles/default"],
   });
   
   // Fetch all quotes
-  const { data: savedQuotes = [] } = useQuery<Quote[]>({
+  const { data: savedQuotes = [], isLoading: isLoadingQuotes } = useQuery<Quote[]>({
     queryKey: ["/api/quotes"],
   });
   
@@ -303,13 +303,13 @@ export default function Calculator() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Calculator className="w-8 h-8 text-primary" />
+              <CalculatorIcon className="w-8 h-8 text-primary" />
               <div>
                 <h1 className="text-2xl font-bold" data-testid="text-app-title">
                   Box Costing Calculator
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  {companyProfile?.companyName || "Loading..."}
+                  {isLoadingProfile ? "Loading..." : companyProfile?.companyName || "Company"}
                 </p>
               </div>
             </div>
@@ -330,7 +330,11 @@ export default function Calculator() {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-2">
-                    {savedQuotes.length === 0 ? (
+                    {isLoadingQuotes ? (
+                      <p className="text-sm text-muted-foreground text-center py-8">
+                        Loading quotes...
+                      </p>
+                    ) : savedQuotes.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-8">
                         No saved quotes found
                       </p>
