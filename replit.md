@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a specialized web application for calculating corrugated box costs, managing quotes, and generating pricing for RSC (Regular Slotted Container) boxes and sheets. The system is designed for Ventura Packagers Private Limited to streamline their box costing and quotation workflow. It allows users to input box dimensions, select ply configurations, calculate material costs, manage company profiles, and generate/search quotes.
+This is a specialized web application for calculating corrugated box costs, managing quotes, and generating pricing for RSC (Regular Slotted Container) boxes and sheets. The system is designed for Ventura Packagers Private Limited to streamline their box costing and quotation workflow. It allows users to input box dimensions, select ply configurations, calculate material costs, manage multiple company and customer profiles, bulk import quote items, and generate/search quotes.
 
 ## User Preferences
 
@@ -35,6 +35,11 @@ Preferred communication style: Simple, everyday language.
 - Quote management with copy-to-clipboard buttons for WhatsApp and Email templates, plus CSV download functionality
 - Copy-to-clipboard functionality for WhatsApp and Email messages with formatted company profile details
 - CSV download for quote items with all calculations and details
+- **NEW**: Multiple Business & Party Profile support with dropdown selectors to switch between saved profiles
+- **NEW**: Copy layer specifications buttons in the Paper Specifications table:
+  - "Copy from previous" button (↑) to copy current layer from previous layer
+  - "Copy to following" button (↓) to copy current layer to all subsequent layers
+- **NEW**: Bulk upload dialog for importing multiple quote items via CSV file with support for all layer specifications
 
 ### Backend Architecture
 
@@ -45,9 +50,12 @@ Preferred communication style: Simple, everyday language.
 - Production: Serves pre-built static assets from dist/public
 
 **API Structure**: RESTful API with routes organized by resource:
-- `/api/company-profiles` - CRUD operations for company information
+- `/api/company-profiles` - GET all profiles; POST new profile
 - `/api/company-profiles/default` - Retrieve default profile
-- `/api/party-profiles` - CRUD operations for customer/party profiles
+- `/api/company-profiles/:id` - GET/PATCH specific profile
+- `/api/company-profiles/:id/set-default` - Set profile as default
+- `/api/party-profiles` - GET all profiles; POST new profile
+- `/api/party-profiles/:id` - GET/PATCH/DELETE specific profile
 - `/api/quotes` - Quote management including search functionality
 
 **Data Validation**: Zod schemas for runtime type checking and validation, integrated with Drizzle ORM schema definitions using drizzle-zod.
@@ -59,6 +67,7 @@ Preferred communication style: Simple, everyday language.
 - Request/response logging middleware for debugging
 - Separation of concerns between routing, storage, and business logic
 - Type-safe API contracts shared between client and server via the `shared` directory
+- Support for multiple profiles allows users to switch between different business entities and customer information without clearing form
 
 ### Data Storage
 
@@ -110,3 +119,34 @@ Preferred communication style: Simple, everyday language.
 - Google Fonts CDN for Inter typeface
 - Environment variable `DATABASE_URL` required for database connection
 - Shared TypeScript configuration across client, server, and shared code via path aliases (@/, @shared/, @assets/)
+
+## Recent Changes (Session Nov 23, 2025)
+
+### Features Implemented:
+1. **Copy Layer Specifications Buttons**: Added copy functionality in Paper Specifications table
+   - "Copy from previous" button (↑) - copies current layer values from the previous layer
+   - "Copy to following" button (↓) - copies current layer values to all subsequent layers
+   - Includes GSM, BF, Fluting Factor, RCT Value, Shade, and Rate
+   - Toast notifications confirm successful copy operations
+
+2. **Multiple Profile Support**:
+   - Refactored company profile fetching to retrieve ALL profiles, not just default
+   - Refactored party profile fetching to retrieve ALL profiles
+   - Added dropdown selectors for choosing active Business Profile and Party Profile
+   - Selected profiles are tracked via `selectedCompanyProfileId` and `selectedPartyProfileId` state
+   - Profiles sync to form fields when selected
+   - Falls back to first profile if none selected
+
+3. **Bulk Upload Feature**:
+   - New "Bulk Upload" button opens dialog for CSV file import
+   - CSV parser supports fields: Box Name, Description, Type (RSC/Sheet), Length, Width, Height
+   - Supports layer specifications: L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate (for layers 1-5)
+   - Automatically detects layer type (Liner/Flute) based on layer index
+   - Creates QuoteItem entries for each row in CSV
+   - Toast notifications show success/error status with item count imported
+
+### API Endpoints (Already Existing):
+- `GET /api/company-profiles` - Returns all company profiles
+- `GET /api/party-profiles` - Returns all party profiles
+- Both endpoints support create, read, update operations via POST/PATCH
+- Default profile selection supported via `isDefault` flag
