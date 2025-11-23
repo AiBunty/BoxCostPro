@@ -2163,6 +2163,102 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
             
             <Card>
               <CardHeader>
+                <CardTitle>Paper Cost & Weight Analysis</CardTitle>
+                <CardDescription>Per-layer breakdown and paper combinations</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result && result.layerSpecs && result.layerSpecs.length > 0 ? (
+                  <>
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold">Per-Layer Breakdown:</div>
+                      <div className="space-y-2">
+                        {result.layerSpecs.map((spec: any, idx: number) => {
+                          const layerWeight = result.sheetWeight / result.layerSpecs.length;
+                          const layerCost = layerWeight * spec.rate;
+                          return (
+                            <div key={idx} className="flex justify-between text-xs p-2 bg-muted rounded">
+                              <div>
+                                <span className="font-medium">L{idx + 1}: GSM {spec.gsm}, BF {spec.bf}, {spec.shade}</span>
+                              </div>
+                              <div className="text-right">
+                                <div>Weight: {layerWeight.toFixed(3)} Kg</div>
+                                <div>Cost: ₹{layerCost.toFixed(2)}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold">Total Paper Summary:</div>
+                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
+                        <span>Total Average Paper Cost (per unit):</span>
+                        <span className="font-bold">₹{result.paperCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
+                        <span>Total Sheet Weight (per unit):</span>
+                        <span className="font-bold">{result.sheetWeight.toFixed(3)} Kg</span>
+                      </div>
+                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
+                        <span>Total KGs for Order ({qty} units):</span>
+                        <span className="font-bold text-lg">{(result.sheetWeight * qty).toFixed(2)} Kg</span>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold">Grouped Paper Combinations:</div>
+                      <div className="space-y-2">
+                        {(() => {
+                          // Group by GSM+BF+Shade combination
+                          const groupedPapers: Record<string, {gsm: number; bf: number; shade: string; weight: number; rate: number; quantity: number}> = {};
+                          
+                          result.layerSpecs.forEach((spec: any, idx: number) => {
+                            const key = `${spec.gsm}-${spec.bf}-${spec.shade}`;
+                            const layerWeight = result.sheetWeight / result.layerSpecs.length;
+                            const weight = layerWeight * qty;
+                            
+                            if (groupedPapers[key]) {
+                              groupedPapers[key].weight += weight;
+                            } else {
+                              groupedPapers[key] = {
+                                gsm: spec.gsm,
+                                bf: spec.bf,
+                                shade: spec.shade,
+                                weight,
+                                rate: spec.rate,
+                                quantity: qty
+                              };
+                            }
+                          });
+                          
+                          return Object.entries(groupedPapers).map(([key, paper]) => (
+                            <div key={key} className="flex justify-between text-xs p-2 bg-muted rounded">
+                              <div>
+                                <span className="font-medium">GSM {paper.gsm} | BF {paper.bf} | {paper.shade}</span>
+                              </div>
+                              <div className="text-right">
+                                <div>{paper.weight.toFixed(2)} Kg</div>
+                                <div>₹{(paper.rate * paper.weight).toFixed(2)}</div>
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Enter dimensions to see paper analysis</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle>Cost Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">

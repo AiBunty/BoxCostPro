@@ -47,6 +47,14 @@ Preferred communication style: Simple, everyday language.
 
 ### Latest Features (Session Nov 23, 2025 - Final)
 
+12. **Paper Cost & Weight Analysis**
+    - Per-Layer Breakdown showing weight and cost for each layer
+    - Total Average Paper Cost (per unit) - sum of all layers
+    - Total Sheet Weight (per unit) and Total KGs for full order quantity
+    - Grouped Paper Combinations by GSM+BF+Shade with aggregated weights
+    - Clubs identical paper combinations to show total quantity needed of each type
+    - Displays total cost for each paper combination
+
 7. **Weight Formula Display**
    - Shows calculation breakdown: Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ...
    - Formula: Weight = (L × W × Σ GSM) / 1,000,000
