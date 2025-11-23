@@ -2012,6 +2012,21 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                           {result.sheetWeight.toFixed(3)} Kg
                         </span>
                       </div>
+                      <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
+                        <div className="font-semibold mb-1">Weight Formula:</div>
+                        <div>Weight = (L × W × Σ GSM × Ply Factor) / 1,000,000</div>
+                        <div className="mt-1">
+                          = ({(result.sheetLength / 1000).toFixed(2)} m × {(result.sheetWidth / 1000).toFixed(2)} m × {(() => {
+                            const totalGsm = result && result.layerSpecs ? 
+                              result.layerSpecs.reduce((sum: number, spec: any) => sum + (spec.gsm || 0), 0) : 0;
+                            const plyFactor = parseInt(ply) === 1 ? 1 : parseInt(ply) / 2;
+                            return `${totalGsm} GSM × ${plyFactor.toFixed(2)}`;
+                          })()} ) / 1,000,000
+                        </div>
+                        <div className="mt-1 text-xs italic">
+                          Where: L=Sheet Length (mm), W=Sheet Width (mm), Σ GSM=Total GSM from all layers
+                        </div>
+                      </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Calculated Box BS:</span>
                         <span className="font-medium" data-testid="text-bs">

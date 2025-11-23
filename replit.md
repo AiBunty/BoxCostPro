@@ -45,6 +45,24 @@ Preferred communication style: Simple, everyday language.
 - **NEW**: Conversion Cost (INR/Kg) input field for calculating additional manufacturing cost
 - Bulk upload dialog for importing multiple quote items via CSV file with support for all layer specifications
 
+### Latest Features (Session Nov 23, 2025 - Final)
+
+7. **Weight Formula Display**
+   - Shows calculation breakdown below sheet weight
+   - Formula: Weight = (L × W × Σ GSM × Ply Factor) / 1,000,000
+   - Displays actual calculated values with units
+   - Helps users understand weight calculation methodology
+
+8. **Copy Layer Specifications - Smart Exclusion**
+   - Copy buttons now exclude Fluting Factor and Layer Type
+   - Only copies: GSM, BF, RCT Value, Shade, Rate
+   - Preserves layer-specific constants during copy operations
+
+9. **Layout Reorganization**
+   - Moved Conversion Cost and Quantity below RSC Box Dimensions
+   - Better form flow and improved UX
+   - Shows cost per box calculation inline
+
 ### Backend Architecture
 
 **Runtime**: Node.js with Express framework, using ESM module format.
