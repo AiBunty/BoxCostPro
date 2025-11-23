@@ -144,17 +144,32 @@ export default function Calculator() {
     createLayersForPly(5)
   );
   
+  // Paper Mill and Board Thickness
+  const [paperMill, setPaperMill] = useState<string>("");
+  const [customBoardThickness, setCustomBoardThickness] = useState<string>("");
+  
   // Update layers when ply changes
   const updateLayersForPly = (newPly: string) => {
     const plyNum = parseInt(newPly);
     setLayers(createLayersForPly(plyNum));
   };
   
-  // Manufacturing costs
-  const [printingCost, setPrintingCost] = useState<string>("0");
-  const [laminationCost, setLaminationCost] = useState<string>("0");
+  // Printing Cost Details
+  const [costPerPrint, setCostPerPrint] = useState<string>("0");
+  const [plateCost, setPlateCost] = useState<string>("0");
+  const [printMoq, setPrintMoq] = useState<string>("0");
+  
+  // Lamination Cost Details
+  const [laminationRate, setLaminationRate] = useState<string>("0"); // Rate per sq inch
+  const [customLaminationL, setCustomLaminationL] = useState<string>("");
+  const [customLaminationW, setCustomLaminationW] = useState<string>("");
+  const [showLaminationCustomize, setShowLaminationCustomize] = useState(false);
+  
+  // Die Cost Details
+  const [dieDevelopmentCharge, setDieDevelopmentCharge] = useState<string>("0");
+  
+  // Varnish and Punching costs
   const [varnishCost, setVarnishCost] = useState<string>("0");
-  const [dieCost, setDieCost] = useState<string>("0");
   const [punchingCost, setPunchingCost] = useState<string>("0");
   
   const [quantity, setQuantity] = useState<string>("1000");
@@ -273,9 +288,9 @@ export default function Calculator() {
     const paperCost = calculatePaperCost(weight, layerSpecs);
     
     // Calculate strength metrics
-    const boardThickness = calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
+    const boardThickness = customBoardThickness ? parseFloat(customBoardThickness) : calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
     const boxPerimeter = 2 * (adjusted.length + adjusted.width);
-    const ect = calculateECT(layerSpecs, boardThickness);
+    const ect = calculateECT(layerSpecs);
     const bct = calculateMcKeeFormula({ ect, boardThickness, boxPerimeter });
     
     return {
@@ -328,9 +343,9 @@ export default function Calculator() {
     const paperCost = calculatePaperCost(weight, layerSpecs);
     
     // Calculate strength metrics (for reference, though less relevant for sheets)
-    const boardThickness = calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
+    const boardThickness = customBoardThickness ? parseFloat(customBoardThickness) : calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
     const boxPerimeter = 2 * (lengthMm + widthMm);
-    const ect = calculateECT(layerSpecs, boardThickness);
+    const ect = calculateECT(layerSpecs);
     const bct = calculateMcKeeFormula({ ect, boardThickness, boxPerimeter });
     
     return {
@@ -348,14 +363,52 @@ export default function Calculator() {
   
   const result = activeTab === "rsc" ? calculateRSC() : calculateSheet();
   
+  // Calculate detailed manufacturing costs
+  const calculateManufacturingCosts = () => {
+    if (!result) return { printing: 0, lamination: 0, varnish: 0, die: 0, punching: 0 };
+    
+    const qty = parseFloat(quantity) || 1;
+    
+    // Printing Cost: costPerPrint + (plateCost / qty) + MOQ adjustment
+    let printingTotal = 0;
+    const costPer = parseFloat(costPerPrint) || 0;
+    const plateCharge = parseFloat(plateCost) || 0;
+    const moq = parseFloat(printMoq) || 0;
+    printingTotal = costPer + (plateCharge / qty);
+    if (moq > qty) {
+      printingTotal += (costPer * (moq - qty)) / qty;
+    }
+    
+    // Lamination Cost: (L inches * W inches * Rate per sq inch)
+    let laminationTotal = 0;
+    const laminationRateValue = parseFloat(laminationRate) || 0;
+    if (laminationRateValue > 0) {
+      const useCustom = showLaminationCustomize && customLaminationL && customLaminationW;
+      const L = useCustom ? parseFloat(customLaminationL) : mmToInches(result.sheetLength);
+      const W = useCustom ? parseFloat(customLaminationW) : mmToInches(result.sheetWidth);
+      laminationTotal = L * W * laminationRateValue;
+    }
+    
+    // Die Cost: dieDevelopmentCharge / qty
+    const dieCharge = parseFloat(dieDevelopmentCharge) || 0;
+    const dieTotal = dieCharge / qty;
+    
+    const varnishTotal = parseFloat(varnishCost) || 0;
+    const punchingTotal = parseFloat(punchingCost) || 0;
+    
+    return { printing: printingTotal, lamination: laminationTotal, varnish: varnishTotal, die: dieTotal, punching: punchingTotal };
+  };
+  
+  const mfgCosts = calculateManufacturingCosts();
+  
   // Calculate total cost including manufacturing costs
   const totalCostPerBox = result ? calculateTotalCost({
     paperCost: result.paperCost,
-    printingCost: parseFloat(printingCost) || 0,
-    laminationCost: parseFloat(laminationCost) || 0,
-    varnishCost: parseFloat(varnishCost) || 0,
-    dieCost: parseFloat(dieCost) || 0,
-    punchingCost: parseFloat(punchingCost) || 0,
+    printingCost: mfgCosts.printing,
+    laminationCost: mfgCosts.lamination,
+    varnishCost: mfgCosts.varnish,
+    dieCost: mfgCosts.die,
+    punchingCost: mfgCosts.punching,
     markup: 15,
   }) : 0;
   
@@ -426,11 +479,11 @@ export default function Calculator() {
       
       // Costs
       paperCost: result.paperCost,
-      printingCost: parseFloat(printingCost) || 0,
-      laminationCost: parseFloat(laminationCost) || 0,
-      varnishCost: parseFloat(varnishCost) || 0,
-      dieCost: parseFloat(dieCost) || 0,
-      punchingCost: parseFloat(punchingCost) || 0,
+      printingCost: mfgCosts.printing,
+      laminationCost: mfgCosts.lamination,
+      varnishCost: mfgCosts.varnish,
+      dieCost: mfgCosts.die,
+      punchingCost: mfgCosts.punching,
       totalCostPerBox,
       quantity: qty,
       totalValue: totalValue,
@@ -450,10 +503,16 @@ export default function Calculator() {
       setSheetWidth("");
     }
     setQuantity("1000");
-    setPrintingCost("0");
-    setLaminationCost("0");
+    // Reset manufacturing costs
+    setCostPerPrint("0");
+    setPlateCost("0");
+    setPrintMoq("0");
+    setLaminationRate("0");
+    setCustomLaminationL("");
+    setCustomLaminationW("");
+    setShowLaminationCustomize(false);
+    setDieDevelopmentCharge("0");
     setVarnishCost("0");
-    setDieCost("0");
     setPunchingCost("0");
     
     toast({
@@ -796,24 +855,48 @@ export default function Calculator() {
                 <CardDescription>Configure paper properties for each layer</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="ply">Ply Configuration</Label>
-                  <Select value={ply} onValueChange={(v) => {
-                    setPly(v);
-                    setGlueFlap(GLUE_FLAP_DEFAULTS[v].toString());
-                    updateLayersForPly(v);
-                  }}>
-                    <SelectTrigger id="ply" data-testid="select-ply">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PLY_OPTIONS.map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {p === "1" ? "MONO" : `${p}-Ply`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="ply">Ply Configuration</Label>
+                    <Select value={ply} onValueChange={(v) => {
+                      setPly(v);
+                      setGlueFlap(GLUE_FLAP_DEFAULTS[v].toString());
+                      updateLayersForPly(v);
+                    }}>
+                      <SelectTrigger id="ply" data-testid="select-ply">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PLY_OPTIONS.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {p === "1" ? "MONO" : `${p}-Ply`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="paper-mill">Paper Mill Name</Label>
+                    <Input
+                      id="paper-mill"
+                      placeholder="e.g., Smurfit India"
+                      value={paperMill}
+                      onChange={(e) => setPaperMill(e.target.value)}
+                      data-testid="input-paper-mill"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="board-thickness">Board Thickness (mm)</Label>
+                    <Input
+                      id="board-thickness"
+                      type="number"
+                      step="0.01"
+                      placeholder="3.5"
+                      value={customBoardThickness}
+                      onChange={(e) => setCustomBoardThickness(e.target.value)}
+                      data-testid="input-board-thickness"
+                    />
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto border rounded-md">
@@ -913,27 +996,51 @@ export default function Calculator() {
             <Card>
               <CardHeader>
                 <CardTitle>Fixed & Manufacturing Costs</CardTitle>
-                <CardDescription>Additional costs per unit (₹)</CardDescription>
+                <CardDescription>Detailed cost breakdown per unit (₹)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
                   <Label className="font-semibold mb-3 block">Printing Cost</Label>
                   <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
                     <div className="space-y-2">
-                      <Label htmlFor="printing-cost" className="text-sm">Total Printing Cost (₹)</Label>
+                      <Label htmlFor="cost-per-print" className="text-sm">Cost Per Print (₹)</Label>
                       <Input
-                        id="printing-cost"
+                        id="cost-per-print"
                         type="number"
+                        step="0.01"
                         placeholder="0.00"
-                        value={printingCost}
-                        onChange={(e) => setPrintingCost(e.target.value)}
-                        data-testid="input-printing-cost"
+                        value={costPerPrint}
+                        onChange={(e) => setCostPerPrint(e.target.value)}
+                        data-testid="input-cost-per-print"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground">Cost per sq.m</Label>
-                      <div className="px-3 py-2 bg-muted rounded text-sm">
-                        {printingCost && result ? ((parseFloat(printingCost) / ((result.sheetLength * result.sheetWidth) / 1000000)).toFixed(2)) : "0.00"}
+                      <Label htmlFor="plate-cost" className="text-sm">Plates Development Charge (₹)</Label>
+                      <Input
+                        id="plate-cost"
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={plateCost}
+                        onChange={(e) => setPlateCost(e.target.value)}
+                        data-testid="input-plate-cost"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="print-moq" className="text-sm">MOQ (Minimum Order Qty)</Label>
+                      <Input
+                        id="print-moq"
+                        type="number"
+                        placeholder="0"
+                        value={printMoq}
+                        onChange={(e) => setPrintMoq(e.target.value)}
+                        data-testid="input-print-moq"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Total Cost Per Print</Label>
+                      <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
+                        ₹{mfgCosts.printing.toFixed(2)}
                       </div>
                     </div>
                   </div>
@@ -941,53 +1048,108 @@ export default function Calculator() {
 
                 <div>
                   <Label className="font-semibold mb-3 block">Lamination Cost</Label>
+                  <div className="space-y-4 pl-4 border-l-2 border-muted">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="lamination-rate" className="text-sm">Rate per Sq Inch (₹)</Label>
+                        <Input
+                          id="lamination-rate"
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={laminationRate}
+                          onChange={(e) => setLaminationRate(e.target.value)}
+                          data-testid="input-lamination-rate"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm text-muted-foreground">Calculated Cost</Label>
+                        <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
+                          ₹{mfgCosts.lamination.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowLaminationCustomize(!showLaminationCustomize)}
+                      data-testid="button-customize-lamination"
+                    >
+                      {showLaminationCustomize ? "Use Auto Dimensions" : "Customize Dimensions"}
+                    </Button>
+                    {showLaminationCustomize && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="custom-lam-l" className="text-sm">Custom Length (inches)</Label>
+                          <Input
+                            id="custom-lam-l"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={customLaminationL}
+                            onChange={(e) => setCustomLaminationL(e.target.value)}
+                            data-testid="input-custom-lamination-l"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="custom-lam-w" className="text-sm">Custom Width (inches)</Label>
+                          <Input
+                            id="custom-lam-w"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={customLaminationW}
+                            onChange={(e) => setCustomLaminationW(e.target.value)}
+                            data-testid="input-custom-lamination-w"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="font-semibold mb-3 block">Die Cost</Label>
                   <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
                     <div className="space-y-2">
-                      <Label htmlFor="lamination-cost" className="text-sm">Total Lamination Cost (₹)</Label>
+                      <Label htmlFor="die-charge" className="text-sm">Die Development Charge (₹)</Label>
                       <Input
-                        id="lamination-cost"
+                        id="die-charge"
                         type="number"
+                        step="0.01"
                         placeholder="0.00"
-                        value={laminationCost}
-                        onChange={(e) => setLaminationCost(e.target.value)}
-                        data-testid="input-lamination-cost"
+                        value={dieDevelopmentCharge}
+                        onChange={(e) => setDieDevelopmentCharge(e.target.value)}
+                        data-testid="input-die-charge"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground">Cost per sq.m</Label>
-                      <div className="px-3 py-2 bg-muted rounded text-sm">
-                        {laminationCost && result ? ((parseFloat(laminationCost) / ((result.sheetLength * result.sheetWidth) / 1000000)).toFixed(2)) : "0.00"}
+                      <Label className="text-sm text-muted-foreground">Cost Per Box</Label>
+                      <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
+                        ₹{mfgCosts.die.toFixed(2)}
                       </div>
                     </div>
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="varnish-cost">Varnish Cost (₹)</Label>
+                    <Label htmlFor="varnish-cost">Varnish Cost (₹/unit)</Label>
                     <Input
                       id="varnish-cost"
                       type="number"
+                      step="0.01"
                       value={varnishCost}
                       onChange={(e) => setVarnishCost(e.target.value)}
                       data-testid="input-varnish-cost"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="die-cost">Die Cost (₹)</Label>
-                    <Input
-                      id="die-cost"
-                      type="number"
-                      value={dieCost}
-                      onChange={(e) => setDieCost(e.target.value)}
-                      data-testid="input-die-cost"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="punching-cost">Punching Cost (₹)</Label>
+                    <Label htmlFor="punching-cost">Punching Cost (₹/unit)</Label>
                     <Input
                       id="punching-cost"
                       type="number"
+                      step="0.01"
                       value={punchingCost}
                       onChange={(e) => setPunchingCost(e.target.value)}
                       data-testid="input-punching-cost"

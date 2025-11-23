@@ -5,24 +5,36 @@ export const mmToInches = (mm: number): number => mm / 25.4;
 export const inchesToMm = (inches: number): number => inches * 25.4;
 
 // McKee Formula for Box Compression Test (BCT)
-// BCT = 5.87 * ECT * sqrt(boardThickness * boxPerimeter)
+// BCT (Kg) = 5.87 * ECT (kN/m) * sqrt(Board Thickness (mm) * Box Perimeter (mm))
 export function calculateMcKeeFormula(params: {
-  ect: number; // kN/m
-  boardThickness: number; // mm
-  boxPerimeter: number; // mm
+  ect: number; // Edge Crush Test in kN/m
+  boardThickness: number; // Board thickness in mm
+  boxPerimeter: number; // Box perimeter in mm
 }): number {
   const { ect, boardThickness, boxPerimeter } = params;
-  return 5.87 * ect * Math.sqrt(boardThickness * boxPerimeter);
+  // BCT = 5.87 * ECT * √(Board Thickness * Box Perimeter)
+  return 5.87 * ect * Math.sqrt((boardThickness / 10) * boxPerimeter); // Convert mm thickness to cm
 }
 
-// Calculate Edge Crush Test (ECT) based on paper specifications
-export function calculateECT(layerSpecs: LayerSpec[], boardThickness: number): number {
-  // Simplified ECT calculation based on GSM and board composition
-  const totalGsm = layerSpecs.reduce((sum, spec) => sum + spec.gsm, 0);
-  const avgBF = layerSpecs.reduce((sum, spec) => sum + (spec.bf || 0), 0) / layerSpecs.length;
+// Calculate Edge Crush Test (ECT) based on RCT values of each layer
+// ECT = RCT Liners + (Flute Factor * RCT Fluting) for each layer
+export function calculateECT(layerSpecs: LayerSpec[]): number {
+  if (layerSpecs.length === 0) return 3.0; // Default ECT
   
-  // ECT formula: approximate based on GSM, BF, and board thickness
-  return (totalGsm * avgBF * boardThickness) / 1000; // kN/m
+  let ectValue = 0;
+  for (const spec of layerSpecs) {
+    const rct = spec.rctValue || 0;
+    if (spec.layerType === 'liner') {
+      // For liner: add RCT directly
+      ectValue += rct;
+    } else {
+      // For flute: multiply RCT by fluting factor
+      const flutingFactor = spec.flutingFactor || 1.5;
+      ectValue += rct * flutingFactor;
+    }
+  }
+  
+  return ectValue; // kN/m
 }
 
 // Calculate board thickness based on ply and layer specifications
