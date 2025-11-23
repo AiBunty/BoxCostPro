@@ -11,7 +11,20 @@ import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Bu
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { QuoteItem, CompanyProfile, Quote } from "@shared/schema";
+import type { QuoteItem, CompanyProfile, Quote, AppSettings, LayerSpec } from "@shared/schema";
+import {
+  mmToInches,
+  inchesToMm,
+  calculateRSCSheet,
+  calculateFlatSheet,
+  calculateSheetWeight,
+  calculateBurstStrength,
+  calculatePaperCost,
+  calculateTotalCost,
+  calculateBoardThickness,
+  calculateECT,
+  calculateMcKeeFormula,
+} from "@/lib/calculations";
 import {
   Dialog,
   DialogContent,
@@ -39,12 +52,24 @@ const GLUE_FLAP_DEFAULTS: Record<string, number> = {
   '9': 80.0,
 };
 
+const PLY_THICKNESS: Record<string, number> = {
+  '1': 0.45,
+  '3': 2.5,
+  '5': 3.5,
+  '7': 5.5,
+  '9': 6.5,
+};
+
 interface CalculationResult {
   sheetLength: number;
   sheetWidth: number;
   sheetWeight: number;
   bs: number;
   paperCost: number;
+  boardThickness: number;
+  boxPerimeter: number;
+  ect: number;
+  bct: number;
 }
 
 export default function Calculator() {
@@ -52,13 +77,18 @@ export default function Calculator() {
   const [activeTab, setActiveTab] = useState<"rsc" | "sheet">("rsc");
   const [ply, setPly] = useState<string>("5");
   const [boxName, setBoxName] = useState<string>("");
+  const [boxDescription, setBoxDescription] = useState<string>("");
   
-  // RSC dimensions (mm)
+  // Dimension settings
+  const [inputUnit, setInputUnit] = useState<"mm" | "inches">("mm");
+  const [measuredOn, setMeasuredOn] = useState<"ID" | "OD">("ID");
+  
+  // RSC dimensions (stored internally as mm)
   const [rscLength, setRscLength] = useState<string>("");
   const [rscWidth, setRscWidth] = useState<string>("");
   const [rscHeight, setRscHeight] = useState<string>("");
   
-  // Sheet dimensions (mm)
+  // Sheet dimensions (stored internally as mm)
   const [sheetLength, setSheetLength] = useState<string>("");
   const [sheetWidth, setSheetWidth] = useState<string>("");
   
@@ -66,11 +96,20 @@ export default function Calculator() {
   const [glueFlap, setGlueFlap] = useState<string>("50");
   const [deckleAllowance, setDeckleAllowance] = useState<string>("30");
   const [sheetAllowance, setSheetAllowance] = useState<string>("10");
+  const [maxLengthThreshold, setMaxLengthThreshold] = useState<string>("1500");
   
-  // Paper specifications
+  // Paper specifications - Layer by layer
   const [gsmL1, setGsmL1] = useState<string>("180");
   const [bfL1, setBfL1] = useState<string>("12");
+  const [flutingFactorL1, setFlutingFactorL1] = useState<string>("1.5");
   const [rateL1, setRateL1] = useState<string>("55.00");
+  
+  // Manufacturing costs
+  const [printingCost, setPrintingCost] = useState<string>("0");
+  const [laminationCost, setLaminationCost] = useState<string>("0");
+  const [varnishCost, setVarnishCost] = useState<string>("0");
+  const [dieCost, setDieCost] = useState<string>("0");
+  const [punchingCost, setPunchingCost] = useState<string>("0");
   
   const [quantity, setQuantity] = useState<string>("1000");
   
@@ -92,6 +131,11 @@ export default function Calculator() {
   // Fetch all quotes
   const { data: savedQuotes = [], isLoading: isLoadingQuotes } = useQuery<Quote[]>({
     queryKey: ["/api/quotes"],
+  });
+  
+  // Fetch app settings
+  const { data: appSettings } = useQuery<AppSettings>({
+    queryKey: ["/api/settings"],
   });
   
   // Save quote mutation
@@ -123,28 +167,67 @@ export default function Calculator() {
     },
   });
   
+  // Helper to convert input dimensions to mm if needed
+  const toMm = (value: number) => inputUnit === "inches" ? inchesToMm(value) : value;
+  
+  // Helper to adjust dimensions for ID/OD
+  const adjustForMeasurement = (length: number, width: number, height?: number) => {
+    if (measuredOn === "OD") {
+      const thickness = (appSettings?.plyThicknessMap as any)?.[ply] || PLY_THICKNESS[ply];
+      return {
+        length: length - (2 * thickness),
+        width: width - (2 * thickness),
+        height: height ? height - thickness : undefined,
+      };
+    }
+    return { length, width, height };
+  };
+  
   const calculateRSC = (): CalculationResult | null => {
     const L = parseFloat(rscLength);
     const W = parseFloat(rscWidth);
     const H = parseFloat(rscHeight);
-    const gf = parseFloat(glueFlap) || 50;
-    const da = parseFloat(deckleAllowance) || 30;
     
     if (!L || !W || !H) return null;
     
-    const sheetLen = (2 * (L + W)) + gf;
-    const sheetWid = W + H + da;
-    const area_m2 = (sheetLen / 1000) * (sheetWid / 1000);
+    // Convert to mm and adjust for ID/OD
+    const adjusted = adjustForMeasurement(toMm(L), toMm(W), toMm(H));
     
-    const gsm = parseFloat(gsmL1) || 180;
-    const plyNum = parseInt(ply);
-    const weight = area_m2 * gsm * (plyNum === 1 ? 1 : plyNum / 2) / 1000;
+    const gf = parseFloat(glueFlap) || 50;
+    const da = parseFloat(deckleAllowance) || 30;
+    const maxThreshold = parseFloat(maxLengthThreshold) || undefined;
     
-    const bf = parseFloat(bfL1) || 12;
-    const bs = (gsm * bf) / 500;
+    // Calculate sheet dimensions
+    const { sheetLength: sheetLen, sheetWidth: sheetWid, additionalFlapApplied } = calculateRSCSheet({
+      length: adjusted.length,
+      width: adjusted.width,
+      height: adjusted.height!,
+      glueFlap: gf,
+      deckleAllowance: da,
+      maxLengthThreshold: maxThreshold,
+      ply,
+    });
     
-    const rate = parseFloat(rateL1) || 55;
-    const paperCost = weight * rate;
+    // Create layer specs
+    const layerSpecs: LayerSpec[] = [{
+      layerType: "liner",
+      gsm: parseFloat(gsmL1) || 180,
+      bf: parseFloat(bfL1) || 12,
+      flutingFactor: parseFloat(flutingFactorL1) || 1.5,
+      shade: "Brown",
+      rate: parseFloat(rateL1) || 55,
+    }];
+    
+    // Calculate weight, BS, and costs
+    const weight = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
+    const bs = calculateBurstStrength(layerSpecs);
+    const paperCost = calculatePaperCost(weight, layerSpecs);
+    
+    // Calculate strength metrics
+    const boardThickness = calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
+    const boxPerimeter = 2 * (adjusted.length + adjusted.width);
+    const ect = calculateECT(layerSpecs, boardThickness);
+    const bct = calculateMcKeeFormula({ ect, boardThickness, boxPerimeter });
     
     return {
       sheetLength: sheetLen,
@@ -152,29 +235,52 @@ export default function Calculator() {
       sheetWeight: weight,
       bs,
       paperCost,
+      boardThickness,
+      boxPerimeter,
+      ect,
+      bct,
     };
   };
   
   const calculateSheet = (): CalculationResult | null => {
     const L = parseFloat(sheetLength);
     const W = parseFloat(sheetWidth);
-    const allowance = parseFloat(sheetAllowance) || 10;
     
     if (!L || !W) return null;
     
-    const sheetLen = L + allowance;
-    const sheetWid = W + allowance;
-    const area_m2 = (sheetLen / 1000) * (sheetWid / 1000);
+    // Convert to mm
+    const lengthMm = toMm(L);
+    const widthMm = toMm(W);
     
-    const gsm = parseFloat(gsmL1) || 180;
-    const plyNum = parseInt(ply);
-    const weight = area_m2 * gsm * (plyNum === 1 ? 1 : plyNum / 2) / 1000;
+    const allowance = parseFloat(sheetAllowance) || 10;
     
-    const bf = parseFloat(bfL1) || 12;
-    const bs = (gsm * bf) / 500;
+    // Calculate sheet dimensions
+    const { sheetLength: sheetLen, sheetWidth: sheetWid } = calculateFlatSheet({
+      length: lengthMm,
+      width: widthMm,
+      allowance,
+    });
     
-    const rate = parseFloat(rateL1) || 55;
-    const paperCost = weight * rate;
+    // Create layer specs
+    const layerSpecs: LayerSpec[] = [{
+      layerType: "liner",
+      gsm: parseFloat(gsmL1) || 180,
+      bf: parseFloat(bfL1) || 12,
+      flutingFactor: parseFloat(flutingFactorL1) || 1.5,
+      shade: "Brown",
+      rate: parseFloat(rateL1) || 55,
+    }];
+    
+    // Calculate weight, BS, and costs
+    const weight = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
+    const bs = calculateBurstStrength(layerSpecs);
+    const paperCost = calculatePaperCost(weight, layerSpecs);
+    
+    // Calculate strength metrics (for reference, though less relevant for sheets)
+    const boardThickness = calculateBoardThickness(ply, layerSpecs, appSettings?.plyThicknessMap as any || PLY_THICKNESS);
+    const boxPerimeter = 2 * (lengthMm + widthMm);
+    const ect = calculateECT(layerSpecs, boardThickness);
+    const bct = calculateMcKeeFormula({ ect, boardThickness, boxPerimeter });
     
     return {
       sheetLength: sheetLen,
@@ -182,13 +288,28 @@ export default function Calculator() {
       sheetWeight: weight,
       bs,
       paperCost,
+      boardThickness,
+      boxPerimeter,
+      ect,
+      bct,
     };
   };
   
   const result = activeTab === "rsc" ? calculateRSC() : calculateSheet();
-  const costPerUnit = result ? result.paperCost * 1.15 : 0;
+  
+  // Calculate total cost including manufacturing costs
+  const totalCostPerBox = result ? calculateTotalCost({
+    paperCost: result.paperCost,
+    printingCost: parseFloat(printingCost) || 0,
+    laminationCost: parseFloat(laminationCost) || 0,
+    varnishCost: parseFloat(varnishCost) || 0,
+    dieCost: parseFloat(dieCost) || 0,
+    punchingCost: parseFloat(punchingCost) || 0,
+    markup: 15,
+  }) : 0;
+  
   const qty = parseFloat(quantity) || 1000;
-  const totalValue = costPerUnit * qty;
+  const totalValue = totalCostPerBox * qty;
   
   const handleAddToQuote = () => {
     if (!result) {
@@ -200,28 +321,64 @@ export default function Calculator() {
       return;
     }
     
+    // Create layer specs for quote item
+    const layerSpecs: LayerSpec[] = [{
+      layerType: "liner",
+      gsm: parseFloat(gsmL1) || 180,
+      bf: parseFloat(bfL1) || 12,
+      flutingFactor: parseFloat(flutingFactorL1) || 1.5,
+      shade: "Brown",
+      rate: parseFloat(rateL1) || 55,
+    }];
+    
     const item: QuoteItem = {
       type: activeTab,
       boxName: boxName || `${ply}-Ply ${activeTab === "rsc" ? "Box" : "Sheet"}`,
+      boxDescription: boxDescription || undefined,
       ply: ply as "1" | "3" | "5" | "7" | "9",
-      length: activeTab === "rsc" ? parseFloat(rscLength) : parseFloat(sheetLength),
-      width: activeTab === "rsc" ? parseFloat(rscWidth) : parseFloat(sheetWidth),
-      height: activeTab === "rsc" ? parseFloat(rscHeight) : undefined,
+      
+      // Dimensional metadata
+      inputUnit,
+      measuredOn,
+      plyThicknessUsed: (appSettings?.plyThicknessMap as any)?.[ply] || PLY_THICKNESS[ply],
+      
+      // Dimensions (stored in mm)
+      length: activeTab === "rsc" ? toMm(parseFloat(rscLength)) : toMm(parseFloat(sheetLength)),
+      width: activeTab === "rsc" ? toMm(parseFloat(rscWidth)) : toMm(parseFloat(sheetWidth)),
+      height: activeTab === "rsc" ? toMm(parseFloat(rscHeight)) : undefined,
+      
+      // Allowances and thresholds
+      glueFlap: parseFloat(glueFlap) || 50,
+      deckleAllowance: parseFloat(deckleAllowance) || 30,
+      sheetAllowance: parseFloat(sheetAllowance) || 10,
+      maxLengthThreshold: parseFloat(maxLengthThreshold) || undefined,
+      additionalFlapApplied: false,
+      
+      // Calculated sheet sizes
       sheetLength: result.sheetLength,
       sheetWidth: result.sheetWidth,
+      sheetLengthInches: mmToInches(result.sheetLength),
+      sheetWidthInches: mmToInches(result.sheetWidth),
       sheetWeight: result.sheetWeight,
+      
+      // Strength analysis
+      boardThickness: result.boardThickness,
+      boxPerimeter: result.boxPerimeter,
+      ect: result.ect,
+      bct: result.bct,
       bs: result.bs,
-      paperSpecs: {
-        L1: {
-          gsm: parseFloat(gsmL1),
-          bf: parseFloat(bfL1),
-          shade: "Brown",
-          rate: parseFloat(rateL1),
-        },
-      },
+      
+      // Paper specifications
+      layerSpecs,
+      
+      // Costs
       paperCost: result.paperCost,
-      additionalCosts: {},
-      totalCostPerBox: costPerUnit,
+      printingCost: parseFloat(printingCost) || 0,
+      laminationCost: parseFloat(laminationCost) || 0,
+      varnishCost: parseFloat(varnishCost) || 0,
+      dieCost: parseFloat(dieCost) || 0,
+      punchingCost: parseFloat(punchingCost) || 0,
+      totalCostPerBox,
       quantity: qty,
       totalValue: totalValue,
     };
@@ -230,6 +387,7 @@ export default function Calculator() {
     
     // Reset form
     setBoxName("");
+    setBoxDescription("");
     if (activeTab === "rsc") {
       setRscLength("");
       setRscWidth("");
@@ -239,6 +397,11 @@ export default function Calculator() {
       setSheetWidth("");
     }
     setQuantity("1000");
+    setPrintingCost("0");
+    setLaminationCost("0");
+    setVarnishCost("0");
+    setDieCost("0");
+    setPunchingCost("0");
     
     toast({
       title: "Item added",
@@ -306,7 +469,7 @@ export default function Calculator() {
               <CalculatorIcon className="w-8 h-8 text-primary" />
               <div>
                 <h1 className="text-2xl font-bold" data-testid="text-app-title">
-                  Box Costing Calculator
+                  {appSettings?.appTitle || "Box Costing Calculator"}
                 </h1>
                 <p className="text-sm text-muted-foreground">
                   {isLoadingProfile ? "Loading..." : companyProfile?.companyName || "Company"}
@@ -389,23 +552,64 @@ export default function Calculator() {
                 <Card>
                   <CardHeader>
                     <CardTitle>RSC Box Dimensions</CardTitle>
-                    <CardDescription>Enter dimensions in millimeters (OD)</CardDescription>
+                    <CardDescription>
+                      Enter dimensions ({inputUnit}) - Measured on {measuredOn}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="box-name-rsc">Box Name</Label>
-                      <Input
-                        id="box-name-rsc"
-                        placeholder="e.g., 10kg Apple Box"
-                        value={boxName}
-                        onChange={(e) => setBoxName(e.target.value)}
-                        data-testid="input-box-name"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="box-name-rsc">Box Name</Label>
+                        <Input
+                          id="box-name-rsc"
+                          placeholder="e.g., 10kg Apple Box"
+                          value={boxName}
+                          onChange={(e) => setBoxName(e.target.value)}
+                          data-testid="input-box-name"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="box-description-rsc">Box Description (Optional)</Label>
+                        <Input
+                          id="box-description-rsc"
+                          placeholder="e.g., Heavy duty corrugated"
+                          value={boxDescription}
+                          onChange={(e) => setBoxDescription(e.target.value)}
+                          data-testid="input-box-description"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="input-unit">Input Unit</Label>
+                        <Select value={inputUnit} onValueChange={(v: "mm" | "inches") => setInputUnit(v)}>
+                          <SelectTrigger id="input-unit" data-testid="select-input-unit">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="mm">Millimeters (mm)</SelectItem>
+                            <SelectItem value="inches">Inches (in)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="measured-on">Measured On</Label>
+                        <Select value={measuredOn} onValueChange={(v: "ID" | "OD") => setMeasuredOn(v)}>
+                          <SelectTrigger id="measured-on" data-testid="select-measured-on">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ID">Inside Dimension (ID)</SelectItem>
+                            <SelectItem value="OD">Outside Dimension (OD)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="rsc-length">Length (mm)</Label>
+                        <Label htmlFor="rsc-length">Length ({inputUnit})</Label>
                         <Input
                           id="rsc-length"
                           type="number"
@@ -416,7 +620,7 @@ export default function Calculator() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="rsc-width">Width (mm)</Label>
+                        <Label htmlFor="rsc-width">Width ({inputUnit})</Label>
                         <Input
                           id="rsc-width"
                           type="number"
@@ -427,7 +631,7 @@ export default function Calculator() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="rsc-height">Height (mm)</Label>
+                        <Label htmlFor="rsc-height">Height ({inputUnit})</Label>
                         <Input
                           id="rsc-height"
                           type="number"
@@ -439,7 +643,7 @@ export default function Calculator() {
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="glue-flap">Glue Flap (mm)</Label>
                         <Input
@@ -458,6 +662,16 @@ export default function Calculator() {
                           value={deckleAllowance}
                           onChange={(e) => setDeckleAllowance(e.target.value)}
                           data-testid="input-deckle-allowance"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="max-length-threshold">Max Length Threshold (mm)</Label>
+                        <Input
+                          id="max-length-threshold"
+                          type="number"
+                          value={maxLengthThreshold}
+                          onChange={(e) => setMaxLengthThreshold(e.target.value)}
+                          data-testid="input-max-length-threshold"
                         />
                       </div>
                     </div>
@@ -548,7 +762,7 @@ export default function Calculator() {
                   </Select>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="gsm">GSM</Label>
                     <Input
@@ -569,6 +783,20 @@ export default function Calculator() {
                       data-testid="input-bf"
                     />
                   </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="fluting-factor">Fluting Factor (Manual)</Label>
+                    <Input
+                      id="fluting-factor"
+                      type="number"
+                      step="0.1"
+                      value={flutingFactorL1}
+                      onChange={(e) => setFlutingFactorL1(e.target.value)}
+                      data-testid="input-fluting-factor"
+                    />
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="rate">Rate (₹/kg)</Label>
                     <Input
@@ -582,39 +810,109 @@ export default function Calculator() {
                 </div>
               </CardContent>
             </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Fixed & Manufacturing Costs</CardTitle>
+                <CardDescription>Additional costs per unit (₹)</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="printing-cost">Printing Cost (₹)</Label>
+                    <Input
+                      id="printing-cost"
+                      type="number"
+                      value={printingCost}
+                      onChange={(e) => setPrintingCost(e.target.value)}
+                      data-testid="input-printing-cost"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lamination-cost">Lamination Cost (₹)</Label>
+                    <Input
+                      id="lamination-cost"
+                      type="number"
+                      value={laminationCost}
+                      onChange={(e) => setLaminationCost(e.target.value)}
+                      data-testid="input-lamination-cost"
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="varnish-cost">Varnish Cost (₹)</Label>
+                    <Input
+                      id="varnish-cost"
+                      type="number"
+                      value={varnishCost}
+                      onChange={(e) => setVarnishCost(e.target.value)}
+                      data-testid="input-varnish-cost"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="die-cost">Die Cost (₹)</Label>
+                    <Input
+                      id="die-cost"
+                      type="number"
+                      value={dieCost}
+                      onChange={(e) => setDieCost(e.target.value)}
+                      data-testid="input-die-cost"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="punching-cost">Punching Cost (₹)</Label>
+                    <Input
+                      id="punching-cost"
+                      type="number"
+                      value={punchingCost}
+                      onChange={(e) => setPunchingCost(e.target.value)}
+                      data-testid="input-punching-cost"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Calculated Results</CardTitle>
+                <CardTitle>Calculated Sheet Blank Size</CardTitle>
+                <CardDescription>Dimensions and specifications</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {result ? (
                   <>
                     <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Sheet Length:</span>
-                        <span className="font-medium" data-testid="text-sheet-length">
+                      <div className="text-sm font-semibold text-foreground mb-2">Sheet Cut Length (L-blank):</div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Length (mm):</span>
+                        <span className="font-medium" data-testid="text-sheet-length-mm">
                           {result.sheetLength.toFixed(2)} mm
                         </span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Sheet Width:</span>
-                        <span className="font-medium" data-testid="text-sheet-width">
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Length (inches):</span>
+                        <span className="font-medium" data-testid="text-sheet-length-in">
+                          {mmToInches(result.sheetLength).toFixed(2)} in
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold text-foreground mb-2">Reel Size / Deckle (W-blank):</div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Width (mm):</span>
+                        <span className="font-medium" data-testid="text-sheet-width-mm">
                           {result.sheetWidth.toFixed(2)} mm
                         </span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Weight:</span>
-                        <span className="font-medium" data-testid="text-sheet-weight">
-                          {result.sheetWeight.toFixed(3)} kg
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">BS:</span>
-                        <span className="font-medium" data-testid="text-bs">
-                          {result.bs.toFixed(2)} kg/cm²
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Width (inches):</span>
+                        <span className="font-medium" data-testid="text-sheet-width-in">
+                          {mmToInches(result.sheetWidth).toFixed(2)} in
                         </span>
                       </div>
                     </div>
@@ -622,10 +920,79 @@ export default function Calculator() {
                     <Separator />
                     
                     <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Calculated Sheet Weight:</span>
+                        <span className="font-medium" data-testid="text-sheet-weight">
+                          {result.sheetWeight.toFixed(3)} Kg
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Calculated Box BS:</span>
+                        <span className="font-medium" data-testid="text-bs">
+                          {result.bs.toFixed(2)} kg/cm
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Enter dimensions to see calculated values</p>
+                )}
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Strength Analysis (McKee Formula)</CardTitle>
+                <CardDescription>Box compression test predictions</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result ? (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Board Thickness (mm):</span>
+                        <span className="font-medium" data-testid="text-board-thickness">
+                          {result.boardThickness.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Box Perimeter (mm):</span>
+                        <span className="font-medium" data-testid="text-box-perimeter">
+                          {result.boxPerimeter.toFixed(0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Calculated ECT:</span>
+                        <span className="font-medium" data-testid="text-ect">
+                          {result.ect.toFixed(2)} kN/m
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Predicted BCT:</span>
+                        <span className="font-medium" data-testid="text-bct">
+                          {result.bct.toFixed(1)} Kg
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Enter dimensions to see strength analysis</p>
+                )}
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Cost Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result ? (
+                  <>
+                    <div className="space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm text-muted-foreground">Cost/unit:</span>
                         <span className="font-bold text-lg" data-testid="text-cost-per-unit">
-                          ₹{costPerUnit.toFixed(2)}
+                          ₹{totalCostPerBox.toFixed(2)}
                         </span>
                       </div>
                       

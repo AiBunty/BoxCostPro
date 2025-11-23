@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertCompanyProfileSchema, insertQuoteSchema } from "@shared/schema";
+import { insertCompanyProfileSchema, insertQuoteSchema, insertAppSettingsSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -136,6 +136,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete quote" });
+    }
+  });
+
+  // App Settings
+  app.get("/api/settings", async (req, res) => {
+    try {
+      const settings = await storage.getAppSettings();
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  app.patch("/api/settings", async (req, res) => {
+    try {
+      const data = insertAppSettingsSchema.partial().parse(req.body);
+      const settings = await storage.updateAppSettings(data);
+      res.json(settings);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update settings" });
     }
   });
 

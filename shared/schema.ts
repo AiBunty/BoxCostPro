@@ -40,37 +40,84 @@ export const insertQuoteSchema = createInsertSchema(quotes).omit({ id: true, cre
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
 export type Quote = typeof quotes.$inferSelect;
 
+// App Settings
+export const appSettings = pgTable("app_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  appTitle: text("app_title").default("Box Costing Calculator"),
+  plyThicknessMap: jsonb("ply_thickness_map").default(JSON.stringify({
+    '1': 0.45,
+    '3': 2.5,
+    '5': 3.5,
+    '7': 5.5,
+    '9': 6.5,
+  })),
+});
+
+export const insertAppSettingsSchema = createInsertSchema(appSettings).omit({ id: true });
+export type InsertAppSettings = z.infer<typeof insertAppSettingsSchema>;
+export type AppSettings = typeof appSettings.$inferSelect;
+
 // Zod schemas for nested data structures
+export const layerSpecSchema = z.object({
+  layerType: z.enum(['liner', 'flute']),
+  gsm: z.number(),
+  bf: z.number().optional(),
+  flutingFactor: z.number().optional(), // Manual fluting factor
+  shade: z.string(),
+  rate: z.number(),
+});
+
 export const quoteItemSchema = z.object({
   type: z.enum(['rsc', 'sheet']),
   boxName: z.string(),
+  boxDescription: z.string().optional(),
   ply: z.enum(['1', '3', '5', '7', '9']),
   
-  // Dimensions (mm)
+  // Dimensional metadata
+  inputUnit: z.enum(['mm', 'inches']).default('mm'),
+  measuredOn: z.enum(['ID', 'OD']).default('ID'),
+  plyThicknessUsed: z.number().optional(),
+  
+  // Dimensions (stored in mm)
   length: z.number(),
   width: z.number(),
   height: z.number().optional(), // Only for RSC
   
-  // Calculated values
+  // Allowances and thresholds
+  glueFlap: z.number().optional(),
+  deckleAllowance: z.number().optional(),
+  sheetAllowance: z.number().optional(),
+  maxLengthThreshold: z.number().optional(),
+  additionalFlapApplied: z.boolean().default(false),
+  
+  // Calculated sheet sizes
   sheetLength: z.number(),
   sheetWidth: z.number(),
-  sheetWeight: z.number(),
-  bs: z.number(), // Burst Strength
+  sheetLengthInches: z.number(),
+  sheetWidthInches: z.number(),
+  sheetWeight: z.number(), // Kg
   
-  // Paper specifications (simplified)
-  paperSpecs: z.record(z.object({
-    gsm: z.number(),
-    bf: z.number().optional(),
-    shade: z.string(),
-    rate: z.number(),
-  })),
+  // Strength analysis
+  boardThickness: z.number(),
+  boxPerimeter: z.number(),
+  ect: z.number(), // Edge Crush Test (kN/m)
+  bct: z.number(), // Box Compression Test (Kg)
+  bs: z.number(), // Burst Strength (kg/cm)
+  
+  // Paper specifications (layer by layer)
+  layerSpecs: z.array(layerSpecSchema),
   
   // Costs
   paperCost: z.number(),
-  additionalCosts: z.record(z.number()),
+  printingCost: z.number().default(0),
+  laminationCost: z.number().default(0),
+  varnishCost: z.number().default(0),
+  dieCost: z.number().default(0),
+  punchingCost: z.number().default(0),
   totalCostPerBox: z.number(),
   quantity: z.number(),
   totalValue: z.number(),
 });
 
 export type QuoteItem = z.infer<typeof quoteItemSchema>;
+export type LayerSpec = z.infer<typeof layerSpecSchema>;

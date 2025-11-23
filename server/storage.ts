@@ -3,7 +3,9 @@ import {
   type InsertCompanyProfile,
   type Quote,
   type InsertQuote,
-  type QuoteItem
+  type QuoteItem,
+  type AppSettings,
+  type InsertAppSettings
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -23,11 +25,16 @@ export interface IStorage {
   createQuote(quote: InsertQuote): Promise<Quote>;
   updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined>;
   deleteQuote(id: string): Promise<boolean>;
+  
+  // App Settings
+  getAppSettings(): Promise<AppSettings>;
+  updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings>;
 }
 
 export class MemStorage implements IStorage {
   private companyProfiles: Map<string, CompanyProfile>;
   private quotes: Map<string, Quote>;
+  private appSettings: AppSettings;
 
   constructor() {
     this.companyProfiles = new Map();
@@ -49,6 +56,19 @@ export class MemStorage implements IStorage {
       isDefault: true,
     };
     this.companyProfiles.set(defaultProfile.id, defaultProfile);
+    
+    // Initialize app settings
+    this.appSettings = {
+      id: randomUUID(),
+      appTitle: "Box Costing Calculator",
+      plyThicknessMap: {
+        '1': 0.45,
+        '3': 2.5,
+        '5': 3.5,
+        '7': 5.5,
+        '9': 6.5,
+      },
+    };
   }
 
   // Company Profiles
@@ -57,7 +77,9 @@ export class MemStorage implements IStorage {
   }
 
   async getAllCompanyProfiles(): Promise<CompanyProfile[]> {
-    return Array.from(this.companyProfiles.values());
+    const values: CompanyProfile[] = [];
+    this.companyProfiles.forEach(profile => values.push(profile));
+    return values;
   }
 
   async getDefaultCompanyProfile(): Promise<CompanyProfile | undefined> {
@@ -66,7 +88,20 @@ export class MemStorage implements IStorage {
 
   async createCompanyProfile(insertProfile: InsertCompanyProfile): Promise<CompanyProfile> {
     const id = randomUUID();
-    const profile: CompanyProfile = { ...insertProfile, id, isDefault: false };
+    const profile: CompanyProfile = { 
+      ...insertProfile, 
+      id, 
+      isDefault: false,
+      address: insertProfile.address || null,
+      gstNo: insertProfile.gstNo || null,
+      phone: insertProfile.phone || null,
+      email: insertProfile.email || null,
+      website: insertProfile.website || null,
+      socialMedia: insertProfile.socialMedia || null,
+      googleLocation: insertProfile.googleLocation || null,
+      paymentTerms: insertProfile.paymentTerms || null,
+      deliveryTime: insertProfile.deliveryTime || null,
+    };
     this.companyProfiles.set(id, profile);
     return profile;
   }
@@ -82,9 +117,9 @@ export class MemStorage implements IStorage {
 
   async setDefaultCompanyProfile(id: string): Promise<void> {
     // Remove default from all profiles
-    for (const profile of this.companyProfiles.values()) {
+    this.companyProfiles.forEach(profile => {
       profile.isDefault = false;
-    }
+    });
     
     // Set new default
     const profile = this.companyProfiles.get(id);
@@ -138,6 +173,10 @@ export class MemStorage implements IStorage {
       ...insertQuote, 
       id,
       createdAt: now,
+      customerCompany: insertQuote.customerCompany || null,
+      customerEmail: insertQuote.customerEmail || null,
+      customerMobile: insertQuote.customerMobile || null,
+      companyProfileId: insertQuote.companyProfileId || null,
     };
     this.quotes.set(id, quote);
     return quote;
@@ -154,6 +193,16 @@ export class MemStorage implements IStorage {
 
   async deleteQuote(id: string): Promise<boolean> {
     return this.quotes.delete(id);
+  }
+  
+  // App Settings
+  async getAppSettings(): Promise<AppSettings> {
+    return this.appSettings;
+  }
+  
+  async updateAppSettings(updates: Partial<InsertAppSettings>): Promise<AppSettings> {
+    this.appSettings = { ...this.appSettings, ...updates };
+    return this.appSettings;
   }
 }
 
