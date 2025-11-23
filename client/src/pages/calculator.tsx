@@ -2014,17 +2014,37 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       </div>
                       <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
                         <div className="font-semibold mb-1">Weight Formula:</div>
-                        <div>Weight = (L × W × Σ GSM × Ply Factor) / 1,000,000</div>
+                        <div>Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ... where FF = Fluting Factor</div>
+                        <div>Weight = (L × W × Σ GSM) / 1,000,000</div>
                         <div className="mt-1">
-                          = ({(result.sheetLength / 1000).toFixed(2)} m × {(result.sheetWidth / 1000).toFixed(2)} m × {(() => {
-                            const totalGsm = result && result.layerSpecs ? 
-                              result.layerSpecs.reduce((sum: number, spec: any) => sum + (spec.gsm || 0), 0) : 0;
-                            const plyFactor = parseInt(ply) === 1 ? 1 : parseInt(ply) / 2;
-                            return `${totalGsm} GSM × ${plyFactor.toFixed(2)}`;
-                          })()} ) / 1,000,000
+                          L = {(result.sheetLength / 1000).toFixed(2)} m, W = {(result.sheetWidth / 1000).toFixed(2)} m
+                        </div>
+                        <div className="mt-1">
+                          Σ GSM = {(() => {
+                            if (!result || !result.layerSpecs) return "0";
+                            return result.layerSpecs.map((spec: any, idx: number) => {
+                              if (spec.layerType === 'liner') {
+                                return `${spec.gsm}`;
+                              } else {
+                                const ff = spec.flutingFactor || 1.5;
+                                return `(${spec.gsm}×${ff.toFixed(2)})`;
+                              }
+                            }).join(" + ");
+                          })()} = {(() => {
+                            if (!result || !result.layerSpecs) return "0";
+                            const total = result.layerSpecs.reduce((sum: number, spec: any) => {
+                              if (spec.layerType === 'liner') {
+                                return sum + spec.gsm;
+                              } else {
+                                const ff = spec.flutingFactor || 1.5;
+                                return sum + (spec.gsm * ff);
+                              }
+                            }, 0);
+                            return total.toFixed(2);
+                          })()}
                         </div>
                         <div className="mt-1 text-xs italic">
-                          Where: L=Sheet Length (mm), W=Sheet Width (mm), Σ GSM=Total GSM from all layers
+                          Where: L=Sheet Length (m), W=Sheet Width (m), Liner=Add GSM directly, Flute=Multiply GSM by Fluting Factor
                         </div>
                       </div>
                       <div className="flex justify-between text-sm">

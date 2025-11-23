@@ -106,7 +106,7 @@ export function calculateFlatSheet(params: {
   };
 }
 
-// Calculate sheet weight
+// Calculate sheet weight with fluting factor for each layer
 export function calculateSheetWeight(params: {
   sheetLength: number; // mm
   sheetWidth: number; // mm
@@ -116,13 +116,21 @@ export function calculateSheetWeight(params: {
   const { sheetLength, sheetWidth, layerSpecs, ply } = params;
   const area_m2 = (sheetLength / 1000) * (sheetWidth / 1000);
   
-  // Calculate total GSM from layer specs
+  // Calculate total GSM with fluting factors: Liner layers add GSM directly, Flute layers multiply by fluting factor
   const totalGsm = layerSpecs.length > 0
-    ? layerSpecs.reduce((sum, spec) => sum + spec.gsm, 0)
+    ? layerSpecs.reduce((sum, spec) => {
+        if (spec.layerType === 'liner') {
+          return sum + spec.gsm;
+        } else {
+          // For flute layers, multiply GSM by fluting factor
+          const flutingFactor = spec.flutingFactor || 1.5;
+          return sum + (spec.gsm * flutingFactor);
+        }
+      }, 0)
     : 180; // default
   
   const plyNum = parseInt(ply);
-  const weight = area_m2 * totalGsm * (plyNum === 1 ? 1 : plyNum / 2) / 1000;
+  const weight = area_m2 * totalGsm / 1000;
   
   return weight; // Kg
 }
