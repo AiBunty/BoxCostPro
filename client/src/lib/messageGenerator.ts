@@ -60,26 +60,8 @@ export function generateWhatsAppMessage(
 }
 
 function formatCurrencyWithEmoji(value: number): string {
-  const valueStr = value.toFixed(2);
-  const parts = valueStr.split('');
-  const digits = parts.filter(c => c !== '.' && c !== '-');
-  
-  let result = '₹';
-  let digitIndex = 0;
-  
-  for (const part of parts) {
-    if (part === '.') {
-      result += '.';
-    } else if (part === '-') {
-      result += '-';
-    } else {
-      const digit = digits[digitIndex];
-      result += digit + (digits.length > 3 && digitIndex < digits.length - 2 ? '️⃣' : '️⃣');
-      digitIndex++;
-    }
-  }
-  
-  return result;
+  const formatted = value.toFixed(2);
+  return `₹${formatted}`;
 }
 
 export function generateEmailContent(

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -185,6 +185,25 @@ export default function Calculator() {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showQuotesDialog, setShowQuotesDialog] = useState(false);
   const [showMessageDialog, setShowMessageDialog] = useState<"whatsapp" | "email" | null>(null);
+  const [showBusinessProfile, setShowBusinessProfile] = useState(false);
+  const [showPartyProfile, setShowPartyProfile] = useState(false);
+  
+  // Business Profile state
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [businessEmail, setBusinessEmail] = useState("");
+  const [businessAddress, setBusinessAddress] = useState("");
+  const [businessGst, setBusinessGst] = useState("");
+  const [businessWebsite, setBusinessWebsite] = useState("");
+  const [businessSocial, setBusinessSocial] = useState("");
+  const [businessLocation, setBusinessLocation] = useState("");
+  
+  // Party Profile state
+  const [partyPersonName, setPartyPersonName] = useState("");
+  const [partyCompanyName, setPartyCompanyName] = useState("");
+  const [partyMobile, setPartyMobile] = useState("");
+  const [partyEmail, setPartyEmail] = useState("");
+  const [partyGst, setPartyGst] = useState("");
+  const [partyAddress, setPartyAddress] = useState("");
   
   // Fetch default company profile
   const { data: companyProfile, isLoading: isLoadingProfile } = useQuery<CompanyProfile>({
@@ -229,6 +248,69 @@ export default function Calculator() {
       });
     },
   });
+
+  // Save business profile mutation
+  const saveBusinessProfileMutation = useMutation({
+    mutationFn: async (data: Partial<CompanyProfile>) => {
+      return await apiRequest("POST", "/api/company-profiles", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profiles/default"] });
+      toast({
+        title: "Saved",
+        description: "Business profile saved successfully.",
+      });
+      setShowBusinessProfile(false);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save business profile.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Save party profile mutation
+  const savePartyProfileMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("POST", "/api/party-profiles", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/party-profiles"] });
+      toast({
+        title: "Saved",
+        description: "Party profile saved successfully.",
+      });
+      setShowPartyProfile(false);
+      setPartyPersonName("");
+      setPartyCompanyName("");
+      setPartyMobile("");
+      setPartyEmail("");
+      setPartyGst("");
+      setPartyAddress("");
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save party profile.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  // Sync business profile when company profile loads
+  useEffect(() => {
+    if (companyProfile) {
+      setBusinessPhone(companyProfile.phone || "");
+      setBusinessEmail(companyProfile.email || "");
+      setBusinessAddress(companyProfile.address || "");
+      setBusinessGst(companyProfile.gstNo || "");
+      setBusinessWebsite(companyProfile.website || "");
+      setBusinessSocial(companyProfile.socialMedia || "");
+      setBusinessLocation(companyProfile.googleLocation || "");
+    }
+  }, [companyProfile]);
   
   // Helper to convert input dimensions to mm if needed
   const toMm = (value: number) => inputUnit === "inches" ? inchesToMm(value) : value;
@@ -590,10 +672,128 @@ export default function Calculator() {
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Dialog open={showBusinessProfile} onOpenChange={setShowBusinessProfile}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" data-testid="button-business-profile">
+                    <Building className="w-4 h-4 mr-2" />
+                    Business Profile
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Business Profile</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="business-phone">Phone</Label>
+                      <Input id="business-phone" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} data-testid="input-business-phone" />
+                    </div>
+                    <div>
+                      <Label htmlFor="business-email">Email</Label>
+                      <Input id="business-email" value={businessEmail} onChange={(e) => setBusinessEmail(e.target.value)} data-testid="input-business-email" />
+                    </div>
+                    <div>
+                      <Label htmlFor="business-address">Address</Label>
+                      <Input id="business-address" value={businessAddress} onChange={(e) => setBusinessAddress(e.target.value)} data-testid="input-business-address" />
+                    </div>
+                    <div>
+                      <Label htmlFor="business-gst">GST</Label>
+                      <Input id="business-gst" value={businessGst} onChange={(e) => setBusinessGst(e.target.value)} data-testid="input-business-gst" />
+                    </div>
+                    <div>
+                      <Label htmlFor="business-website">Website</Label>
+                      <Input id="business-website" value={businessWebsite} onChange={(e) => setBusinessWebsite(e.target.value)} data-testid="input-business-website" />
+                    </div>
+                    <div>
+                      <Label htmlFor="business-social">Social Media</Label>
+                      <Input id="business-social" value={businessSocial} onChange={(e) => setBusinessSocial(e.target.value)} data-testid="input-business-social" />
+                    </div>
+                    <div>
+                      <Label htmlFor="business-location">Location</Label>
+                      <Input id="business-location" value={businessLocation} onChange={(e) => setBusinessLocation(e.target.value)} data-testid="input-business-location" />
+                    </div>
+                    <Button 
+                      onClick={() => {
+                        saveBusinessProfileMutation.mutate({
+                          phone: businessPhone,
+                          email: businessEmail,
+                          address: businessAddress,
+                          gstNo: businessGst,
+                          website: businessWebsite,
+                          socialMedia: businessSocial,
+                          googleLocation: businessLocation,
+                          isDefault: true,
+                        });
+                      }}
+                      disabled={saveBusinessProfileMutation.isPending}
+                      data-testid="button-save-business-profile"
+                    >
+                      {saveBusinessProfileMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={showPartyProfile} onOpenChange={setShowPartyProfile}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" data-testid="button-party-profile">
+                    <Users className="w-4 h-4 mr-2" />
+                    Party Profile
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Party Profile</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="party-name">Name of Person</Label>
+                      <Input id="party-name" value={partyPersonName} onChange={(e) => setPartyPersonName(e.target.value)} data-testid="input-party-name" />
+                    </div>
+                    <div>
+                      <Label htmlFor="party-company">Company Name</Label>
+                      <Input id="party-company" value={partyCompanyName} onChange={(e) => setPartyCompanyName(e.target.value)} data-testid="input-party-company" />
+                    </div>
+                    <div>
+                      <Label htmlFor="party-mobile">Mobile No</Label>
+                      <Input id="party-mobile" value={partyMobile} onChange={(e) => setPartyMobile(e.target.value)} data-testid="input-party-mobile" />
+                    </div>
+                    <div>
+                      <Label htmlFor="party-email">Email</Label>
+                      <Input id="party-email" value={partyEmail} onChange={(e) => setPartyEmail(e.target.value)} data-testid="input-party-email" />
+                    </div>
+                    <div>
+                      <Label htmlFor="party-gst">GST No</Label>
+                      <Input id="party-gst" value={partyGst} onChange={(e) => setPartyGst(e.target.value)} data-testid="input-party-gst" />
+                    </div>
+                    <div>
+                      <Label htmlFor="party-address">Address</Label>
+                      <Input id="party-address" value={partyAddress} onChange={(e) => setPartyAddress(e.target.value)} data-testid="input-party-address" />
+                    </div>
+                    <Button 
+                      onClick={() => {
+                        savePartyProfileMutation.mutate({
+                          name: partyPersonName,
+                          companyName: partyCompanyName,
+                          mobile: partyMobile,
+                          email: partyEmail,
+                          gstNo: partyGst,
+                          address: partyAddress,
+                        });
+                      }}
+                      disabled={savePartyProfileMutation.isPending}
+                      data-testid="button-save-party-profile"
+                    >
+                      {savePartyProfileMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
               <Dialog open={showQuotesDialog} onOpenChange={setShowQuotesDialog}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" data-testid="button-load-quote">
+                  <Button variant="outline" size="sm" data-testid="button-load-quote">
                     <FileText className="w-4 h-4 mr-2" />
                     Load Quote
                   </Button>
@@ -910,6 +1110,7 @@ export default function Calculator() {
                         <TableHead>BF</TableHead>
                         <TableHead>Fluting Factor</TableHead>
                         <TableHead>RCT Value</TableHead>
+                        <TableHead>Shade</TableHead>
                         <TableHead>Rate (₹/kg)</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -971,6 +1172,30 @@ export default function Calculator() {
                               className="w-16"
                               data-testid={`input-rct-${idx}`}
                             />
+                          </TableCell>
+                          <TableCell>
+                            <Select value={layer.shade} onValueChange={(value) => {
+                              const newLayers = [...layers];
+                              newLayers[idx].shade = value;
+                              setLayers(newLayers);
+                            }}>
+                              <SelectTrigger className="w-32" data-testid={`select-shade-${idx}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
+                                <SelectItem value="Golden (Red)">Golden (Red)</SelectItem>
+                                <SelectItem value="Golden (Brown)">Golden (Brown)</SelectItem>
+                                <SelectItem value="Duplex LWC">Duplex LWC</SelectItem>
+                                <SelectItem value="Duplex HWC">Duplex HWC</SelectItem>
+                                <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
+                                <SelectItem value="Virgin Kraft">Virgin Kraft</SelectItem>
+                                <SelectItem value="Bagass">Bagass</SelectItem>
+                                <SelectItem value="Semi Chemical">Semi Chemical</SelectItem>
+                                <SelectItem value="SBS">SBS</SelectItem>
+                                <SelectItem value="FBB">FBB</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell>
                             <Input

@@ -23,13 +23,18 @@ Preferred communication style: Simple, everyday language.
 **Routing**: Wouter for lightweight client-side routing.
 
 **Key Design Decisions**:
-- Tab-based interface for separating calculator functionality from quote management
+- Tab-based interface for separating RSC box and flat sheet calculator functionality
 - Real-time calculation of sheet dimensions, weight, and costs based on user inputs
-- Modal dialogs for managing company profiles and viewing quote details
+- Modal dialogs for managing business profiles, party profiles, and viewing quote details
 - Responsive grid layouts (3-column desktop, 2-column tablet, single-column mobile)
 - Layer-by-layer paper specifications table with dynamic row generation based on ply selection
-- Each layer includes: GSM, BF, Fluting Factor (manual), RCT Value, and Rate inputs
-- WhatsApp and Email message generation for quotes with formatted content and hyperlinks
+- Each layer includes: GSM, BF, Fluting Factor (manual), RCT Value, Paper Shade (dropdown), and Rate inputs
+- Paper Shade dropdown with 11 predefined options: Kraft/Natural, Golden (Red), Golden (Brown), Duplex LWC, Duplex HWC, White Kraft Liner, Virgin Kraft, Bagass, Semi Chemical, SBS, FBB
+- Business Profile dialog for managing company details: Phone, Email, Address, GST, Website, Social Media, Location
+- Party Profile dialog for managing customer details: Name, Company Name, Mobile, Email, GST, Address
+- Quote management with copy-to-clipboard buttons for WhatsApp and Email templates, plus CSV download functionality
+- Copy-to-clipboard functionality for WhatsApp and Email messages with formatted company profile details
+- CSV download for quote items with all calculations and details
 
 ### Backend Architecture
 
@@ -42,6 +47,7 @@ Preferred communication style: Simple, everyday language.
 **API Structure**: RESTful API with routes organized by resource:
 - `/api/company-profiles` - CRUD operations for company information
 - `/api/company-profiles/default` - Retrieve default profile
+- `/api/party-profiles` - CRUD operations for customer/party profiles
 - `/api/quotes` - Quote management including search functionality
 
 **Data Validation**: Zod schemas for runtime type checking and validation, integrated with Drizzle ORM schema definitions using drizzle-zod.
@@ -60,7 +66,9 @@ Preferred communication style: Simple, everyday language.
 
 **Schema Design**:
 - `company_profiles` table: Stores business information including GST details, contact info, and payment terms. Supports a single default profile via `isDefault` flag.
+- `party_profiles` table: Stores customer/party information including name, company, mobile, email, GST, and address for quick customer management.
 - `quotes` table: Stores customer quotes with embedded items as JSONB, allowing flexible storage of multiple quote items (RSC boxes and sheets) within a single quote record.
+- `layer_specs`: Each layer in a quote includes GSM, BF, Fluting Factor, RCT Value, Shade, and Rate parameters.
 
 **Current Implementation**: In-memory storage using JavaScript Maps for development/prototyping, with data structures matching the database schema.
 
