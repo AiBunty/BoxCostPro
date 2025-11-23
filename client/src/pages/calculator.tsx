@@ -2092,9 +2092,6 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                         <div>Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ... where FF = Fluting Factor</div>
                         <div>Weight = (L × W × Σ GSM) / 1,000,000</div>
                         <div className="mt-1">
-                          L = {(result.sheetLength / 1000).toFixed(2)} m, W = {(result.sheetWidth / 1000).toFixed(2)} m
-                        </div>
-                        <div className="mt-1">
                           Σ GSM = {(() => {
                             if (!result || !result.layerSpecs) return "0";
                             return result.layerSpecs.map((spec: any, idx: number) => {
@@ -2119,7 +2116,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                           })()}
                         </div>
                         <div className="mt-1 text-xs italic">
-                          Where: L=Sheet Length (m), W=Sheet Width (m), Liner=Add GSM directly, Flute=Multiply GSM by Fluting Factor
+                          Where: L=Sheet Length (mm), W=Sheet Width (mm), Liner=Add GSM directly, Flute=Multiply GSM by Fluting Factor
                         </div>
                       </div>
                       <div className="flex justify-between text-sm">
