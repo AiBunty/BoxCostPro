@@ -135,14 +135,23 @@ export function calculateSheetWeight(params: {
   return weight; // Kg
 }
 
-// Calculate Burst Strength (BS)
+// Calculate Burst Strength (BS) - per layer: Liner GSM*BF/1000 + Flute GSM*BF/2000
 export function calculateBurstStrength(layerSpecs: LayerSpec[]): number {
   if (layerSpecs.length === 0) return 12; // default
   
-  const avgGsm = layerSpecs.reduce((sum, spec) => sum + spec.gsm, 0) / layerSpecs.length;
-  const avgBF = layerSpecs.reduce((sum, spec) => sum + (spec.bf || 12), 0) / layerSpecs.length;
+  // Calculate BS for each layer and sum them
+  const totalBS = layerSpecs.reduce((total, spec) => {
+    const bf = spec.bf || 14;
+    if (spec.layerType === 'liner') {
+      // Liner: GSM * BF / 1000
+      return total + (spec.gsm * bf / 1000);
+    } else {
+      // Flute: GSM * BF / 2000
+      return total + (spec.gsm * bf / 2000);
+    }
+  }, 0);
   
-  return (avgGsm * avgBF) / 500; // kg/cm
+  return totalBS; // kg/cm
 }
 
 // Calculate paper cost

@@ -2053,6 +2053,26 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                           {result.bs.toFixed(2)} kg/cm
                         </span>
                       </div>
+                      <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
+                        <div className="font-semibold mb-1">Burst Strength (BS) Formula:</div>
+                        <div>BS = Σ (Liner GSM × BF / 1000 + Flute GSM × BF / 2000)</div>
+                        <div className="mt-1">
+                          {(() => {
+                            if (!result || !result.layerSpecs) return "No layers";
+                            return result.layerSpecs.map((spec: any, idx: number) => {
+                              const bf = spec.bf || 14;
+                              if (spec.layerType === 'liner') {
+                                return `L${idx + 1}: (${spec.gsm}×${bf}/1000)`;
+                              } else {
+                                return `L${idx + 1}: (${spec.gsm}×${bf}/2000)`;
+                              }
+                            }).join(" + ");
+                          })()} = {result.bs.toFixed(2)} kg/cm
+                        </div>
+                        <div className="mt-1 text-xs italic">
+                          Where: Liner=GSM×BF/1000, Flute=GSM×BF/2000, BF=Bursting Factor
+                        </div>
+                      </div>
                     </div>
                   </>
                 ) : (
