@@ -173,6 +173,9 @@ export default function Calculator() {
   const [varnishCost, setVarnishCost] = useState<string>("0");
   const [punchingCost, setPunchingCost] = useState<string>("0");
   
+  // Conversion Cost
+  const [conversionCost, setConversionCost] = useState<string>("0"); // INR/Kg
+  
   const [quantity, setQuantity] = useState<string>("1000");
   
   // Quote management
@@ -599,6 +602,9 @@ export default function Calculator() {
   
   const mfgCosts = calculateManufacturingCosts();
   
+  // Calculate conversion cost (Weight in Kg * Conversion Cost per Kg)
+  const conversionCostPerBox = result ? (result.sheetWeight * parseFloat(conversionCost || "0")) : 0;
+  
   // Calculate total cost including manufacturing costs
   const totalCostPerBox = result ? calculateTotalCost({
     paperCost: result.paperCost,
@@ -608,7 +614,7 @@ export default function Calculator() {
     dieCost: mfgCosts.die,
     punchingCost: mfgCosts.punching,
     markup: 15,
-  }) : 0;
+  }) + conversionCostPerBox : 0;
   
   const qty = parseFloat(quantity) || 1000;
   const totalValue = totalCostPerBox * qty;
@@ -1618,6 +1624,33 @@ export default function Calculator() {
                       data-testid="input-punching-cost"
                     />
                   </div>
+                </div>
+                
+                <div>
+                  <Label className="font-semibold mb-3 block">Conversion Cost</Label>
+                  <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
+                    <div className="space-y-2">
+                      <Label htmlFor="conversion-cost" className="text-sm">Conversion Cost (₹/Kg)</Label>
+                      <Input
+                        id="conversion-cost"
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={conversionCost}
+                        onChange={(e) => setConversionCost(e.target.value)}
+                        data-testid="input-conversion-cost"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Cost Per Box</Label>
+                      <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
+                        ₹{conversionCostPerBox.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Calculated as: Weight ({result?.sheetWeight.toFixed(2)} Kg) × ₹{parseFloat(conversionCost || "0").toFixed(2)}/Kg
+                  </p>
                 </div>
               </CardContent>
             </Card>

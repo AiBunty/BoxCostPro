@@ -30,8 +30,8 @@ Preferred communication style: Simple, everyday language.
 - Layer-by-layer paper specifications table with dynamic row generation based on ply selection
 - Each layer includes: GSM, BF (dropdown), Fluting Factor (manual for Flute layers only), RCT Value, Paper Shade (dropdown), and Rate inputs
 - Paper Shade dropdown with 11 predefined options: Kraft/Natural, Golden (Red), Golden (Brown), Duplex LWC, Duplex HWC, White Kraft Liner, Virgin Kraft, Bagass, Semi Chemical, SBS, FBB
-- **NEW**: BF field is now a dropdown with values: 14, 16, 18, 20, 22, 24, 28, 35, 40, 45
-- **NEW**: Rate memory system - saves last rate per BF + Shade combination and auto-fills when that combo is selected again
+- BF field is a dropdown with values: 14, 16, 18, 20, 22, 24, 28, 35, 40, 45
+- Rate memory system - saves last rate per BF + Shade combination and auto-fills when that combo is selected again
 - Business Profile dialog for managing company details: Phone, Email, Address, GST, Website, Social Media, Location
 - Party Profile dialog for managing customer details: Name, Company Name, Mobile, Email, GST, Address
 - Quote management with copy-to-clipboard buttons for WhatsApp and Email templates, plus CSV download functionality
@@ -41,7 +41,8 @@ Preferred communication style: Simple, everyday language.
 - Copy layer specifications buttons in the Paper Specifications table:
   - "Copy from previous" button (↑) to copy current layer from previous layer
   - "Copy to following" button (↓) to copy current layer to all subsequent layers
-  - **NEW**: When copying to Liner layers, Fluting Factor is NOT copied (stays at 1.0)
+  - When copying to Liner layers, Fluting Factor is NOT copied (stays at 1.0 since Liner is always 1.0)
+- **NEW**: Conversion Cost (INR/Kg) input field for calculating additional manufacturing cost
 - Bulk upload dialog for importing multiple quote items via CSV file with support for all layer specifications
 
 ### Backend Architecture
@@ -160,6 +161,13 @@ Preferred communication style: Simple, everyday language.
      - Layer specs: L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate (up to 5 layers)
    - Automatically creates quote items from imported data
    - Success toast shows number of items imported
+
+6. **Conversion Cost Feature**
+   - New "Conversion Cost (INR/Kg)" input field in Fixed & Manufacturing Costs section
+   - Calculation: Box/Sheet Weight (Kg) × Conversion Cost Rate (₹/Kg)
+   - Automatically added to total price per box
+   - Real-time display of conversion cost per box
+   - Shows calculation breakdown with weight and rate
 
 ### API Endpoints (Already Existing):
 - `GET /api/company-profiles` - Returns all company profiles
