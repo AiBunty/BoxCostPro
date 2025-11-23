@@ -28,18 +28,21 @@ Preferred communication style: Simple, everyday language.
 - Modal dialogs for managing business profiles, party profiles, and viewing quote details
 - Responsive grid layouts (3-column desktop, 2-column tablet, single-column mobile)
 - Layer-by-layer paper specifications table with dynamic row generation based on ply selection
-- Each layer includes: GSM, BF, Fluting Factor (manual), RCT Value, Paper Shade (dropdown), and Rate inputs
+- Each layer includes: GSM, BF (dropdown), Fluting Factor (manual for Flute layers only), RCT Value, Paper Shade (dropdown), and Rate inputs
 - Paper Shade dropdown with 11 predefined options: Kraft/Natural, Golden (Red), Golden (Brown), Duplex LWC, Duplex HWC, White Kraft Liner, Virgin Kraft, Bagass, Semi Chemical, SBS, FBB
+- **NEW**: BF field is now a dropdown with values: 14, 16, 18, 20, 22, 24, 28, 35, 40, 45
+- **NEW**: Rate memory system - saves last rate per BF + Shade combination and auto-fills when that combo is selected again
 - Business Profile dialog for managing company details: Phone, Email, Address, GST, Website, Social Media, Location
 - Party Profile dialog for managing customer details: Name, Company Name, Mobile, Email, GST, Address
 - Quote management with copy-to-clipboard buttons for WhatsApp and Email templates, plus CSV download functionality
 - Copy-to-clipboard functionality for WhatsApp and Email messages with formatted company profile details
 - CSV download for quote items with all calculations and details
-- **NEW**: Multiple Business & Party Profile support with dropdown selectors to switch between saved profiles
-- **NEW**: Copy layer specifications buttons in the Paper Specifications table:
+- Multiple Business & Party Profile support with dropdown selectors to switch between saved profiles
+- Copy layer specifications buttons in the Paper Specifications table:
   - "Copy from previous" button (↑) to copy current layer from previous layer
   - "Copy to following" button (↓) to copy current layer to all subsequent layers
-- **NEW**: Bulk upload dialog for importing multiple quote items via CSV file with support for all layer specifications
+  - **NEW**: When copying to Liner layers, Fluting Factor is NOT copied (stays at 1.0)
+- Bulk upload dialog for importing multiple quote items via CSV file with support for all layer specifications
 
 ### Backend Architecture
 
@@ -123,27 +126,40 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes (Session Nov 23, 2025)
 
 ### Features Implemented:
-1. **Copy Layer Specifications Buttons**: Added copy functionality in Paper Specifications table
-   - "Copy from previous" button (↑) - copies current layer values from the previous layer
-   - "Copy to following" button (↓) - copies current layer values to all subsequent layers
-   - Includes GSM, BF, Fluting Factor, RCT Value, Shade, and Rate
-   - Toast notifications confirm successful copy operations
 
-2. **Multiple Profile Support**:
-   - Refactored company profile fetching to retrieve ALL profiles, not just default
-   - Refactored party profile fetching to retrieve ALL profiles
-   - Added dropdown selectors for choosing active Business Profile and Party Profile
-   - Selected profiles are tracked via `selectedCompanyProfileId` and `selectedPartyProfileId` state
-   - Profiles sync to form fields when selected
-   - Falls back to first profile if none selected
+1. **BF Dropdown with Fixed Values**
+   - Changed BF from text input to dropdown selector
+   - Available values: 14, 16, 18, 20, 22, 24, 28, 35, 40, 45
+   - Provides consistent paper types across the application
 
-3. **Bulk Upload Feature**:
-   - New "Bulk Upload" button opens dialog for CSV file import
-   - CSV parser supports fields: Box Name, Description, Type (RSC/Sheet), Length, Width, Height
-   - Supports layer specifications: L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate (for layers 1-5)
-   - Automatically detects layer type (Liner/Flute) based on layer index
-   - Creates QuoteItem entries for each row in CSV
-   - Toast notifications show success/error status with item count imported
+2. **Rate Memory System by BF + Shade Combination**
+   - Automatically saves last rate entered for each BF and Shade combination
+   - When user selects a BF and Shade pair that was previously used, the rate auto-fills
+   - Reduces data entry time and ensures consistency
+   - Memory persists throughout the session
+
+3. **Smart Copy Layer Specifications**
+   - Copy buttons (↑ and ↓) in Paper Specifications table
+   - "Copy from previous" button - duplicates all values from layer above
+   - "Copy to following" button - applies current layer values to all layers below
+   - **Smart Feature**: When copying to Liner layers, Fluting Factor is NOT copied (stays at 1.0 since Liner is always 1.0)
+   - Copies: GSM, BF, RCT Value, Shade, and Rate
+   - Toast notifications confirm successful operations
+
+4. **Multiple Profile Support**
+   - Business Profile dropdown selector - switch between saved company profiles
+   - Party Profile dropdown selector - switch between customer profiles
+   - All profiles load from database automatically
+   - Selected profiles sync their data to form fields
+
+5. **Bulk Upload Feature**
+   - New "Bulk Upload" button in main toolbar
+   - CSV file support with these fields:
+     - Box Name, Description, Type (RSC/Sheet)
+     - Length, Width, Height (for RSC boxes)
+     - Layer specs: L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate (up to 5 layers)
+   - Automatically creates quote items from imported data
+   - Success toast shows number of items imported
 
 ### API Endpoints (Already Existing):
 - `GET /api/company-profiles` - Returns all company profiles

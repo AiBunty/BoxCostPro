@@ -212,6 +212,9 @@ export default function Calculator() {
   const [allPartyProfiles, setAllPartyProfiles] = useState<any[]>([]);
   const [selectedPartyProfileId, setSelectedPartyProfileId] = useState<string>("");
   
+  // Rate memory by BF + Shade combination
+  const [rateMemory, setRateMemory] = useState<Record<string, string>>({});
+  
   // Fetch all company profiles
   const { data: allCompanyProfilesData = [], isLoading: isLoadingProfile } = useQuery<CompanyProfile[]>({
     queryKey: ["/api/company-profiles"],
@@ -341,12 +344,16 @@ export default function Calculator() {
     }
   }, [companyProfile]);
   
-  // Copy layer specs
+  // Copy layer specs (excluding fluting factor for Liner layers)
   const copyLayerToFollowing = (fromIdx: number) => {
     const sourceLayers = [...layers];
     const newLayers = [...layers];
     for (let i = fromIdx + 1; i < newLayers.length; i++) {
+      // Copy all fields except fluting factor for Liner layers
       newLayers[i] = { ...sourceLayers[fromIdx] };
+      if (newLayers[i].layerType === "liner") {
+        newLayers[i].flutingFactor = "1";
+      }
     }
     setLayers(newLayers);
     toast({
@@ -388,8 +395,9 @@ export default function Calculator() {
         const rate = row[`L${l}_Rate`] || "0";
         
         if (parseFloat(gsm) > 0) {
+          const layerType = l % 2 === 1 ? "liner" : "flute";
           itemLayers.push({
-            gsm, bf, flutingFactor: "1", rctValue, shade, rate, layerType: l % 2 === 1 ? "liner" : "flute"
+            gsm, bf, flutingFactor: "1", rctValue, shade, rate, layerType: layerType as "liner" | "flute"
           });
         }
       }
@@ -1301,17 +1309,34 @@ export default function Calculator() {
                             />
                           </TableCell>
                           <TableCell>
-                            <Input
-                              type="number"
-                              value={layer.bf}
-                              onChange={(e) => {
-                                const newLayers = [...layers];
-                                newLayers[idx].bf = e.target.value;
-                                setLayers(newLayers);
-                              }}
-                              className="w-16"
-                              data-testid={`input-bf-${idx}`}
-                            />
+                            <Select value={layer.bf} onValueChange={(value) => {
+                              const newLayers = [...layers];
+                              newLayers[idx].bf = value;
+                              setLayers(newLayers);
+                              
+                              // Auto-fill rate from memory if available
+                              const memoryKey = `${value}|${newLayers[idx].shade}`;
+                              if (rateMemory[memoryKey]) {
+                                newLayers[idx].rate = rateMemory[memoryKey];
+                                setLayers([...newLayers]);
+                              }
+                            }}>
+                              <SelectTrigger className="w-16" data-testid={`select-bf-${idx}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="14">14</SelectItem>
+                                <SelectItem value="16">16</SelectItem>
+                                <SelectItem value="18">18</SelectItem>
+                                <SelectItem value="20">20</SelectItem>
+                                <SelectItem value="22">22</SelectItem>
+                                <SelectItem value="24">24</SelectItem>
+                                <SelectItem value="28">28</SelectItem>
+                                <SelectItem value="35">35</SelectItem>
+                                <SelectItem value="40">40</SelectItem>
+                                <SelectItem value="45">45</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell>
                             <Input
@@ -1346,6 +1371,13 @@ export default function Calculator() {
                               const newLayers = [...layers];
                               newLayers[idx].shade = value;
                               setLayers(newLayers);
+                              
+                              // Auto-fill rate from memory if available
+                              const memoryKey = `${newLayers[idx].bf}|${value}`;
+                              if (rateMemory[memoryKey]) {
+                                newLayers[idx].rate = rateMemory[memoryKey];
+                                setLayers([...newLayers]);
+                              }
                             }}>
                               <SelectTrigger className="w-32" data-testid={`select-shade-${idx}`}>
                                 <SelectValue />
@@ -1374,6 +1406,10 @@ export default function Calculator() {
                                 const newLayers = [...layers];
                                 newLayers[idx].rate = e.target.value;
                                 setLayers(newLayers);
+                                
+                                // Save rate to memory by BF + Shade combination
+                                const memoryKey = `${newLayers[idx].bf}|${newLayers[idx].shade}`;
+                                setRateMemory({ ...rateMemory, [memoryKey]: e.target.value });
                               }}
                               className="w-20"
                               data-testid={`input-rate-${idx}`}
@@ -1387,8 +1423,12 @@ export default function Calculator() {
                                 onClick={() => {
                                   const newLayers = [...layers];
                                   newLayers[idx] = { ...layers[idx - 1] };
+                                  // Keep fluting factor as 1.0 for Liner layers
+                                  if (newLayers[idx].layerType === "liner") {
+                                    newLayers[idx].flutingFactor = "1";
+                                  }
                                   setLayers(newLayers);
-                                  toast({ title: "Copied", description: `L${idx} values copied from L${idx}` });
+                                  toast({ title: "Copied", description: `L${idx + 1} values copied from L${idx}` });
                                 }}
                                 title={`Copy from L${idx}`}
                                 data-testid={`button-copy-from-prev-${idx}`}
