@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -205,10 +205,39 @@ export default function Calculator() {
   const [partyGst, setPartyGst] = useState("");
   const [partyAddress, setPartyAddress] = useState("");
   
-  // Fetch default company profile
-  const { data: companyProfile, isLoading: isLoadingProfile } = useQuery<CompanyProfile>({
-    queryKey: ["/api/company-profiles/default"],
+  // Multiple profiles support
+  const [allCompanyProfiles, setAllCompanyProfiles] = useState<CompanyProfile[]>([]);
+  const [selectedCompanyProfileId, setSelectedCompanyProfileId] = useState<string>("");
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [allPartyProfiles, setAllPartyProfiles] = useState<any[]>([]);
+  const [selectedPartyProfileId, setSelectedPartyProfileId] = useState<string>("");
+  
+  // Fetch all company profiles
+  const { data: allCompanyProfilesData = [], isLoading: isLoadingProfile } = useQuery<CompanyProfile[]>({
+    queryKey: ["/api/company-profiles"],
   });
+  
+  // Fetch all party profiles
+  const { data: allPartyProfilesData = [] } = useQuery<any[]>({
+    queryKey: ["/api/party-profiles"],
+  });
+  
+  // Set default company profile if not selected
+  useEffect(() => {
+    if (allCompanyProfilesData.length > 0) {
+      setAllCompanyProfiles(allCompanyProfilesData);
+      const defaultProfile = allCompanyProfilesData.find(p => p.isDefault);
+      if (defaultProfile && !selectedCompanyProfileId) {
+        setSelectedCompanyProfileId(defaultProfile.id);
+      }
+    }
+  }, [allCompanyProfilesData]);
+  
+  useEffect(() => {
+    setAllPartyProfiles(allPartyProfilesData);
+  }, [allPartyProfilesData]);
+  
+  const companyProfile = allCompanyProfiles.find(p => p.id === selectedCompanyProfileId) || allCompanyProfiles[0];
   
   // Fetch all quotes
   const { data: savedQuotes = [], isLoading: isLoadingQuotes } = useQuery<Quote[]>({
@@ -311,6 +340,84 @@ export default function Calculator() {
       setBusinessLocation(companyProfile.googleLocation || "");
     }
   }, [companyProfile]);
+  
+  // Copy layer specs
+  const copyLayerToFollowing = (fromIdx: number) => {
+    const sourceLayers = [...layers];
+    const newLayers = [...layers];
+    for (let i = fromIdx + 1; i < newLayers.length; i++) {
+      newLayers[i] = { ...sourceLayers[fromIdx] };
+    }
+    setLayers(newLayers);
+    toast({
+      title: "Copied",
+      description: `Layer L${fromIdx + 1} copied to following layers`,
+    });
+  };
+  
+  // Bulk upload handler
+  const handleBulkUploadFile = async (file: File) => {
+    const text = await file.text();
+    const lines = text.split('\n').filter(l => l.trim());
+    
+    if (lines.length < 2) {
+      toast({ title: "Error", description: "CSV must have header row", variant: "destructive" });
+      return;
+    }
+    
+    const headers = lines[0].split(',').map(h => h.trim());
+    const items: QuoteItem[] = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((h, idx) => { row[h] = values[idx] || ""; });
+      
+      const length = parseFloat(row['Length'] || row['L'] || "0");
+      const width = parseFloat(row['Width'] || row['W'] || "0");
+      const height = parseFloat(row['Height'] || row['H'] || "0");
+      
+      if (!length || !width) continue;
+      
+      const itemLayers: LayerSpec[] = [];
+      for (let l = 1; l <= 5; l++) {
+        const gsm = row[`L${l}_GSM`] || "0";
+        const bf = row[`L${l}_BF`] || "0";
+        const rctValue = row[`L${l}_RCT`] || "0";
+        const shade = row[`L${l}_Shade`] || "Kraft/Natural";
+        const rate = row[`L${l}_Rate`] || "0";
+        
+        if (parseFloat(gsm) > 0) {
+          itemLayers.push({
+            gsm, bf, flutingFactor: "1", rctValue, shade, rate, layerType: l % 2 === 1 ? "liner" : "flute"
+          });
+        }
+      }
+      
+      items.push({
+        id: Math.random().toString(36),
+        boxName: row['Box Name'] || `Box ${i}`,
+        boxDescription: row['Description'] || "",
+        type: row['Type']?.toLowerCase() === 'sheet' ? 'sheet' : 'rsc',
+        ply: (itemLayers.length).toString(),
+        inputUnit: 'mm',
+        measuredOn: 'ID',
+        length, width, height,
+        sheetLength: length,
+        sheetWidth: width,
+        layers: itemLayers,
+        totalValue: 0,
+        paperCost: 0,
+        manufacturingCost: 0,
+      } as unknown as QuoteItem);
+    }
+    
+    if (items.length > 0) {
+      setQuoteItems([...quoteItems, ...items]);
+      toast({ title: "Success", description: `${items.length} items imported` });
+      setShowBulkUpload(false);
+    }
+  };
   
   // Helper to convert input dimensions to mm if needed
   const toMm = (value: number) => inputUnit === "inches" ? inchesToMm(value) : value;
@@ -673,6 +780,19 @@ export default function Calculator() {
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
+              {allCompanyProfiles.length > 0 && (
+                <Select value={selectedCompanyProfileId} onValueChange={setSelectedCompanyProfileId}>
+                  <SelectTrigger className="w-48" data-testid="select-company-profile">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allCompanyProfiles.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.companyName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              
               <Dialog open={showBusinessProfile} onOpenChange={setShowBusinessProfile}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" data-testid="button-business-profile">
@@ -735,6 +855,19 @@ export default function Calculator() {
                 </DialogContent>
               </Dialog>
 
+              {allPartyProfiles.length > 0 && (
+                <Select value={selectedPartyProfileId} onValueChange={setSelectedPartyProfileId}>
+                  <SelectTrigger className="w-48" data-testid="select-party-profile">
+                    <SelectValue placeholder="Select Party..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allPartyProfiles.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name} ({p.companyName})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              
               <Dialog open={showPartyProfile} onOpenChange={setShowPartyProfile}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" data-testid="button-party-profile">
@@ -787,6 +920,40 @@ export default function Calculator() {
                     >
                       {savePartyProfileMutation.isPending ? "Saving..." : "Save"}
                     </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              
+              <Dialog open={showBulkUpload} onOpenChange={setShowBulkUpload}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" data-testid="button-bulk-upload">
+                    <Upload className="w-4 h-4 mr-2" />
+                    Bulk Upload
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Bulk Upload Items</DialogTitle>
+                    <DialogDescription>Upload CSV file with box/sheet details</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="csv-upload">CSV File</Label>
+                      <Input 
+                        id="csv-upload" 
+                        type="file" 
+                        accept=".csv"
+                        onChange={(e) => {
+                          const file = e.currentTarget.files?.[0];
+                          if (file) handleBulkUploadFile(file);
+                        }}
+                        data-testid="input-csv-upload"
+                      />
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <p>CSV format: Box Name, Description, Type (RSC/Sheet), Length, Width, Height (if RSC)</p>
+                      <p>For layers: L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate, etc.</p>
+                    </div>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -1112,6 +1279,7 @@ export default function Calculator() {
                         <TableHead>RCT Value</TableHead>
                         <TableHead>Shade</TableHead>
                         <TableHead>Rate (₹/kg)</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1210,6 +1378,35 @@ export default function Calculator() {
                               className="w-20"
                               data-testid={`input-rate-${idx}`}
                             />
+                          </TableCell>
+                          <TableCell className="flex gap-1">
+                            {idx > 0 && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  const newLayers = [...layers];
+                                  newLayers[idx] = { ...layers[idx - 1] };
+                                  setLayers(newLayers);
+                                  toast({ title: "Copied", description: `L${idx} values copied from L${idx}` });
+                                }}
+                                title={`Copy from L${idx}`}
+                                data-testid={`button-copy-from-prev-${idx}`}
+                              >
+                                <Copy className="w-3 h-3" />
+                              </Button>
+                            )}
+                            {idx < layers.length - 1 && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => copyLayerToFollowing(idx)}
+                                title={`Copy to L${idx + 2}+`}
+                                data-testid={`button-copy-to-next-${idx}`}
+                              >
+                                <Download className="w-3 h-3" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
