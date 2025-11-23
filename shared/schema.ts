@@ -59,10 +59,12 @@ export type AppSettings = typeof appSettings.$inferSelect;
 
 // Zod schemas for nested data structures
 export const layerSpecSchema = z.object({
+  layerIndex: z.number(), // 0-indexed layer number
   layerType: z.enum(['liner', 'flute']),
   gsm: z.number(),
   bf: z.number().optional(),
   flutingFactor: z.number().optional(), // Manual fluting factor
+  rctValue: z.number().optional(), // RCT value for the layer
   shade: z.string(),
   rate: z.number(),
 });

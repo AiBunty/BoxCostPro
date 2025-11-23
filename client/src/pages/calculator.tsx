@@ -7,11 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2 } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { QuoteItem, CompanyProfile, Quote, AppSettings, LayerSpec } from "@shared/schema";
+import { generateWhatsAppMessage, generateEmailContent } from "@/lib/messageGenerator";
 import {
   mmToInches,
   inchesToMm,
@@ -98,11 +99,29 @@ export default function Calculator() {
   const [sheetAllowance, setSheetAllowance] = useState<string>("10");
   const [maxLengthThreshold, setMaxLengthThreshold] = useState<string>("1500");
   
-  // Paper specifications - Layer by layer
-  const [gsmL1, setGsmL1] = useState<string>("180");
-  const [bfL1, setBfL1] = useState<string>("12");
-  const [flutingFactorL1, setFlutingFactorL1] = useState<string>("1.5");
-  const [rateL1, setRateL1] = useState<string>("55.00");
+  // Paper specifications - Layer by layer (dynamic based on ply)
+  const [layers, setLayers] = useState<Array<{ gsm: string; bf: string; flutingFactor: string; rctValue: string; rate: string; layerType: "liner" | "flute"; shade: string }>>(
+    [{ gsm: "180", bf: "12", flutingFactor: "1.5", rctValue: "0", rate: "55.00", layerType: "liner", shade: "Brown" }]
+  );
+  
+  // Initialize layers when ply changes
+  const updateLayersForPly = (newPly: string) => {
+    const plyNum = parseInt(newPly);
+    const defaultLayers = [];
+    for (let i = 0; i < plyNum; i++) {
+      const isFlute = i > 0 && i < plyNum - 1; // Middle layers are flute, outer are liner
+      defaultLayers.push({
+        gsm: "180",
+        bf: "12",
+        flutingFactor: isFlute ? "1.5" : "1.0",
+        rctValue: "0",
+        rate: "55.00",
+        layerType: isFlute ? "flute" as const : "liner" as const,
+        shade: "Brown",
+      });
+    }
+    setLayers(defaultLayers);
+  };
   
   // Manufacturing costs
   const [printingCost, setPrintingCost] = useState<string>("0");
@@ -122,6 +141,7 @@ export default function Calculator() {
   
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showQuotesDialog, setShowQuotesDialog] = useState(false);
+  const [showMessageDialog, setShowMessageDialog] = useState<"whatsapp" | "email" | null>(null);
   
   // Fetch default company profile
   const { data: companyProfile, isLoading: isLoadingProfile } = useQuery<CompanyProfile>({
@@ -208,15 +228,17 @@ export default function Calculator() {
       ply,
     });
     
-    // Create layer specs
-    const layerSpecs: LayerSpec[] = [{
-      layerType: "liner",
-      gsm: parseFloat(gsmL1) || 180,
-      bf: parseFloat(bfL1) || 12,
-      flutingFactor: parseFloat(flutingFactorL1) || 1.5,
-      shade: "Brown",
-      rate: parseFloat(rateL1) || 55,
-    }];
+    // Create layer specs from all layers
+    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => ({
+      layerIndex: idx,
+      layerType: layer.layerType,
+      gsm: parseFloat(layer.gsm) || 180,
+      bf: parseFloat(layer.bf) || 12,
+      flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
+      rctValue: parseFloat(layer.rctValue) || 0,
+      shade: layer.shade,
+      rate: parseFloat(layer.rate) || 55,
+    }));
     
     // Calculate weight, BS, and costs
     const weight = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
@@ -261,15 +283,17 @@ export default function Calculator() {
       allowance,
     });
     
-    // Create layer specs
-    const layerSpecs: LayerSpec[] = [{
-      layerType: "liner",
-      gsm: parseFloat(gsmL1) || 180,
-      bf: parseFloat(bfL1) || 12,
-      flutingFactor: parseFloat(flutingFactorL1) || 1.5,
-      shade: "Brown",
-      rate: parseFloat(rateL1) || 55,
-    }];
+    // Create layer specs from all layers
+    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => ({
+      layerIndex: idx,
+      layerType: layer.layerType,
+      gsm: parseFloat(layer.gsm) || 180,
+      bf: parseFloat(layer.bf) || 12,
+      flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
+      rctValue: parseFloat(layer.rctValue) || 0,
+      shade: layer.shade,
+      rate: parseFloat(layer.rate) || 55,
+    }));
     
     // Calculate weight, BS, and costs
     const weight = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
@@ -321,15 +345,17 @@ export default function Calculator() {
       return;
     }
     
-    // Create layer specs for quote item
-    const layerSpecs: LayerSpec[] = [{
-      layerType: "liner",
-      gsm: parseFloat(gsmL1) || 180,
-      bf: parseFloat(bfL1) || 12,
-      flutingFactor: parseFloat(flutingFactorL1) || 1.5,
-      shade: "Brown",
-      rate: parseFloat(rateL1) || 55,
-    }];
+    // Create layer specs from all layers
+    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => ({
+      layerIndex: idx,
+      layerType: layer.layerType,
+      gsm: parseFloat(layer.gsm) || 180,
+      bf: parseFloat(layer.bf) || 12,
+      flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
+      rctValue: parseFloat(layer.rctValue) || 0,
+      shade: layer.shade,
+      rate: parseFloat(layer.rate) || 55,
+    }));
     
     const item: QuoteItem = {
       type: activeTab,
@@ -739,15 +765,16 @@ export default function Calculator() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Paper Specifications</CardTitle>
-                <CardDescription>Configure paper properties</CardDescription>
+                <CardTitle>Paper Specifications (Layer by Layer)</CardTitle>
+                <CardDescription>Configure paper properties for each layer</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="ply">Ply</Label>
+                  <Label htmlFor="ply">Ply Configuration</Label>
                   <Select value={ply} onValueChange={(v) => {
                     setPly(v);
                     setGlueFlap(GLUE_FLAP_DEFAULTS[v].toString());
+                    updateLayersForPly(v);
                   }}>
                     <SelectTrigger id="ply" data-testid="select-ply">
                       <SelectValue />
@@ -761,52 +788,96 @@ export default function Calculator() {
                     </SelectContent>
                   </Select>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="gsm">GSM</Label>
-                    <Input
-                      id="gsm"
-                      type="number"
-                      value={gsmL1}
-                      onChange={(e) => setGsmL1(e.target.value)}
-                      data-testid="input-gsm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bf">BF</Label>
-                    <Input
-                      id="bf"
-                      type="number"
-                      value={bfL1}
-                      onChange={(e) => setBfL1(e.target.value)}
-                      data-testid="input-bf"
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fluting-factor">Fluting Factor (Manual)</Label>
-                    <Input
-                      id="fluting-factor"
-                      type="number"
-                      step="0.1"
-                      value={flutingFactorL1}
-                      onChange={(e) => setFlutingFactorL1(e.target.value)}
-                      data-testid="input-fluting-factor"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="rate">Rate (₹/kg)</Label>
-                    <Input
-                      id="rate"
-                      type="number"
-                      value={rateL1}
-                      onChange={(e) => setRateL1(e.target.value)}
-                      data-testid="input-rate"
-                    />
-                  </div>
+
+                <div className="overflow-x-auto border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Layer</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>GSM</TableHead>
+                        <TableHead>BF</TableHead>
+                        <TableHead>Fluting Factor</TableHead>
+                        <TableHead>RCT Value</TableHead>
+                        <TableHead>Rate (₹/kg)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {layers.map((layer, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">L{idx + 1}</TableCell>
+                          <TableCell className="capitalize">{layer.layerType}</TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={layer.gsm}
+                              onChange={(e) => {
+                                const newLayers = [...layers];
+                                newLayers[idx].gsm = e.target.value;
+                                setLayers(newLayers);
+                              }}
+                              className="w-20"
+                              data-testid={`input-gsm-${idx}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={layer.bf}
+                              onChange={(e) => {
+                                const newLayers = [...layers];
+                                newLayers[idx].bf = e.target.value;
+                                setLayers(newLayers);
+                              }}
+                              className="w-16"
+                              data-testid={`input-bf-${idx}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={layer.flutingFactor}
+                              onChange={(e) => {
+                                const newLayers = [...layers];
+                                newLayers[idx].flutingFactor = e.target.value;
+                                setLayers(newLayers);
+                              }}
+                              className="w-20"
+                              data-testid={`input-fluting-factor-${idx}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={layer.rctValue}
+                              onChange={(e) => {
+                                const newLayers = [...layers];
+                                newLayers[idx].rctValue = e.target.value;
+                                setLayers(newLayers);
+                              }}
+                              className="w-16"
+                              data-testid={`input-rct-${idx}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={layer.rate}
+                              onChange={(e) => {
+                                const newLayers = [...layers];
+                                newLayers[idx].rate = e.target.value;
+                                setLayers(newLayers);
+                              }}
+                              className="w-20"
+                              data-testid={`input-rate-${idx}`}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               </CardContent>
             </Card>
@@ -1035,12 +1106,40 @@ export default function Calculator() {
             
             <Card>
               <CardHeader>
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center gap-4">
                   <div>
                     <CardTitle>Quote Items</CardTitle>
                     <CardDescription>{quoteItems.length} items</CardDescription>
                   </div>
-                  {quoteItems.length > 0 && (
+                  {quoteItems.length > 0 && <div className="flex gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => {
+                        const message = generateWhatsAppMessage(quoteItems, partyName || "Customer", customerCompany || "Company");
+                        navigator.clipboard.writeText(message);
+                        toast({ title: "Copied to clipboard", description: "WhatsApp message ready to share" });
+                        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+                      }}
+                      data-testid="button-whatsapp"
+                    >
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      WhatsApp
+                    </Button>
+                    
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => {
+                        const { subject, body } = generateEmailContent(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile);
+                        window.location.href = `mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                      }}
+                      data-testid="button-email"
+                    >
+                      <Mail className="w-4 h-4 mr-2" />
+                      Email
+                    </Button>
+
                     <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
                       <DialogTrigger asChild>
                         <Button size="sm" data-testid="button-save-quote">
@@ -1051,64 +1150,32 @@ export default function Calculator() {
                       <DialogContent>
                         <DialogHeader>
                           <DialogTitle>Save Quote</DialogTitle>
-                          <DialogDescription>
-                            Enter customer details to save this quote
-                          </DialogDescription>
+                          <DialogDescription>Enter customer details to save this quote</DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <Label htmlFor="party-name">Party Name *</Label>
-                            <Input
-                              id="party-name"
-                              placeholder="Mr. John Doe"
-                              value={partyName}
-                              onChange={(e) => setPartyName(e.target.value)}
-                              data-testid="input-party-name"
-                            />
+                            <Input id="party-name" placeholder="Mr. John Doe" value={partyName} onChange={(e) => setPartyName(e.target.value)} data-testid="input-party-name" />
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="customer-company">Company Name</Label>
-                            <Input
-                              id="customer-company"
-                              placeholder="ABC Enterprises"
-                              value={customerCompany}
-                              onChange={(e) => setCustomerCompany(e.target.value)}
-                              data-testid="input-customer-company"
-                            />
+                            <Input id="customer-company" placeholder="ABC Enterprises" value={customerCompany} onChange={(e) => setCustomerCompany(e.target.value)} data-testid="input-customer-company" />
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="customer-email">Email</Label>
-                            <Input
-                              id="customer-email"
-                              type="email"
-                              placeholder="contact@company.com"
-                              value={customerEmail}
-                              onChange={(e) => setCustomerEmail(e.target.value)}
-                              data-testid="input-customer-email"
-                            />
+                            <Input id="customer-email" type="email" placeholder="contact@company.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} data-testid="input-customer-email" />
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="customer-mobile">Mobile</Label>
-                            <Input
-                              id="customer-mobile"
-                              placeholder="9876543210"
-                              value={customerMobile}
-                              onChange={(e) => setCustomerMobile(e.target.value)}
-                              data-testid="input-customer-mobile"
-                            />
+                            <Input id="customer-mobile" placeholder="9876543210" value={customerMobile} onChange={(e) => setCustomerMobile(e.target.value)} data-testid="input-customer-mobile" />
                           </div>
-                          <Button
-                            onClick={handleSaveQuote}
-                            className="w-full"
-                            disabled={saveQuoteMutation.isPending}
-                            data-testid="button-confirm-save"
-                          >
+                          <Button onClick={handleSaveQuote} className="w-full" disabled={saveQuoteMutation.isPending} data-testid="button-confirm-save">
                             {saveQuoteMutation.isPending ? "Saving..." : "Save Quote"}
                           </Button>
                         </div>
                       </DialogContent>
                     </Dialog>
-                  )}
+                  </div>}
                 </div>
               </CardHeader>
               <CardContent>
