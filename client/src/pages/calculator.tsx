@@ -379,14 +379,14 @@ export default function Calculator() {
       printingTotal += (costPer * (moq - qty)) / qty;
     }
     
-    // Lamination Cost: (L inches * W inches * Rate per sq inch)
+    // Lamination Cost: (L inches * W inches * Rate per sq inch) / 100
     let laminationTotal = 0;
     const laminationRateValue = parseFloat(laminationRate) || 0;
     if (laminationRateValue > 0) {
       const useCustom = showLaminationCustomize && customLaminationL && customLaminationW;
       const L = useCustom ? parseFloat(customLaminationL) : mmToInches(result.sheetLength);
       const W = useCustom ? parseFloat(customLaminationW) : mmToInches(result.sheetWidth);
-      laminationTotal = L * W * laminationRateValue;
+      laminationTotal = (L * W * laminationRateValue) / 100;
     }
     
     // Die Cost: dieDevelopmentCharge / qty
