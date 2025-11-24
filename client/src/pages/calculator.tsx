@@ -154,7 +154,7 @@ export default function Calculator() {
   
   // Dimension settings
   const [inputUnit, setInputUnit] = useState<"mm" | "inches">("mm");
-  const [measuredOn, setMeasuredOn] = useState<"ID" | "OD">("ID");
+  const [measuredOn, setMeasuredOn] = useState<"ID" | "OD">("OD");
   
   // RSC dimensions (stored internally as mm)
   const [rscLength, setRscLength] = useState<string>("");
