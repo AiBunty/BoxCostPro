@@ -84,41 +84,62 @@ interface CalculationResult {
   layerSpecs: LayerSpec[];
 }
 
-// Helper function to create layers for a given ply count
+// Helper function to create layers for a given ply count with specific defaults
 const createLayersForPly = (plyNum: number) => {
   const defaultLayers = [];
   for (let i = 0; i < plyNum; i++) {
-    // For 5-ply: L1, L3, L5 are Liner (odd indices 0, 2, 4), L2, L4 are Flute (even indices 1, 3)
-    // For other plies: alternate or use standard pattern
+    // Determine layer type (liner vs flute)
     let isFlute = false;
     let flutingFactorValue = "1.0";
+    let gsm = "120";
+    let bf = "18";
+    let shade = "Kraft/Natural";
     
-    if (plyNum === 5) {
-      // 5-ply specific: Liner at L1, L3, L5 (indices 0, 2, 4), Flute at L2, L4 (indices 1, 3)
+    if (plyNum === 3) {
+      // 3-ply: L1 Liner, L2 Flute, L3 Liner
+      isFlute = i === 1;
+      flutingFactorValue = isFlute ? "1.5" : "1.0";
+      gsm = i === 0 ? "180" : "150";
+      bf = i === 0 ? "24" : "18";
+      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
+    } else if (plyNum === 5) {
+      // 5-ply: L1, L3, L5 Liner (indices 0, 2, 4), L2, L4 Flute (indices 1, 3)
       isFlute = i === 1 || i === 3;
       flutingFactorValue = isFlute ? "1.5" : "1.0";
+      gsm = i === 0 ? "180" : "120";
+      bf = i === 0 ? "24" : "18";
+      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
     } else if (plyNum === 7) {
       // 7-ply: L1, L3, L5, L7 Liner (indices 0, 2, 4, 6), L2, L4, L6 Flute (indices 1, 3, 5)
       isFlute = i === 1 || i === 3 || i === 5;
       flutingFactorValue = isFlute ? "1.5" : "1.0";
+      gsm = i === 0 ? "180" : "120";
+      bf = i === 0 ? "24" : "18";
+      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
     } else if (plyNum === 9) {
-      // 9-ply: L1, L3, L5, L7, L9 Liner, others Flute
+      // 9-ply: L1, L3, L5, L7, L9 Liner (indices 0, 2, 4, 6, 8), L2, L4, L6, L8 Flute (indices 1, 3, 5, 7)
       isFlute = i === 1 || i === 3 || i === 5 || i === 7;
       flutingFactorValue = isFlute ? "1.5" : "1.0";
+      gsm = i === 0 ? "180" : "120";
+      bf = i === 0 ? "24" : "18";
+      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
     } else {
-      // 1-ply and 3-ply: standard alternating pattern
-      isFlute = i > 0 && i < plyNum - 1;
-      flutingFactorValue = isFlute ? "1.5" : "1.0";
+      // 1-ply: just liner
+      isFlute = false;
+      flutingFactorValue = "1.0";
+      gsm = "180";
+      bf = "24";
+      shade = "Golden (Brown)";
     }
     
     defaultLayers.push({
-      gsm: "180",
-      bf: "12",
+      gsm,
+      bf,
       flutingFactor: flutingFactorValue,
       rctValue: "0",
       rate: "55.00",
       layerType: isFlute ? "flute" as const : "liner" as const,
-      shade: "Brown",
+      shade,
     });
   }
   return defaultLayers;
