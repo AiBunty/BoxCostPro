@@ -64,10 +64,10 @@ const DECKLE_ALLOWANCE_DEFAULTS: Record<string, number> = {
 
 const PLY_THICKNESS: Record<string, number> = {
   '1': 0.45,
-  '3': 2.5,
-  '5': 3.5,
-  '7': 5.5,
-  '9': 6.5,
+  '3': 3,
+  '5': 5,
+  '7': 7,
+  '9': 11,
 };
 
 interface CalculationResult {
