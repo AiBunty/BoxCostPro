@@ -1691,127 +1691,13 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       {layers.map((layer, idx) => (
                         <TableRow key={idx}>
                           <TableCell className="font-medium">L{idx + 1}</TableCell>
-                          <TableCell className="capitalize">{layer.layerType}</TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              value={layer.gsm}
-                              onChange={(e) => {
-                                const newLayers = [...layers];
-                                newLayers[idx].gsm = e.target.value;
-                                setLayers(newLayers);
-                              }}
-                              className="w-20"
-                              data-testid={`input-gsm-${idx}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Select value={layer.bf} onValueChange={(value) => {
-                              const newLayers = [...layers];
-                              newLayers[idx].bf = value;
-                              setLayers(newLayers);
-                              
-                              // Auto-fill rate from memory if available
-                              const memoryKey = `${value}|${newLayers[idx].shade}`;
-                              if (rateMemory[memoryKey]) {
-                                newLayers[idx].rate = rateMemory[memoryKey];
-                                setLayers([...newLayers]);
-                              }
-                            }}>
-                              <SelectTrigger className="w-16" data-testid={`select-bf-${idx}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="14">14</SelectItem>
-                                <SelectItem value="16">16</SelectItem>
-                                <SelectItem value="18">18</SelectItem>
-                                <SelectItem value="20">20</SelectItem>
-                                <SelectItem value="22">22</SelectItem>
-                                <SelectItem value="24">24</SelectItem>
-                                <SelectItem value="28">28</SelectItem>
-                                <SelectItem value="35">35</SelectItem>
-                                <SelectItem value="40">40</SelectItem>
-                                <SelectItem value="45">45</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={layer.flutingFactor}
-                              onChange={(e) => {
-                                const newLayers = [...layers];
-                                newLayers[idx].flutingFactor = e.target.value;
-                                setLayers(newLayers);
-                              }}
-                              disabled={layer.layerType === "liner"}
-                              className="w-20 disabled:opacity-50 disabled:cursor-not-allowed"
-                              data-testid={`input-fluting-factor-${idx}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              value={layer.rctValue}
-                              onChange={(e) => {
-                                const newLayers = [...layers];
-                                newLayers[idx].rctValue = e.target.value;
-                                setLayers(newLayers);
-                              }}
-                              className="w-16"
-                              data-testid={`input-rct-${idx}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Select value={layer.shade} onValueChange={(value) => {
-                              const newLayers = [...layers];
-                              newLayers[idx].shade = value;
-                              setLayers(newLayers);
-                              
-                              // Auto-fill rate from memory if available
-                              const memoryKey = `${newLayers[idx].bf}|${value}`;
-                              if (rateMemory[memoryKey]) {
-                                newLayers[idx].rate = rateMemory[memoryKey];
-                                setLayers([...newLayers]);
-                              }
-                            }}>
-                              <SelectTrigger className="w-32" data-testid={`select-shade-${idx}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
-                                <SelectItem value="Golden (Red)">Golden (Red)</SelectItem>
-                                <SelectItem value="Golden (Brown)">Golden (Brown)</SelectItem>
-                                <SelectItem value="Duplex LWC">Duplex LWC</SelectItem>
-                                <SelectItem value="Duplex HWC">Duplex HWC</SelectItem>
-                                <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
-                                <SelectItem value="Virgin Kraft">Virgin Kraft</SelectItem>
-                                <SelectItem value="Bagass">Bagass</SelectItem>
-                                <SelectItem value="Semi Chemical">Semi Chemical</SelectItem>
-                                <SelectItem value="SBS">SBS</SelectItem>
-                                <SelectItem value="FBB">FBB</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={layer.rate}
-                              onChange={(e) => {
-                                const newLayers = [...layers];
-                                newLayers[idx].rate = e.target.value;
-                                setLayers(newLayers);
-                                
-                                // Save rate to memory by BF + Shade combination
-                                const memoryKey = `${newLayers[idx].bf}|${newLayers[idx].shade}`;
-                                setRateMemory({ ...rateMemory, [memoryKey]: e.target.value });
-                              }}
-                              className="w-20"
-                              data-testid={`input-rate-${idx}`}
-                            />
-                          </TableCell>
+                          <TableCell className="capitalize text-sm" data-testid={`text-layer-type-${idx}`}>{layer.layerType}</TableCell>
+                          <TableCell className="text-sm" data-testid={`text-gsm-${idx}`}>{layer.gsm}</TableCell>
+                          <TableCell className="text-sm" data-testid={`text-bf-${idx}`}>{layer.bf}</TableCell>
+                          <TableCell className="text-sm" data-testid={`text-fluting-${idx}`}>{layer.flutingFactor}</TableCell>
+                          <TableCell className="text-sm" data-testid={`text-rct-${idx}`}>{layer.rctValue}</TableCell>
+                          <TableCell className="text-sm" data-testid={`text-shade-${idx}`}>{layer.shade}</TableCell>
+                          <TableCell className="text-sm" data-testid={`text-rate-${idx}`}>₹{parseFloat(layer.rate).toFixed(2)}</TableCell>
                           <TableCell className="flex gap-1">
                             <Button
                               size="sm"
