@@ -268,6 +268,10 @@ export default function Calculator() {
   // Rate memory by BF + Shade combination
   const [rateMemory, setRateMemory] = useState<Record<string, string>>({});
   
+  // Layer edit dialog state
+  const [editingLayerIdx, setEditingLayerIdx] = useState<number | null>(null);
+  const [editingLayerData, setEditingLayerData] = useState<any>(null);
+  
   // Fetch all company profiles
   const { data: allCompanyProfilesData = [], isLoading: isLoadingProfile } = useQuery<CompanyProfile[]>({
     queryKey: ["/api/company-profiles"],
@@ -1809,6 +1813,18 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                             />
                           </TableCell>
                           <TableCell className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingLayerIdx(idx);
+                                setEditingLayerData({ ...layer });
+                              }}
+                              title={`Edit L${idx + 1}`}
+                              data-testid={`button-edit-layer-${idx}`}
+                            >
+                              Edit
+                            </Button>
                             {idx > 0 && (
                               <Button
                                 size="sm"
@@ -1854,6 +1870,165 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                 </div>
               </CardContent>
             </Card>
+
+            <Dialog open={editingLayerIdx !== null} onOpenChange={(open) => !open && setEditingLayerIdx(null)}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    Edit Layer L{editingLayerIdx !== null ? editingLayerIdx + 1 : ""}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {editingLayerIdx !== null && editingLayerData ? (
+                      <div className="text-sm font-medium mt-2">
+                        {editingLayerData.gsm} GSM - {editingLayerData.bf} BF - FF {editingLayerData.flutingFactor} - {editingLayerData.shade}
+                      </div>
+                    ) : null}
+                  </DialogDescription>
+                </DialogHeader>
+                {editingLayerData && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-gsm" className="text-sm">GSM</Label>
+                        <Input
+                          id="edit-gsm"
+                          type="number"
+                          value={editingLayerData.gsm}
+                          onChange={(e) =>
+                            setEditingLayerData({ ...editingLayerData, gsm: e.target.value })
+                          }
+                          data-testid="input-edit-gsm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-bf" className="text-sm">BF</Label>
+                        <Select
+                          value={editingLayerData.bf}
+                          onValueChange={(value) =>
+                            setEditingLayerData({ ...editingLayerData, bf: value })
+                          }
+                        >
+                          <SelectTrigger id="edit-bf" data-testid="select-edit-bf">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="14">14</SelectItem>
+                            <SelectItem value="16">16</SelectItem>
+                            <SelectItem value="18">18</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="22">22</SelectItem>
+                            <SelectItem value="24">24</SelectItem>
+                            <SelectItem value="28">28</SelectItem>
+                            <SelectItem value="35">35</SelectItem>
+                            <SelectItem value="40">40</SelectItem>
+                            <SelectItem value="45">45</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-fluting" className="text-sm">Fluting Factor</Label>
+                        <Input
+                          id="edit-fluting"
+                          type="number"
+                          step="0.1"
+                          value={editingLayerData.flutingFactor}
+                          onChange={(e) =>
+                            setEditingLayerData({ ...editingLayerData, flutingFactor: e.target.value })
+                          }
+                          disabled={editingLayerData.layerType === "liner"}
+                          data-testid="input-edit-fluting"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-rct" className="text-sm">RCT Value</Label>
+                        <Input
+                          id="edit-rct"
+                          type="number"
+                          value={editingLayerData.rctValue}
+                          onChange={(e) =>
+                            setEditingLayerData({ ...editingLayerData, rctValue: e.target.value })
+                          }
+                          data-testid="input-edit-rct"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-shade" className="text-sm">Paper Shade</Label>
+                      <Select
+                        value={editingLayerData.shade}
+                        onValueChange={(value) =>
+                          setEditingLayerData({ ...editingLayerData, shade: value })
+                        }
+                      >
+                        <SelectTrigger id="edit-shade" data-testid="select-edit-shade">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
+                          <SelectItem value="Golden (Red)">Golden (Red)</SelectItem>
+                          <SelectItem value="Golden (Brown)">Golden (Brown)</SelectItem>
+                          <SelectItem value="Duplex LWC">Duplex LWC</SelectItem>
+                          <SelectItem value="Duplex HWC">Duplex HWC</SelectItem>
+                          <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
+                          <SelectItem value="Virgin Kraft">Virgin Kraft</SelectItem>
+                          <SelectItem value="Bagass">Bagass</SelectItem>
+                          <SelectItem value="Semi Chemical">Semi Chemical</SelectItem>
+                          <SelectItem value="SBS">SBS</SelectItem>
+                          <SelectItem value="FBB">FBB</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-rate" className="text-sm">Rate (₹/kg)</Label>
+                      <Input
+                        id="edit-rate"
+                        type="number"
+                        step="0.01"
+                        value={editingLayerData.rate}
+                        onChange={(e) =>
+                          setEditingLayerData({ ...editingLayerData, rate: e.target.value })
+                        }
+                        data-testid="input-edit-rate"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setEditingLayerIdx(null)}
+                        data-testid="button-cancel-edit"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (editingLayerIdx !== null) {
+                            const newLayers = [...layers];
+                            newLayers[editingLayerIdx] = editingLayerData;
+                            setLayers(newLayers);
+                            
+                            // Save rate to memory by BF + Shade combination
+                            const memoryKey = `${editingLayerData.bf}|${editingLayerData.shade}`;
+                            setRateMemory({ ...rateMemory, [memoryKey]: editingLayerData.rate });
+                            
+                            setEditingLayerIdx(null);
+                            toast({ title: "Success", description: `L${editingLayerIdx + 1} updated successfully` });
+                          }
+                        }}
+                        data-testid="button-save-edit"
+                      >
+                        Save Changes
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
             
             <Card>
               <CardHeader>
