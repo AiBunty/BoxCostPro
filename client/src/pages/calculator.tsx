@@ -272,6 +272,11 @@ export default function Calculator() {
   const [editingLayerIdx, setEditingLayerIdx] = useState<number | null>(null);
   const [editingLayerData, setEditingLayerData] = useState<any>(null);
   
+  // Message editing state
+  const [editableWhatsAppMessage, setEditableWhatsAppMessage] = useState("");
+  const [editableEmailBody, setEditableEmailBody] = useState("");
+  const [editableEmailSubject, setEditableEmailSubject] = useState("");
+  
   // Fetch all company profiles
   const { data: allCompanyProfilesData = [], isLoading: isLoadingProfile } = useQuery<CompanyProfile[]>({
     queryKey: ["/api/company-profiles"],
@@ -307,6 +312,21 @@ export default function Calculator() {
   // Fetch app settings
   const { data: appSettings } = useQuery<AppSettings>({
     queryKey: ["/api/settings"],
+  });
+
+  // Fetch rate memory
+  const { data: rateMemoryData = [] } = useQuery<any[]>({
+    queryKey: ["/api/rate-memory"],
+  });
+
+  // Mutation to save rate memory
+  const saveRateMemoryMutation = useMutation({
+    mutationFn: async (data: { bfValue: string; shade: string; rate: number }) => {
+      return await apiRequest("POST", "/api/rate-memory", data);
+    },
+    onError: (error) => {
+      console.error("Failed to save rate memory:", error);
+    }
   });
   
   // Save quote mutation
@@ -459,6 +479,18 @@ export default function Calculator() {
       setBusinessLocation(companyProfile.googleLocation || "");
     }
   }, [companyProfile, editingProfileId]);
+
+  // Load rate memory from API on mount
+  useEffect(() => {
+    if (rateMemoryData && rateMemoryData.length > 0) {
+      const memoryMap: Record<string, string> = {};
+      rateMemoryData.forEach((entry: any) => {
+        const key = `${entry.bfValue}|${entry.shade}`;
+        memoryMap[key] = entry.rate.toString();
+      });
+      setRateMemory(memoryMap);
+    }
+  }, [rateMemoryData]);
   
   // Download sample bulk upload CSV
   const downloadSampleCSV = () => {
@@ -1905,9 +1937,16 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                             newLayers[editingLayerIdx] = editingLayerData;
                             setLayers(newLayers);
                             
-                            // Save rate to memory by BF + Shade combination
+                            // Save rate to memory by BF + Shade combination (both local and API)
                             const memoryKey = `${editingLayerData.bf}|${editingLayerData.shade}`;
                             setRateMemory({ ...rateMemory, [memoryKey]: editingLayerData.rate });
+                            
+                            // Persist to API
+                            saveRateMemoryMutation.mutate({
+                              bfValue: editingLayerData.bf,
+                              shade: editingLayerData.shade,
+                              rate: parseFloat(editingLayerData.rate)
+                            });
                             
                             setEditingLayerIdx(null);
                             toast({ title: "Success", description: `L${editingLayerIdx + 1} updated successfully` });
@@ -1920,6 +1959,100 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                     </div>
                   </div>
                 )}
+              </DialogContent>
+            </Dialog>
+
+            {/* WhatsApp Message Editing Dialog */}
+            <Dialog open={showMessageDialog === "whatsapp"} onOpenChange={(open) => !open && setShowMessageDialog(null)}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>WhatsApp Message</DialogTitle>
+                  <DialogDescription>Edit the message and copy when ready</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="whatsapp-message" className="text-sm">Message Content</Label>
+                    <textarea
+                      id="whatsapp-message"
+                      value={editableWhatsAppMessage}
+                      onChange={(e) => setEditableWhatsAppMessage(e.target.value)}
+                      className="w-full h-40 p-3 border rounded-md font-mono text-sm resize-none"
+                      data-testid="textarea-whatsapp-message"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowMessageDialog(null)}
+                      data-testid="button-cancel-message"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        navigator.clipboard.writeText(editableWhatsAppMessage);
+                        toast({ title: "Copied", description: "WhatsApp message copied to clipboard" });
+                        setShowMessageDialog(null);
+                      }}
+                      data-testid="button-copy-whatsapp-message"
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy Message
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Email Message Editing Dialog */}
+            <Dialog open={showMessageDialog === "email"} onOpenChange={(open) => !open && setShowMessageDialog(null)}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Email Message</DialogTitle>
+                  <DialogDescription>Edit the subject and body and copy when ready</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email-subject" className="text-sm">Subject</Label>
+                    <Input
+                      id="email-subject"
+                      value={editableEmailSubject}
+                      onChange={(e) => setEditableEmailSubject(e.target.value)}
+                      data-testid="input-email-subject"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email-body" className="text-sm">Body</Label>
+                    <textarea
+                      id="email-body"
+                      value={editableEmailBody}
+                      onChange={(e) => setEditableEmailBody(e.target.value)}
+                      className="w-full h-40 p-3 border rounded-md font-mono text-sm resize-none"
+                      data-testid="textarea-email-body"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowMessageDialog(null)}
+                      data-testid="button-cancel-email-message"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        const fullEmail = `Subject: ${editableEmailSubject}\n\n${editableEmailBody}`;
+                        navigator.clipboard.writeText(fullEmail);
+                        toast({ title: "Copied", description: "Email message copied to clipboard" });
+                        setShowMessageDialog(null);
+                      }}
+                      data-testid="button-copy-email-message"
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy Email
+                    </Button>
+                  </div>
+                </div>
               </DialogContent>
             </Dialog>
             
@@ -2433,8 +2566,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       variant="outline"
                       onClick={() => {
                         const message = generateWhatsAppMessage(quoteItems, partyName || "Customer", companyProfile);
-                        navigator.clipboard.writeText(message);
-                        toast({ title: "Copied", description: "WhatsApp message copied to clipboard" });
+                        setEditableWhatsAppMessage(message);
+                        setShowMessageDialog("whatsapp");
                       }}
                       data-testid="button-copy-whatsapp"
                     >
@@ -2447,8 +2580,9 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       variant="outline"
                       onClick={() => {
                         const { subject, body } = generateEmailContent(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile);
-                        navigator.clipboard.writeText(body);
-                        toast({ title: "Copied", description: "Email template copied to clipboard" });
+                        setEditableEmailSubject(subject);
+                        setEditableEmailBody(body);
+                        setShowMessageDialog("email");
                       }}
                       data-testid="button-copy-email"
                     >

@@ -7,7 +7,9 @@ import {
   type InsertQuote,
   type QuoteItem,
   type AppSettings,
-  type InsertAppSettings
+  type InsertAppSettings,
+  type RateMemoryEntry,
+  type InsertRateMemory
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -35,6 +37,11 @@ export interface IStorage {
   updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined>;
   deleteQuote(id: string): Promise<boolean>;
   
+  // Rate Memory (BF + Shade combinations)
+  getAllRateMemory(): Promise<RateMemoryEntry[]>;
+  getRateMemoryByKey(bfValue: string, shade: string): Promise<RateMemoryEntry | undefined>;
+  saveOrUpdateRateMemory(bfValue: string, shade: string, rate: number): Promise<RateMemoryEntry>;
+  
   // App Settings
   getAppSettings(): Promise<AppSettings>;
   updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings>;
@@ -44,12 +51,14 @@ export class MemStorage implements IStorage {
   private companyProfiles: Map<string, CompanyProfile>;
   private partyProfiles: Map<string, PartyProfile>;
   private quotes: Map<string, Quote>;
+  private rateMemories: Map<string, RateMemoryEntry>;
   private appSettings: AppSettings;
 
   constructor() {
     this.companyProfiles = new Map();
     this.partyProfiles = new Map();
     this.quotes = new Map();
+    this.rateMemories = new Map();
     
     // Add default company profile
     const defaultProfile: CompanyProfile = {
@@ -240,6 +249,36 @@ export class MemStorage implements IStorage {
 
   async deleteQuote(id: string): Promise<boolean> {
     return this.quotes.delete(id);
+  }
+  
+  // Rate Memory
+  async getAllRateMemory(): Promise<RateMemoryEntry[]> {
+    const values: RateMemoryEntry[] = [];
+    this.rateMemories.forEach(entry => values.push(entry));
+    return values;
+  }
+
+  async getRateMemoryByKey(bfValue: string, shade: string): Promise<RateMemoryEntry | undefined> {
+    const key = `${bfValue}|${shade}`;
+    return this.rateMemories.get(key);
+  }
+
+  async saveOrUpdateRateMemory(bfValue: string, shade: string, rate: number): Promise<RateMemoryEntry> {
+    const key = `${bfValue}|${shade}`;
+    const existing = this.rateMemories.get(key);
+    
+    const now = new Date().toISOString();
+    const entry: RateMemoryEntry = {
+      id: existing?.id || randomUUID(),
+      bfValue,
+      shade,
+      rate,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    
+    this.rateMemories.set(key, entry);
+    return entry;
   }
   
   // App Settings

@@ -141,5 +141,19 @@ export const quoteItemSchema = z.object({
   totalValue: z.number(),
 });
 
+// Rate Memory for Paper (BF + Shade combinations)
+export const rateMemory = pgTable("rate_memory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bfValue: text("bf_value").notNull(),
+  shade: text("shade").notNull(),
+  rate: real("rate").notNull(),
+  createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const insertRateMemorySchema = createInsertSchema(rateMemory).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRateMemory = z.infer<typeof insertRateMemorySchema>;
+export type RateMemoryEntry = typeof rateMemory.$inferSelect;
+
 export type QuoteItem = z.infer<typeof quoteItemSchema>;
 export type LayerSpec = z.infer<typeof layerSpecSchema>;

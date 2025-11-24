@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertCompanyProfileSchema, insertPartyProfileSchema, insertQuoteSchema, insertAppSettingsSchema } from "@shared/schema";
+import { insertCompanyProfileSchema, insertPartyProfileSchema, insertQuoteSchema, insertAppSettingsSchema, insertRateMemorySchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -181,6 +181,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete quote" });
+    }
+  });
+
+  // Rate Memory
+  app.get("/api/rate-memory", async (req, res) => {
+    try {
+      const rates = await storage.getAllRateMemory();
+      res.json(rates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch rate memory" });
+    }
+  });
+
+  app.get("/api/rate-memory/:bf/:shade", async (req, res) => {
+    try {
+      const rate = await storage.getRateMemoryByKey(req.params.bf, req.params.shade);
+      if (!rate) {
+        return res.status(404).json({ error: "Rate not found" });
+      }
+      res.json(rate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch rate" });
+    }
+  });
+
+  app.post("/api/rate-memory", async (req, res) => {
+    try {
+      const { bfValue, shade, rate } = req.body;
+      const saved = await storage.saveOrUpdateRateMemory(bfValue, shade, rate);
+      res.status(201).json(saved);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to save rate" });
     }
   });
 
