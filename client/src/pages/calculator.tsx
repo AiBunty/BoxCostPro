@@ -487,14 +487,13 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
     return dateMatch && companyMatch && boxNameMatch;
   });
   
-  // Copy layer specs (only GSM, BF, RCT Value, Shade, Rate - NOT layerType or flutingFactor)
+  // Copy layer specs (GSM, BF, RCT Value, Shade, Rate, and flutingFactor to even layers only)
   const copyLayerToFollowing = (fromIdx: number) => {
     const sourceLayer = layers[fromIdx];
     const newLayers = [...layers];
     
     for (let i = fromIdx + 1; i < newLayers.length; i++) {
-      // Only copy: gsm, bf, rctValue, shade, rate
-      // Do NOT copy: layerType (stays constant per layer) or flutingFactor (stays constant per layer)
+      // Copy: gsm, bf, rctValue, shade, rate
       newLayers[i] = {
         ...newLayers[i],
         gsm: sourceLayer.gsm,
@@ -503,6 +502,11 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
         shade: sourceLayer.shade,
         rate: sourceLayer.rate,
       };
+      
+      // Copy flutingFactor only to even layers (flute layers: index 1, 3, 5...)
+      if (i % 2 === 1) {
+        newLayers[i].flutingFactor = sourceLayer.flutingFactor;
+      }
     }
     
     setLayers(newLayers);
@@ -1718,8 +1722,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                                 onClick={() => {
                                   const newLayers = [...layers];
                                   const sourceLayer = layers[idx - 1];
-                                  // Only copy: gsm, bf, rctValue, shade, rate
-                                  // Do NOT copy: layerType (stays constant per layer) or flutingFactor (stays constant per layer)
+                                  // Copy: gsm, bf, rctValue, shade, rate
                                   newLayers[idx] = {
                                     ...newLayers[idx],
                                     gsm: sourceLayer.gsm,
@@ -1728,6 +1731,10 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                                     shade: sourceLayer.shade,
                                     rate: sourceLayer.rate,
                                   };
+                                  // Copy flutingFactor only to even layers (flute layers: index 1, 3, 5...)
+                                  if (idx % 2 === 1) {
+                                    newLayers[idx].flutingFactor = sourceLayer.flutingFactor;
+                                  }
                                   setLayers(newLayers);
                                   toast({ title: "Copied", description: `L${idx + 1} values copied from L${idx}` });
                                 }}
