@@ -8,9 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings } from "lucide-react";
+import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } from "@/components/FlutingSettings";
+import { Link } from "wouter";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { QuoteItem, CompanyProfile, Quote, AppSettings, LayerSpec } from "@shared/schema";
 import { generateWhatsAppMessage, generateEmailContent } from "@/lib/messageGenerator";
@@ -148,8 +151,13 @@ const createLayersForPly = (plyNum: number) => {
 
 export default function Calculator() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"rsc" | "sheet">("rsc");
   const [ply, setPly] = useState<string>("5");
+  const [fluteCombination, setFluteCombination] = useState<string>("BC");
+  const [fluteSettings, setFluteSettings] = useState<Record<string, number>>({
+    'A': 1.55, 'B': 1.35, 'C': 1.45, 'E': 1.25, 'F': 1.20
+  });
   const [boxName, setBoxName] = useState<string>("");
   const [boxDescription, setBoxDescription] = useState<string>("");
   
@@ -1020,6 +1028,17 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
+              {(user as any)?.role === 'owner' && (
+                <Link href="/admin">
+                  <Button variant="outline" size="sm" data-testid="button-admin-panel">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Admin
+                  </Button>
+                </Link>
+              )}
+              
+              <FlutingSettings onSettingsChange={setFluteSettings} />
+              
               {allCompanyProfiles.length > 0 && (
                 <Select value={selectedCompanyProfileId} onValueChange={setSelectedCompanyProfileId}>
                   <SelectTrigger className="w-48" data-testid="select-company-profile">
@@ -1676,7 +1695,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                 <CardDescription>Configure paper properties for each layer</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="ply">Ply Configuration</Label>
                     <Select value={ply} onValueChange={(v) => {
@@ -1684,6 +1703,10 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       setGlueFlap(GLUE_FLAP_DEFAULTS[v].toString());
                       setDeckleAllowance(DECKLE_ALLOWANCE_DEFAULTS[v].toString());
                       updateLayersForPly(v);
+                      const combos = FLUTE_COMBINATIONS[v] || [];
+                      if (combos.length > 0 && !combos.includes(fluteCombination)) {
+                        setFluteCombination(combos[0]);
+                      }
                     }}>
                       <SelectTrigger id="ply" data-testid="select-ply">
                         <SelectValue />
@@ -1692,6 +1715,32 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                         {PLY_OPTIONS.map((p) => (
                           <SelectItem key={p} value={p}>
                             {p === "1" ? "MONO" : `${p}-Ply`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="flute-combo">Flute Combination</Label>
+                    <Select value={fluteCombination} onValueChange={(v) => {
+                      setFluteCombination(v);
+                      const factors = getFlutingFactorForCombination(v, fluteSettings);
+                      setLayers(prev => prev.map((layer, idx) => {
+                        if (layer.layerType === 'flute') {
+                          const fluteIdx = Math.floor(idx / 2);
+                          const newFactor = factors[fluteIdx] || 1.35;
+                          return { ...layer, flutingFactor: newFactor.toFixed(2) };
+                        }
+                        return layer;
+                      }));
+                    }}>
+                      <SelectTrigger id="flute-combo" data-testid="select-flute-combo">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(FLUTE_COMBINATIONS[ply] || ['B']).map((combo) => (
+                          <SelectItem key={combo} value={combo}>
+                            {combo} Flute
                           </SelectItem>
                         ))}
                       </SelectContent>

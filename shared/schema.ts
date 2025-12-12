@@ -21,7 +21,142 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  role: varchar("role").default("user"), // 'owner', 'admin', 'user'
+  subscriptionStatus: varchar("subscription_status").default("trial"), // 'trial', 'active', 'expired', 'cancelled'
+  trialEndsAt: timestamp("trial_ends_at"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Subscription Plans (managed by owner)
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  priceMonthly: real("price_monthly").notNull(),
+  priceYearly: real("price_yearly"),
+  features: jsonb("features").default('[]'),
+  isActive: boolean("is_active").default(true),
+  trialDays: integer("trial_days").default(14),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({ id: true, createdAt: true });
+export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+
+// User Subscriptions
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  planId: varchar("plan_id").references(() => subscriptionPlans.id),
+  status: varchar("status").default("active"), // 'active', 'cancelled', 'expired', 'paused'
+  billingCycle: varchar("billing_cycle").default("monthly"), // 'monthly', 'yearly'
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  razorpaySubscriptionId: varchar("razorpay_subscription_id"),
+  razorpayCustomerId: varchar("razorpay_customer_id"),
+  couponApplied: varchar("coupon_applied"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+
+// Coupons
+export const coupons = pgTable("coupons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code").unique().notNull(),
+  discountType: varchar("discount_type").default("percentage"), // 'percentage', 'fixed'
+  discountValue: real("discount_value").notNull(),
+  maxUses: integer("max_uses"),
+  usedCount: integer("used_count").default(0),
+  validFrom: timestamp("valid_from"),
+  validUntil: timestamp("valid_until"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCouponSchema = createInsertSchema(coupons).omit({ id: true, createdAt: true, usedCount: true });
+export type InsertCoupon = z.infer<typeof insertCouponSchema>;
+export type Coupon = typeof coupons.$inferSelect;
+
+// Trial Invites
+export const trialInvites = pgTable("trial_invites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email").notNull(),
+  companyName: text("company_name"),
+  inviteToken: varchar("invite_token").unique().notNull(),
+  trialDays: integer("trial_days").default(14),
+  status: varchar("status").default("pending"), // 'pending', 'accepted', 'expired'
+  sentAt: timestamp("sent_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  acceptedAt: timestamp("accepted_at"),
+});
+
+export const insertTrialInviteSchema = createInsertSchema(trialInvites).omit({ id: true, sentAt: true, inviteToken: true });
+export type InsertTrialInvite = z.infer<typeof insertTrialInviteSchema>;
+export type TrialInvite = typeof trialInvites.$inferSelect;
+
+// Payment Transactions (Razorpay)
+export const paymentTransactions = pgTable("payment_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  subscriptionId: varchar("subscription_id").references(() => userSubscriptions.id),
+  razorpayOrderId: varchar("razorpay_order_id"),
+  razorpayPaymentId: varchar("razorpay_payment_id"),
+  razorpaySignature: varchar("razorpay_signature"),
+  amount: real("amount").notNull(),
+  currency: varchar("currency").default("INR"),
+  status: varchar("status").default("pending"), // 'pending', 'success', 'failed', 'refunded'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPaymentTransactionSchema = createInsertSchema(paymentTransactions).omit({ id: true, createdAt: true });
+export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
+export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
+
+// Fluting Settings (per user - machine configuration)
+export const flutingSettings = pgTable("fluting_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  fluteType: varchar("flute_type").notNull(), // 'A', 'B', 'C', 'E', 'F'
+  flutingFactor: real("fluting_factor").notNull(),
+  fluteHeight: real("flute_height"), // optional flute height in mm
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertFlutingSettingSchema = createInsertSchema(flutingSettings).omit({ id: true, createdAt: true });
+export type InsertFlutingSetting = z.infer<typeof insertFlutingSettingSchema>;
+export type FlutingSetting = typeof flutingSettings.$inferSelect;
+
+// Chatbot Widgets (for embedding on customer websites)
+export const chatbotWidgets = pgTable("chatbot_widgets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  widgetName: text("widget_name").notNull(),
+  apiToken: varchar("api_token").unique().notNull(),
+  allowedDomains: jsonb("allowed_domains").default('[]'), // domains where widget can be embedded
+  customStyles: jsonb("custom_styles").default('{}'),
+  welcomeMessage: text("welcome_message").default("Hello! How can I help you with box costing today?"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertChatbotWidgetSchema = createInsertSchema(chatbotWidgets).omit({ id: true, createdAt: true, apiToken: true });
+export type InsertChatbotWidget = z.infer<typeof insertChatbotWidgetSchema>;
+export type ChatbotWidget = typeof chatbotWidgets.$inferSelect;
+
+// Owner Settings (global app configuration)
+export const ownerSettings = pgTable("owner_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  razorpayKeyId: text("razorpay_key_id"),
+  razorpayKeySecret: text("razorpay_key_secret"),
+  defaultTrialDays: integer("default_trial_days").default(14),
+  emailFromAddress: text("email_from_address"),
+  emailFromName: text("email_from_name"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

@@ -11,15 +11,38 @@ import {
   type InsertRateMemory,
   type User,
   type UpsertUser,
+  type SubscriptionPlan,
+  type InsertSubscriptionPlan,
+  type UserSubscription,
+  type InsertUserSubscription,
+  type Coupon,
+  type InsertCoupon,
+  type TrialInvite,
+  type InsertTrialInvite,
+  type PaymentTransaction,
+  type InsertPaymentTransaction,
+  type FlutingSetting,
+  type InsertFlutingSetting,
+  type ChatbotWidget,
+  type InsertChatbotWidget,
   companyProfiles,
   partyProfiles,
   quotes,
   appSettings,
   rateMemory,
-  users
+  users,
+  subscriptionPlans,
+  userSubscriptions,
+  coupons,
+  trialInvites,
+  paymentTransactions,
+  flutingSettings,
+  chatbotWidgets,
+  ownerSettings
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike } from "drizzle-orm";
+import crypto from "crypto";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -58,6 +81,57 @@ export interface IStorage {
   // App Settings
   getAppSettings(userId?: string): Promise<AppSettings>;
   updateAppSettings(settings: Partial<InsertAppSettings>, userId?: string): Promise<AppSettings>;
+  
+  // Subscription Plans (Admin)
+  getAllSubscriptionPlans(): Promise<SubscriptionPlan[]>;
+  getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined>;
+  createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan>;
+  updateSubscriptionPlan(id: string, updates: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan | undefined>;
+  deleteSubscriptionPlan(id: string): Promise<boolean>;
+  
+  // User Subscriptions
+  getUserSubscription(userId: string): Promise<UserSubscription | undefined>;
+  createUserSubscription(subscription: InsertUserSubscription): Promise<UserSubscription>;
+  updateUserSubscription(id: string, updates: Partial<InsertUserSubscription>): Promise<UserSubscription | undefined>;
+  getAllUserSubscriptions(): Promise<UserSubscription[]>;
+  
+  // Coupons (Admin)
+  getAllCoupons(): Promise<Coupon[]>;
+  getCoupon(id: string): Promise<Coupon | undefined>;
+  getCouponByCode(code: string): Promise<Coupon | undefined>;
+  createCoupon(coupon: InsertCoupon): Promise<Coupon>;
+  updateCoupon(id: string, updates: Partial<InsertCoupon>): Promise<Coupon | undefined>;
+  deleteCoupon(id: string): Promise<boolean>;
+  incrementCouponUsage(id: string): Promise<void>;
+  
+  // Trial Invites (Admin)
+  getAllTrialInvites(): Promise<TrialInvite[]>;
+  getTrialInviteByToken(token: string): Promise<TrialInvite | undefined>;
+  createTrialInvite(invite: InsertTrialInvite): Promise<TrialInvite>;
+  updateTrialInvite(id: string, updates: Partial<TrialInvite>): Promise<TrialInvite | undefined>;
+  
+  // Payment Transactions
+  createPaymentTransaction(transaction: InsertPaymentTransaction): Promise<PaymentTransaction>;
+  updatePaymentTransaction(id: string, updates: Partial<InsertPaymentTransaction>): Promise<PaymentTransaction | undefined>;
+  getPaymentTransactionByOrderId(orderId: string): Promise<PaymentTransaction | undefined>;
+  getAllPaymentTransactions(): Promise<PaymentTransaction[]>;
+  
+  // Fluting Settings (per user)
+  getFlutingSettings(userId: string): Promise<FlutingSetting[]>;
+  saveFlutingSetting(setting: InsertFlutingSetting): Promise<FlutingSetting>;
+  updateFlutingSetting(id: string, updates: Partial<InsertFlutingSetting>): Promise<FlutingSetting | undefined>;
+  deleteFlutingSetting(id: string): Promise<boolean>;
+  
+  // Chatbot Widgets (per user)
+  getChatbotWidgets(userId: string): Promise<ChatbotWidget[]>;
+  getChatbotWidgetByToken(token: string): Promise<ChatbotWidget | undefined>;
+  createChatbotWidget(widget: InsertChatbotWidget): Promise<ChatbotWidget>;
+  updateChatbotWidget(id: string, updates: Partial<InsertChatbotWidget>): Promise<ChatbotWidget | undefined>;
+  deleteChatbotWidget(id: string): Promise<boolean>;
+  
+  // Owner Settings
+  getOwnerSettings(): Promise<any>;
+  updateOwnerSettings(updates: any): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -301,6 +375,216 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db.update(appSettings)
       .set(updates)
       .where(eq(appSettings.id, existing.id))
+      .returning();
+    return updated;
+  }
+  
+  // Subscription Plans
+  async getAllSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+    return await db.select().from(subscriptionPlans);
+  }
+  
+  async getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined> {
+    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+    return plan;
+  }
+  
+  async createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan> {
+    const [created] = await db.insert(subscriptionPlans).values(plan).returning();
+    return created;
+  }
+  
+  async updateSubscriptionPlan(id: string, updates: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan | undefined> {
+    const [updated] = await db.update(subscriptionPlans).set(updates).where(eq(subscriptionPlans.id, id)).returning();
+    return updated;
+  }
+  
+  async deleteSubscriptionPlan(id: string): Promise<boolean> {
+    await db.delete(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+    return true;
+  }
+  
+  // User Subscriptions
+  async getUserSubscription(userId: string): Promise<UserSubscription | undefined> {
+    const [sub] = await db.select().from(userSubscriptions).where(eq(userSubscriptions.userId, userId));
+    return sub;
+  }
+  
+  async createUserSubscription(subscription: InsertUserSubscription): Promise<UserSubscription> {
+    const [created] = await db.insert(userSubscriptions).values(subscription).returning();
+    return created;
+  }
+  
+  async updateUserSubscription(id: string, updates: Partial<InsertUserSubscription>): Promise<UserSubscription | undefined> {
+    const [updated] = await db.update(userSubscriptions).set({ ...updates, updatedAt: new Date() }).where(eq(userSubscriptions.id, id)).returning();
+    return updated;
+  }
+  
+  async getAllUserSubscriptions(): Promise<UserSubscription[]> {
+    return await db.select().from(userSubscriptions);
+  }
+  
+  // Coupons
+  async getAllCoupons(): Promise<Coupon[]> {
+    return await db.select().from(coupons);
+  }
+  
+  async getCoupon(id: string): Promise<Coupon | undefined> {
+    const [coupon] = await db.select().from(coupons).where(eq(coupons.id, id));
+    return coupon;
+  }
+  
+  async getCouponByCode(code: string): Promise<Coupon | undefined> {
+    const [coupon] = await db.select().from(coupons).where(eq(coupons.code, code));
+    return coupon;
+  }
+  
+  async createCoupon(coupon: InsertCoupon): Promise<Coupon> {
+    const [created] = await db.insert(coupons).values(coupon).returning();
+    return created;
+  }
+  
+  async updateCoupon(id: string, updates: Partial<InsertCoupon>): Promise<Coupon | undefined> {
+    const [updated] = await db.update(coupons).set(updates).where(eq(coupons.id, id)).returning();
+    return updated;
+  }
+  
+  async deleteCoupon(id: string): Promise<boolean> {
+    await db.delete(coupons).where(eq(coupons.id, id));
+    return true;
+  }
+  
+  async incrementCouponUsage(id: string): Promise<void> {
+    const coupon = await this.getCoupon(id);
+    if (coupon) {
+      await db.update(coupons).set({ usedCount: (coupon.usedCount || 0) + 1 }).where(eq(coupons.id, id));
+    }
+  }
+  
+  // Trial Invites
+  async getAllTrialInvites(): Promise<TrialInvite[]> {
+    return await db.select().from(trialInvites);
+  }
+  
+  async getTrialInviteByToken(token: string): Promise<TrialInvite | undefined> {
+    const [invite] = await db.select().from(trialInvites).where(eq(trialInvites.inviteToken, token));
+    return invite;
+  }
+  
+  async createTrialInvite(invite: InsertTrialInvite): Promise<TrialInvite> {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + (invite.trialDays || 14));
+    
+    const [created] = await db.insert(trialInvites).values({
+      ...invite,
+      inviteToken: token,
+      expiresAt,
+    }).returning();
+    return created;
+  }
+  
+  async updateTrialInvite(id: string, updates: Partial<TrialInvite>): Promise<TrialInvite | undefined> {
+    const [updated] = await db.update(trialInvites).set(updates).where(eq(trialInvites.id, id)).returning();
+    return updated;
+  }
+  
+  // Payment Transactions
+  async createPaymentTransaction(transaction: InsertPaymentTransaction): Promise<PaymentTransaction> {
+    const [created] = await db.insert(paymentTransactions).values(transaction).returning();
+    return created;
+  }
+  
+  async updatePaymentTransaction(id: string, updates: Partial<InsertPaymentTransaction>): Promise<PaymentTransaction | undefined> {
+    const [updated] = await db.update(paymentTransactions).set(updates).where(eq(paymentTransactions.id, id)).returning();
+    return updated;
+  }
+  
+  async getPaymentTransactionByOrderId(orderId: string): Promise<PaymentTransaction | undefined> {
+    const [tx] = await db.select().from(paymentTransactions).where(eq(paymentTransactions.razorpayOrderId, orderId));
+    return tx;
+  }
+  
+  async getAllPaymentTransactions(): Promise<PaymentTransaction[]> {
+    return await db.select().from(paymentTransactions);
+  }
+  
+  // Fluting Settings
+  async getFlutingSettings(userId: string): Promise<FlutingSetting[]> {
+    return await db.select().from(flutingSettings).where(eq(flutingSettings.userId, userId));
+  }
+  
+  async saveFlutingSetting(setting: InsertFlutingSetting): Promise<FlutingSetting> {
+    // Check if setting exists for this user and flute type
+    const existing = await db.select().from(flutingSettings)
+      .where(and(
+        eq(flutingSettings.userId, setting.userId!),
+        eq(flutingSettings.fluteType, setting.fluteType)
+      ));
+    
+    if (existing.length > 0) {
+      const [updated] = await db.update(flutingSettings)
+        .set({ flutingFactor: setting.flutingFactor, fluteHeight: setting.fluteHeight })
+        .where(eq(flutingSettings.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db.insert(flutingSettings).values(setting).returning();
+    return created;
+  }
+  
+  async updateFlutingSetting(id: string, updates: Partial<InsertFlutingSetting>): Promise<FlutingSetting | undefined> {
+    const [updated] = await db.update(flutingSettings).set(updates).where(eq(flutingSettings.id, id)).returning();
+    return updated;
+  }
+  
+  async deleteFlutingSetting(id: string): Promise<boolean> {
+    await db.delete(flutingSettings).where(eq(flutingSettings.id, id));
+    return true;
+  }
+  
+  // Chatbot Widgets
+  async getChatbotWidgets(userId: string): Promise<ChatbotWidget[]> {
+    return await db.select().from(chatbotWidgets).where(eq(chatbotWidgets.userId, userId));
+  }
+  
+  async getChatbotWidgetByToken(token: string): Promise<ChatbotWidget | undefined> {
+    const [widget] = await db.select().from(chatbotWidgets).where(eq(chatbotWidgets.apiToken, token));
+    return widget;
+  }
+  
+  async createChatbotWidget(widget: InsertChatbotWidget): Promise<ChatbotWidget> {
+    const apiToken = crypto.randomBytes(32).toString('hex');
+    const [created] = await db.insert(chatbotWidgets).values({ ...widget, apiToken }).returning();
+    return created;
+  }
+  
+  async updateChatbotWidget(id: string, updates: Partial<InsertChatbotWidget>): Promise<ChatbotWidget | undefined> {
+    const [updated] = await db.update(chatbotWidgets).set(updates).where(eq(chatbotWidgets.id, id)).returning();
+    return updated;
+  }
+  
+  async deleteChatbotWidget(id: string): Promise<boolean> {
+    await db.delete(chatbotWidgets).where(eq(chatbotWidgets.id, id));
+    return true;
+  }
+  
+  // Owner Settings
+  async getOwnerSettings(): Promise<any> {
+    const [settings] = await db.select().from(ownerSettings);
+    if (settings) return settings;
+    
+    // Create default settings
+    const [created] = await db.insert(ownerSettings).values({}).returning();
+    return created;
+  }
+  
+  async updateOwnerSettings(updates: any): Promise<any> {
+    const existing = await this.getOwnerSettings();
+    const [updated] = await db.update(ownerSettings)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(ownerSettings.id, existing.id))
       .returning();
     return updated;
   }
