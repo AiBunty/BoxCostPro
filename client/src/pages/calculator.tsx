@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings } from "lucide-react";
 import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } from "@/components/FlutingSettings";
+import { FlutingOnboarding } from "@/components/FlutingOnboarding";
 import { Link } from "wouter";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -1012,6 +1013,9 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
   
   return (
     <div className="min-h-screen bg-background">
+      <FlutingOnboarding onComplete={() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/fluting-settings'] });
+      }} />
       <header className="border-b">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">

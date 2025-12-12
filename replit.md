@@ -55,3 +55,45 @@ The frontend is built with React and TypeScript, utilizing Vite for development.
 *   **Session Management**: `connect-pg-simple` (for PostgreSQL-backed sessions).
 *   **Font Integration**: Google Fonts CDN (Inter typeface).
 *   **Payment Gateway**: Razorpay (configuration managed in admin settings).
+
+## Recent Changes (Session Dec 12, 2025)
+
+### Admin Control Panel & Fluting Settings
+
+1. **Owner Admin Control Panel** (`/admin` route)
+   - Five-tab interface: Subscriptions, Pricing Plans, Coupons, Trial Invites, Settings
+   - Role-based access control (owner only)
+   - Create/edit/delete subscription plans with monthly/yearly pricing
+   - Create discount coupons (percentage or fixed amount) with usage limits
+   - Send trial access invitations with copy-to-clipboard invite links
+   - Razorpay configuration settings and payment transaction history
+
+2. **Fluting Settings Component**
+   - Machine-specific fluting factor configuration
+   - Preset flute types: A, B, C, E, F with default factors and heights
+   - User can customize factors per their corrugator machine specifications
+   - Settings persist in database per user
+   - Accessible via "Fluting Settings" button in calculator header
+
+3. **Flute Combination Selector**
+   - Dropdown selector for flute combinations based on ply selection
+   - 3-Ply: A, B, C, E, F | 5-Ply: AA, AB, AC, BB, BC, etc. | 7-Ply and 9-Ply combinations
+   - Auto-applies fluting factors to flute layers based on combination selection
+
+4. **First-Time User Fluting Onboarding**
+   - Guided onboarding modal appears for new users automatically
+   - Two-step flow: Introduction explaining fluting factors + Configuration
+   - Step 1 explains why machine-specific fluting factors matter
+   - Step 2 allows users to enter their machine's specific fluting factors
+   - Modal cannot be dismissed without completing the setup
+   - Validates all 5 flute types are configured before completing
+   - Loads any existing settings (preserves user's previous values)
+   - Handles save errors gracefully with per-type error reporting
+
+### New Database Tables
+- `subscription_plans`, `user_subscriptions`, `coupons`, `trial_invites`
+- `payment_transactions`, `owner_settings`, `chatbot_widgets`, `fluting_settings`
+
+### New API Routes
+- Admin routes (owner-only): `/api/admin/subscription-plans`, `/api/admin/subscriptions`, `/api/admin/coupons`, `/api/admin/trial-invites`, `/api/admin/settings`, `/api/admin/transactions`
+- User routes: `/api/fluting-settings`, `/api/fluting-settings/status`

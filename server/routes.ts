@@ -298,12 +298,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Check if user has configured fluting settings (for first-time setup)
+  app.get("/api/fluting-settings/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const settings = await storage.getFlutingSettings(userId);
+      const requiredFluteTypes = ['A', 'B', 'C', 'E', 'F'];
+      const configuredTypes = settings.map(s => s.fluteType);
+      const isConfigured = requiredFluteTypes.every(type => configuredTypes.includes(type));
+      res.json({ 
+        configured: isConfigured, 
+        configuredCount: configuredTypes.length,
+        requiredCount: requiredFluteTypes.length,
+        missingTypes: requiredFluteTypes.filter(t => !configuredTypes.includes(t))
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check fluting settings status" });
+    }
+  });
+
   app.post("/api/fluting-settings", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const data = insertFlutingSettingSchema.parse({ ...req.body, userId });
       const setting = await storage.saveFlutingSetting(data);
-      res.status(201).json(setting);
+      
+      // Check if all required flute types are now configured
+      const allSettings = await storage.getFlutingSettings(userId);
+      const requiredFluteTypes = ['A', 'B', 'C', 'E', 'F'];
+      const configuredTypes = allSettings.map(s => s.fluteType);
+      const isConfigured = requiredFluteTypes.every(type => configuredTypes.includes(type));
+      
+      res.status(201).json({ ...setting, allConfigured: isConfigured });
     } catch (error) {
       res.status(400).json({ error: "Failed to save fluting setting" });
     }
