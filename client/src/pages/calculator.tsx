@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown } from "lucide-react";
@@ -878,6 +879,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
       totalCostPerBox,
       quantity: qty,
       totalValue: totalValue,
+      selected: true,
     };
     
     setQuoteItems([...quoteItems, item]);
@@ -914,6 +916,16 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
   
   const handleRemoveItem = (index: number) => {
     setQuoteItems(quoteItems.filter((_, i) => i !== index));
+  };
+  
+  const handleToggleItemSelection = (index: number) => {
+    setQuoteItems(quoteItems.map((item, i) => 
+      i === index ? { ...item, selected: !item.selected } : item
+    ));
+  };
+  
+  const handleSelectAllItems = (selected: boolean) => {
+    setQuoteItems(quoteItems.map(item => ({ ...item, selected })));
   };
   
   const handleSaveQuote = () => {
@@ -2565,7 +2577,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       size="sm" 
                       variant="outline"
                       onClick={() => {
-                        const message = generateWhatsAppMessage(quoteItems, partyName || "Customer", companyProfile);
+                        const selectedParty = allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId) || null;
+                        const message = generateWhatsAppMessage(quoteItems, selectedParty, companyProfile);
                         setEditableWhatsAppMessage(message);
                         setShowMessageDialog("whatsapp");
                       }}
@@ -2579,7 +2592,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       size="sm" 
                       variant="outline"
                       onClick={() => {
-                        const { subject, body } = generateEmailContent(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile);
+                        const selectedParty = allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId) || null;
+                        const { subject, body } = generateEmailContent(quoteItems, selectedParty, companyProfile);
                         setEditableEmailSubject(subject);
                         setEditableEmailBody(body);
                         setShowMessageDialog("email");
@@ -2607,7 +2621,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                         size="sm" 
                         variant="outline"
                         onClick={() => {
-                          const message = generateWhatsAppMessage(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile);
+                          const selectedParty = allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId) || null;
+                          const message = generateWhatsAppMessage(quoteItems, selectedParty, companyProfile);
                           const encodedMessage = encodeURIComponent(message);
                           const whatsappUrl = `https://wa.me/${customerMobile.replace(/\D/g, '')}?text=${encodedMessage}`;
                           window.open(whatsappUrl, '_blank');
@@ -2690,20 +2705,40 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                   </p>
                 ) : (
                   <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm mb-2">
+                      <span className="text-muted-foreground">
+                        {quoteItems.filter(i => i.selected !== false).length} of {quoteItems.length} selected
+                      </span>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => handleSelectAllItems(true)} data-testid="button-select-all">
+                          Select All
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleSelectAllItems(false)} data-testid="button-deselect-all">
+                          Deselect All
+                        </Button>
+                      </div>
+                    </div>
                     {quoteItems.map((item, index) => (
                       <div 
                         key={index} 
-                        className="flex justify-between items-start p-3 border rounded-lg"
+                        className={`flex justify-between items-start p-3 border rounded-lg ${item.selected !== false ? '' : 'opacity-50'}`}
                         data-testid={`quote-item-${index}`}
                       >
-                        <div className="flex-1">
-                          <p className="font-medium text-sm">{item.boxName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.ply}-Ply • {item.quantity.toLocaleString()} pcs
-                          </p>
-                          <p className="text-sm font-bold mt-1">
-                            ₹{item.totalValue.toFixed(2)}
-                          </p>
+                        <div className="flex items-start gap-3">
+                          <Checkbox 
+                            checked={item.selected !== false}
+                            onCheckedChange={() => handleToggleItemSelection(index)}
+                            data-testid={`checkbox-item-${index}`}
+                          />
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{item.boxName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.ply}-Ply • {item.quantity.toLocaleString()} pcs
+                            </p>
+                            <p className="text-sm font-bold mt-1">
+                              ₹{item.totalValue.toFixed(2)}
+                            </p>
+                          </div>
                         </div>
                         <Button
                           variant="ghost"

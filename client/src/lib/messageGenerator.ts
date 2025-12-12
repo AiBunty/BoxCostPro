@@ -1,167 +1,195 @@
-import type { QuoteItem, CompanyProfile } from "@shared/schema";
+import type { QuoteItem, CompanyProfile, PartyProfile } from "@shared/schema";
 
 export function generateWhatsAppMessage(
   items: QuoteItem[],
-  customerName: string,
-  customerCompany: string,
+  partyProfile: PartyProfile | null,
   companyProfile: CompanyProfile | null
 ): string {
-  const lines = [
-    `👋 Dear ${customerName},`,
+  const partyName = partyProfile?.personName || "Valued Customer";
+  const companyName = companyProfile?.companyName || "Ventura Packagers Private Limited";
+  
+  const lines: string[] = [
+    `Dear Valued "${partyName}"`,
     ``,
-    `Here is your quote from ${companyProfile?.companyName || 'Ventura Packagers Private Limited'}:`,
+    `Here is your quote from *${companyName}*:`,
     ``,
-    `➖➖➖➖➖➖➖➖➖➖`,
+    ``,
   ];
 
-  items.forEach((item, index) => {
-    lines.push(`📦 Item ${index + 1}`);
-    lines.push(`📏 Box Size : (${item.length.toFixed(0)}×${item.width.toFixed(0)}${item.height ? `×${item.height.toFixed(0)}` : ''} ${item.inputUnit === 'inches' ? 'in' : 'mm'})`);
-    lines.push(`🏗 Board: ${item.ply}-Ply`);
-    lines.push(`〰 Flute Type: BC`);
-    lines.push(`🎨 Printing: ${item.boxDescription || 'Plain Box'}`);
+  // Filter only selected items
+  const selectedItems = items.filter(item => item.selected !== false);
+  
+  selectedItems.forEach((item, index) => {
+    const fluteType = item.ply === '3' ? 'B' : item.ply === '5' ? 'BC' : item.ply === '7' ? 'BCE' : 'B';
+    const rateExclGst = item.totalCostPerBox / 1.05;
+    const rateInclGst = item.totalCostPerBox;
+    
+    lines.push(`*Item ${index + 1}*`);
+    lines.push(`*Box Size :* (${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit})`);
+    lines.push(`*Item Name:* ${item.boxName} *Board:* ${item.ply} Ply`);
+    lines.push(`*Flute:* ${fluteType}`);
+    lines.push(`*Printing:* ${item.boxDescription || 'Plain Box'}`);
     lines.push(``);
-    lines.push(`Paper Spec:`);
+    lines.push(`*Paper Spec:*`);
     
     item.layerSpecs.forEach((spec, idx) => {
-      const layerLabel = idx === 0 ? 'Outer' : idx === item.layerSpecs.length - 1 ? 'Inner' : `Flute`;
+      let layerLabel = 'Flute';
+      if (idx === 0) layerLabel = 'Outer';
+      else if (idx === item.layerSpecs.length - 1) layerLabel = 'Inner';
+      else if (spec.layerType === 'flute') layerLabel = `Flute (F${Math.floor(idx / 2)})`;
+      else layerLabel = `Liner (L${idx + 1})`;
+      
       lines.push(`  - ${layerLabel} (L${idx + 1}): ${spec.gsm} GSM / ${spec.bf} BF (${spec.shade})`);
     });
     
     lines.push(``);
-    lines.push(`🔢 Quantity: ${item.quantity.toLocaleString()} Pcs`);
-    lines.push(`💰 Rate (Incl. GST): ${formatCurrencyWithEmoji(item.totalCostPerBox)} /pc`);
-    lines.push(`➖➖➖➖➖➖➖➖➖➖`);
+    lines.push(`*Quantity:* ${item.quantity.toLocaleString()} Pcs`);
+    lines.push(`*Total Rate (Excl. GST):* Rs.${rateExclGst.toFixed(2)} /pc`);
+    lines.push(`*Total Rate (Incl. GST 5%):* Rs.${rateInclGst.toFixed(2)} /pc`);
+    lines.push(``);
   });
 
-  const grandTotal = items.reduce((sum, item) => sum + item.totalValue, 0);
-  lines.push(`🏆 Grand Total Value: ${formatCurrencyWithEmoji(grandTotal)}`);
+  const grandTotal = selectedItems.reduce((sum, item) => sum + item.totalValue, 0);
+  lines.push(`*Grand Total Value (Incl. GST): Rs.${grandTotal.toFixed(2)}*`);
   lines.push(``);
   
   if (companyProfile) {
-    lines.push(`💳 Payment Terms: ${companyProfile.paymentTerms || '100% Advance'}`);
-    lines.push(`🚚 Delivery Time: ${companyProfile.deliveryTime || '10 days after receipt of PO'}`);
+    lines.push(`*Payment Terms:* ${companyProfile.paymentTerms || '100% Advance'}`);
+    lines.push(`*Delivery Time:* ${companyProfile.deliveryTime || 'Delivery 10 days after receipt of Purchase order'}`);
     lines.push(``);
   }
   
-  lines.push(`🙏 Thank you for considering our quote!`);
-  lines.push(`${companyProfile?.companyName || 'Ventura Packagers Private Limited'}`);
+  lines.push(`Thank you for considering our quote!`);
+  lines.push(``);
   
   if (companyProfile) {
-    if (companyProfile.phone) lines.push(`📞 Phone: ${companyProfile.phone}`);
-    if (companyProfile.email) lines.push(`📧 Email: ${companyProfile.email}`);
-    if (companyProfile.address) lines.push(`🇮🇳 Address: ${companyProfile.address}`);
-    if (companyProfile.gstNo) lines.push(`📄 GST: ${companyProfile.gstNo}`);
-    if (companyProfile.website) lines.push(`🌐 Website: ${companyProfile.website}`);
-    if (companyProfile.socialMedia) lines.push(`📱 Social: ${companyProfile.socialMedia}`);
-    if (companyProfile.googleLocation) lines.push(`📍 Location: ${companyProfile.googleLocation}`);
+    lines.push(`*${companyProfile.companyName}*`);
+    if (companyProfile.phone) lines.push(`${companyProfile.phone}`);
+    if (companyProfile.email) lines.push(`${companyProfile.email}`);
+    if (companyProfile.address) lines.push(`${companyProfile.address}`);
+    if (companyProfile.gstNo) lines.push(`GST: ${companyProfile.gstNo}`);
+    if (companyProfile.website) lines.push(`${companyProfile.website}`);
+    if (companyProfile.socialMedia) lines.push(`${companyProfile.socialMedia}`);
+    if (companyProfile.googleLocation) lines.push(`${companyProfile.googleLocation}`);
   }
 
   return lines.join('\n');
 }
 
-function formatCurrencyWithEmoji(value: number): string {
-  const formatted = value.toFixed(2);
-  return `₹${formatted}`;
-}
-
 export function generateEmailContent(
   items: QuoteItem[],
-  customerName: string,
-  customerCompany: string,
+  partyProfile: PartyProfile | null,
   companyProfile: CompanyProfile | null
 ): { subject: string; body: string } {
-  const subject = `Quote for Corrugated Boxes - ${customerCompany}`;
+  const partyName = partyProfile?.personName || "Valued Customer";
+  const companyName = companyProfile?.companyName || "Ventura Packagers Private Limited";
+  const today = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+  
+  // Filter only selected items
+  const selectedItems = items.filter(item => item.selected !== false);
+  
+  const subject = `Quote for Corrugated Packaging - ${partyProfile?.companyName || partyName}`;
+
+  // Generate table rows for items
+  const itemRows = selectedItems.map((item, index) => {
+    const fluteType = item.ply === '3' ? 'B' : item.ply === '5' ? 'BC' : item.ply === '7' ? 'BCE' : 'B';
+    const paperSpecs = item.layerSpecs.map(s => `${s.gsm}/${s.bf}`).join(', ');
+    const rateExclGst = item.totalCostPerBox / 1.05;
+    
+    return `            <tr>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.boxName}<br><small>${item.boxDescription || 'Plain Box'}</small></td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit}<br><small>${item.ply}-Ply (${fluteType})</small><br><small>Paper: ${paperSpecs}</small></td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">RSC</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: center;">${item.bs.toFixed(1)}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${rateExclGst.toFixed(2)}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">${item.quantity.toLocaleString()}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${(rateExclGst * item.quantity).toFixed(2)}</td>
+            </tr>`;
+  }).join('\n');
+
+  const subtotal = selectedItems.reduce((sum, item) => sum + (item.totalCostPerBox / 1.05) * item.quantity, 0);
+  const gstAmount = subtotal * 0.05;
+  const grandTotal = subtotal + gstAmount;
+  const totalQuantity = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
 
   const body = `
-Dear ${customerName},
+<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
+    <h2 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; margin-bottom: 20px;">Quotation for Corrugated Shipping Boxes</h2>
+    
+    <table style="width: 100%; margin-bottom: 20px;">
+        <tr>
+            <td style="padding: 2px 0; width: 100px;"><strong>Date:</strong></td>
+            <td style="padding: 2px 0;">${today}</td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0; vertical-align: top;"><strong>To:</strong></td>
+            <td style="padding: 2px 0; vertical-align: top;">${partyName}${partyProfile?.companyName ? `<br>${partyProfile.companyName}` : ''}</td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0;"><strong>From:</strong></td>
+            <td style="padding: 2px 0;">${companyName}</td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0;"><strong>Contact:</strong></td>
+            <td style="padding: 2px 0;">${companyProfile?.phone || ''}, ${companyProfile?.email || ''}</td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0;"><strong>Subject:</strong></td>
+            <td style="padding: 2px 0;">Quote for Corrugated Packaging</td>
+        </tr>
+    </table>
 
-Thank you for your interest in our corrugated box solutions. Please find below your customized quote:
+    <p style="margin-bottom: 20px;">We are pleased to provide you with the following quotation for the supply of high-quality, heavy-duty corrugated shipping boxes as per your specifications:</p>
 
-QUOTATION DETAILS
-=================
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+        <thead>
+            <tr style="background-color: #1e40af; color: white;">
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Description</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Specifications</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Box Style</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: center;">BS (kg/cm)</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Unit Price (Rs.)</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Quantity</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Total Price (Rs.)</th>
+            </tr>
+        </thead>
+        <tbody>
+${itemRows}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>Subtotal</strong></td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>Rs.${subtotal.toFixed(2)}</strong></td>
+            </tr>
+            <tr>
+                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;">Goods and Services Tax (GST) 5% on Subtotal</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${gstAmount.toFixed(2)}</td>
+            </tr>
+            <tr style="background-color: #f0f9ff;">
+                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>Grand Total</strong></td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>Rs.${grandTotal.toFixed(2)}</strong></td>
+            </tr>
+        </tfoot>
+    </table>
 
-Customer: ${customerName}
-Company: ${customerCompany}
-Date: ${new Date().toLocaleDateString()}
-
-${items.map((item, index) => `
-ITEM ${index + 1}: ${item.boxName}
-${item.boxDescription ? `Description: ${item.boxDescription}` : ''}
-
-┌─────────────────────────────────────────────────────────────────┐
-│                     BOX SPECIFICATIONS                          │
-├─────────────────────────────────────────────────────────────────┤
-│ Type: ${item.type === 'rsc' ? 'RSC Box' : 'Sheet'} | Ply: ${item.ply}-Ply | Unit: ${item.inputUnit} (${item.measuredOn})
-│ Box Size: ${item.length.toFixed(0)}×${item.width.toFixed(0)}${item.height ? `×${item.height.toFixed(0)}` : ''} ${item.inputUnit === 'inches' ? 'in' : 'mm'}
-│ Sheet Size (L-blank): ${item.sheetLength.toFixed(2)} mm (${item.sheetLengthInches.toFixed(2)} in)
-│ Sheet Size (W-blank): ${item.sheetWidth.toFixed(2)} mm (${item.sheetWidthInches.toFixed(2)} in)
-│ Sheet Weight: ${item.sheetWeight.toFixed(3)} Kg
-└─────────────────────────────────────────────────────────────────┘
-
-PAPER SPECIFICATIONS TABLE:
-┌─────┬──────┬─────┬──────┬─────────────┬─────────────┐
-│ Lyr │ Type │ GSM │  BF  │ RCT | Shade│ Rate (₹/Kg) │
-├─────┼──────┼─────┼──────┼─────────────┼─────────────┤
-${item.layerSpecs.map((spec, idx) => `│ L${idx + 1}  │ ${spec.layerType === 'liner' ? 'Liner' : 'Flute'} │ ${spec.gsm.toString().padEnd(4)} │ ${spec.bf.toString().padEnd(5)} │ ${spec.rctValue.toString().padEnd(2)} - ${spec.shade.substring(0, 7).padEnd(7)} │ ${spec.rate.toFixed(2).padStart(11)} │`).join('\n')}
-└─────┴──────┴─────┴──────┴─────────────┴─────────────┘
-
-STRENGTH ANALYSIS (McKee Formula):
-┌────────────────────────────────────┐
-│ Board Thickness:  ${item.boardThickness.toFixed(2)} mm           │
-│ Box Perimeter:    ${item.boxPerimeter.toFixed(0)} mm             │
-│ Calculated ECT:   ${item.ect.toFixed(2)} kN/m         │
-│ Predicted BCT:    ${item.bct.toFixed(1)} Kg             │
-│ Burst Strength:   ${item.bs.toFixed(2)} kg/cm         │
-└────────────────────────────────────┘
-
-COST BREAKDOWN:
-┌──────────────────────────────┬──────────────┐
-│ Description                  │ Amount (₹)   │
-├──────────────────────────────┼──────────────┤
-│ Paper Cost                   │ ${item.paperCost.toFixed(2).padStart(12)} │
-│ Printing Cost                │ ${item.printingCost.toFixed(2).padStart(12)} │
-│ Lamination Cost              │ ${item.laminationCost.toFixed(2).padStart(12)} │
-│ Varnish Cost                 │ ${item.varnishCost.toFixed(2).padStart(12)} │
-│ Die Cost                     │ ${item.dieCost.toFixed(2).padStart(12)} │
-│ Punching Cost                │ ${item.punchingCost.toFixed(2).padStart(12)} │
-├──────────────────────────────┼──────────────┤
-│ Cost per Unit                │ ${item.totalCostPerBox.toFixed(2).padStart(12)} │
-├──────────────────────────────┼──────────────┤
-│ Quantity (Pcs)               │ ${item.quantity.toLocaleString().padStart(12)} │
-│ Total Value                  │ ${item.totalValue.toFixed(2).padStart(12)} │
-└──────────────────────────────┴──────────────┘
-`).join('\n')}
-
-═════════════════════════════════════════════════════════
-QUOTATION SUMMARY TABLE:
-═════════════════════════════════════════════════════════
-┌────────────┬─────────────┬────────────────┬──────────────┐
-│ Item       │ Quantity    │ Rate/Unit (₹)  │ Total (₹)    │
-├────────────┼─────────────┼────────────────┼──────────────┤
-${items.map((item) => `│ ${item.boxName.substring(0, 10).padEnd(10)} │ ${item.quantity.toLocaleString().padStart(10)} pc │ ${item.totalCostPerBox.toFixed(2).padStart(14)} │ ${item.totalValue.toFixed(2).padStart(12)} │`).join('\n')}
-├────────────┼─────────────┼────────────────┼──────────────┤
-│ GRAND TOTAL│ ${items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString().padStart(10)} pc │                │ ${items.reduce((sum, item) => sum + item.totalValue, 0).toFixed(2).padStart(12)} │
-└────────────┴─────────────┴────────────────┴──────────────┘
-
-${companyProfile ? `
-COMPANY INFORMATION:
-====================
-Company: ${companyProfile.companyName}
-GST: ${companyProfile.gstNo || 'N/A'}
-Address: ${companyProfile.address || 'N/A'}
-Phone: ${companyProfile.phone || 'N/A'}
-Email: ${companyProfile.email || 'N/A'}
-Payment Terms: ${companyProfile.paymentTerms || 'N/A'}
-Delivery Time: ${companyProfile.deliveryTime || 'N/A'}
-Website: ${companyProfile.website || 'N/A'}
-` : ''}
-
-We look forward to serving you. Please feel free to contact us for any clarifications or modifications to this quote.
-
-Best regards,
-${companyProfile?.companyName || 'Ventura Packagers'}
-`;
+    <div style="margin-top: 30px; border-top: 2px solid #eee; padding-top: 20px;">
+        <h3 style="color: #1e40af; font-size: 16px; margin-bottom: 10px; text-decoration: underline;">Terms & Conditions</h3>
+        <ul style="padding-left: 20px; margin: 0; line-height: 1.8;">
+            <li><strong>Validity:</strong> This quote is valid for 30 days from the date of issue.</li>
+            <li><strong>Delivery:</strong> ${companyProfile?.deliveryTime || 'Delivery 10 days after receipt of Purchase order'}</li>
+            <li><strong>Payment:</strong> ${companyProfile?.paymentTerms || '100% Advance'}</li>
+            <li><strong>Minimum Order Quantity (MOQ):</strong> The quoted price is based on the stated quantity of ${totalQuantity.toLocaleString()} units. Any change in quantity may affect the unit price.</li>
+        </ul>
+    </div>
+    
+    <div style="margin-top: 40px;">
+        <p>Thank you for considering our quote. Please feel free to contact us if you have any questions or require any modifications.</p>
+        <p style="margin-top: 30px; font-weight: bold;">${companyName}</p>
+        ${companyProfile?.address ? `<p>${companyProfile.address}</p>` : ''}
+        ${companyProfile?.gstNo ? `<p>GST: ${companyProfile.gstNo}</p>` : ''}
+        <p style="margin-top: 50px; border-top: 1px dashed #999; width: 200px; padding-top: 5px;">[Signature Line]</p>
+    </div>
+</div>`;
 
   return { subject, body };
 }
