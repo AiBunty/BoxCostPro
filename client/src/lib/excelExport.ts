@@ -395,6 +395,18 @@ export function downloadQuotePDF(
   }
 }
 
+export function downloadGenericExcel(
+  data: Record<string, any>[],
+  filename: string = "export.xlsx"
+) {
+  if (!data || data.length === 0) return;
+  
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+  XLSX.writeFile(workbook, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`);
+}
+
 export function exportReportToExcel(
   items: QuoteItem[],
   partyName: string,

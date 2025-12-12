@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet } from "lucide-react";
 import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } from "@/components/FlutingSettings";
 import { FlutingOnboarding } from "@/components/FlutingOnboarding";
 import { Link } from "wouter";
@@ -1023,6 +1023,13 @@ export default function Calculator() {
                   </Button>
                 </Link>
               )}
+              
+              <Link href="/reports">
+                <Button variant="outline" size="sm" data-testid="button-reports">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Reports
+                </Button>
+              </Link>
               
               <FlutingSettings onSettingsChange={setFluteSettings} />
               
