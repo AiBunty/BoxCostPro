@@ -97,3 +97,35 @@ The frontend is built with React and TypeScript, utilizing Vite for development.
 ### New API Routes
 - Admin routes (owner-only): `/api/admin/subscription-plans`, `/api/admin/subscriptions`, `/api/admin/coupons`, `/api/admin/trial-invites`, `/api/admin/settings`, `/api/admin/transactions`
 - User routes: `/api/fluting-settings`, `/api/fluting-settings/status`
+
+### Quote Items & Excel Export Improvements (Latest Session)
+
+1. **Quote Items Table Enhancement**
+   - Detailed table format showing individual cost columns: Paper, Printing, Lamination, Varnish, Die, Punching, Total Per Box
+   - Checkboxes for selective inclusion of items in WhatsApp/Email templates
+   - Improved layout with all cost components visible at a glance
+
+2. **Excel-Based Data Import/Export**
+   - Replaced CSV with Excel (.xlsx) format using the `xlsx` library
+   - New `downloadGenericExcel` function for flexible Excel exports
+   - `parseExcelUpload` function for parsing Excel files during bulk import
+   - Sample Excel template download with proper column headers
+   - Bulk upload dialog updated to accept .xlsx/.xls files
+
+3. **Layer Naming Convention**
+   - Liner layers display as L1, L2, L3
+   - Flute layers display as F1, F2, F3
+   - Fluting Factor column removed from Paper Specifications table (managed via Fluting Settings)
+
+4. **Reports Page** (`/reports` route)
+   - Party-wise quote history with filtering
+   - Search by party name, company, or box details
+   - Date range filters (start/end date)
+   - Party summary cards showing quote counts
+   - Detailed box breakdown when a party is selected
+   - Excel export for filtered data
+   - Accessible via "Reports" button in calculator header
+
+### New Files
+- `client/src/pages/reports.tsx` - Reports page component
+- `client/src/lib/excelExport.ts` - Excel utility functions (downloadGenericExcel, parseExcelUpload, downloadSampleTemplate, etc.)
