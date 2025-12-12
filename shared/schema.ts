@@ -1,11 +1,37 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, real, integer, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, real, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Company Profiles
+// Session storage table for Replit Auth
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// User storage table for Replit Auth
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type UpsertUser = typeof users.$inferInsert;
+export type User = typeof users.$inferSelect;
+
+// Company Profiles (per user)
 export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
   companyName: text("company_name").notNull(),
   gstNo: text("gst_no"),
   address: text("address"),
@@ -23,9 +49,10 @@ export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).om
 export type InsertCompanyProfile = z.infer<typeof insertCompanyProfileSchema>;
 export type CompanyProfile = typeof companyProfiles.$inferSelect;
 
-// Party/Customer Profiles
+// Party/Customer Profiles (per user)
 export const partyProfiles = pgTable("party_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
   personName: text("person_name").notNull(),
   companyName: text("company_name"),
   mobileNo: text("mobile_no"),
@@ -39,9 +66,10 @@ export const insertPartyProfileSchema = createInsertSchema(partyProfiles).omit({
 export type InsertPartyProfile = z.infer<typeof insertPartyProfileSchema>;
 export type PartyProfile = typeof partyProfiles.$inferSelect;
 
-// Quotes with embedded items
+// Quotes with embedded items (per user)
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
   partyName: text("party_name").notNull(),
   customerCompany: text("customer_company"),
   customerEmail: text("customer_email"),
@@ -51,7 +79,7 @@ export const quotes = pgTable("quotes", {
   transportCharge: real("transport_charge"),
   transportRemark: text("transport_remark"),
   totalValue: real("total_value").notNull(),
-  items: jsonb("items").notNull(), // Array of quote items
+  items: jsonb("items").notNull(),
   companyProfileId: varchar("company_profile_id"),
   createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
@@ -60,9 +88,10 @@ export const insertQuoteSchema = createInsertSchema(quotes).omit({ id: true, cre
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
 export type Quote = typeof quotes.$inferSelect;
 
-// App Settings
+// App Settings (per user)
 export const appSettings = pgTable("app_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
   appTitle: text("app_title").default("Box Costing Calculator"),
   plyThicknessMap: jsonb("ply_thickness_map").default(JSON.stringify({
     '1': 0.45,
@@ -77,73 +106,10 @@ export const insertAppSettingsSchema = createInsertSchema(appSettings).omit({ id
 export type InsertAppSettings = z.infer<typeof insertAppSettingsSchema>;
 export type AppSettings = typeof appSettings.$inferSelect;
 
-// Zod schemas for nested data structures
-export const layerSpecSchema = z.object({
-  layerIndex: z.number(), // 0-indexed layer number
-  layerType: z.enum(['liner', 'flute']),
-  gsm: z.number(),
-  bf: z.number().optional(),
-  flutingFactor: z.number().optional(), // Manual fluting factor
-  rctValue: z.number().optional(), // RCT value for the layer
-  shade: z.string(),
-  rate: z.number(),
-});
-
-export const quoteItemSchema = z.object({
-  type: z.enum(['rsc', 'sheet']),
-  boxName: z.string(),
-  boxDescription: z.string().optional(),
-  ply: z.enum(['1', '3', '5', '7', '9']),
-  
-  // Dimensional metadata
-  inputUnit: z.enum(['mm', 'inches']).default('mm'),
-  measuredOn: z.enum(['ID', 'OD']).default('ID'),
-  plyThicknessUsed: z.number().optional(),
-  
-  // Dimensions (stored in mm)
-  length: z.number(),
-  width: z.number(),
-  height: z.number().optional(), // Only for RSC
-  
-  // Allowances and thresholds
-  glueFlap: z.number().optional(),
-  deckleAllowance: z.number().optional(),
-  sheetAllowance: z.number().optional(),
-  maxLengthThreshold: z.number().optional(),
-  additionalFlapApplied: z.boolean().default(false),
-  
-  // Calculated sheet sizes
-  sheetLength: z.number(),
-  sheetWidth: z.number(),
-  sheetLengthInches: z.number(),
-  sheetWidthInches: z.number(),
-  sheetWeight: z.number(), // Kg
-  
-  // Strength analysis
-  boardThickness: z.number(),
-  boxPerimeter: z.number(),
-  ect: z.number(), // Edge Crush Test (kN/m)
-  bct: z.number(), // Box Compression Test (Kg)
-  bs: z.number(), // Burst Strength (kg/cm)
-  
-  // Paper specifications (layer by layer)
-  layerSpecs: z.array(layerSpecSchema),
-  
-  // Costs
-  paperCost: z.number(),
-  printingCost: z.number().default(0),
-  laminationCost: z.number().default(0),
-  varnishCost: z.number().default(0),
-  dieCost: z.number().default(0),
-  punchingCost: z.number().default(0),
-  totalCostPerBox: z.number(),
-  quantity: z.number(),
-  totalValue: z.number(),
-});
-
-// Rate Memory for Paper (BF + Shade combinations)
+// Rate Memory for Paper (BF + Shade combinations) - per user
 export const rateMemory = pgTable("rate_memory", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
   bfValue: text("bf_value").notNull(),
   shade: text("shade").notNull(),
   rate: real("rate").notNull(),
@@ -154,6 +120,66 @@ export const rateMemory = pgTable("rate_memory", {
 export const insertRateMemorySchema = createInsertSchema(rateMemory).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRateMemory = z.infer<typeof insertRateMemorySchema>;
 export type RateMemoryEntry = typeof rateMemory.$inferSelect;
+
+// Zod schemas for nested data structures
+export const layerSpecSchema = z.object({
+  layerIndex: z.number(),
+  layerType: z.enum(['liner', 'flute']),
+  gsm: z.number(),
+  bf: z.number().optional(),
+  flutingFactor: z.number().optional(),
+  rctValue: z.number().optional(),
+  shade: z.string(),
+  rate: z.number(),
+});
+
+export const quoteItemSchema = z.object({
+  type: z.enum(['rsc', 'sheet']),
+  boxName: z.string(),
+  boxDescription: z.string().optional(),
+  ply: z.enum(['1', '3', '5', '7', '9']),
+  
+  inputUnit: z.enum(['mm', 'inches']).default('mm'),
+  measuredOn: z.enum(['ID', 'OD']).default('ID'),
+  plyThicknessUsed: z.number().optional(),
+  
+  length: z.number(),
+  width: z.number(),
+  height: z.number().optional(),
+  
+  glueFlap: z.number().optional(),
+  deckleAllowance: z.number().optional(),
+  sheetAllowance: z.number().optional(),
+  maxLengthThreshold: z.number().optional(),
+  additionalFlapApplied: z.boolean().default(false),
+  
+  sheetLength: z.number(),
+  sheetWidth: z.number(),
+  sheetLengthInches: z.number(),
+  sheetWidthInches: z.number(),
+  sheetWeight: z.number(),
+  
+  boardThickness: z.number(),
+  boxPerimeter: z.number(),
+  ect: z.number(),
+  bct: z.number(),
+  bs: z.number(),
+  
+  layerSpecs: z.array(layerSpecSchema),
+  
+  paperCost: z.number(),
+  printingCost: z.number().default(0),
+  laminationCost: z.number().default(0),
+  varnishCost: z.number().default(0),
+  dieCost: z.number().default(0),
+  punchingCost: z.number().default(0),
+  totalCostPerBox: z.number(),
+  quantity: z.number(),
+  totalValue: z.number(),
+  
+  // Selection for sending via WhatsApp/Email
+  selected: z.boolean().default(true),
+});
 
 export type QuoteItem = z.infer<typeof quoteItemSchema>;
 export type LayerSpec = z.infer<typeof layerSpecSchema>;
