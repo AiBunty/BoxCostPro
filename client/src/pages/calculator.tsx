@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { QuoteItem, CompanyProfile, Quote, AppSettings, LayerSpec } from "@shared/schema";
 import { generateWhatsAppMessage, generateEmailContent } from "@/lib/messageGenerator";
-import { downloadExcel, downloadQuotePDF } from "@/lib/excelExport";
+import { downloadExcel, downloadQuotePDF, downloadSampleTemplate, parseExcelUpload } from "@/lib/excelExport";
 import {
   mmToInches,
   inchesToMm,
@@ -502,23 +502,10 @@ export default function Calculator() {
     }
   }, [rateMemoryData]);
   
-  // Download sample bulk upload CSV
-  const downloadSampleCSV = () => {
-    const sample = `Box Name,Description,Type,Length,Width,Height,L1_GSM,L1_BF,L1_RCT,L1_Shade,L1_Rate,L2_GSM,L2_BF,L2_RCT,L2_Shade,L2_Rate,L3_GSM,L3_BF,L3_RCT,L3_Shade,L3_Rate,L4_GSM,L4_BF,L4_RCT,L4_Shade,L4_Rate,L5_GSM,L5_BF,L5_RCT,L5_Shade,L5_Rate
-10kg Apple Box,Heavy duty corrugated,RSC,300,200,150,180,20,40,Kraft/Natural,55,150,16,25,Kraft/Natural,52,180,20,40,Kraft/Natural,55
-5kg Vegetable Box,Standard corrugated,RSC,250,180,120,180,18,38,Golden (Brown),54,140,14,22,Golden (Brown),50
-A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,25,White Kraft Liner,53`;
-    
-    const blob = new Blob([sample], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'sample_bulk_upload.csv';
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    toast({ title: "Downloaded", description: "Sample CSV file downloaded successfully." });
+  // Download sample bulk upload Excel
+  const handleDownloadSampleTemplate = () => {
+    downloadSampleTemplate();
+    toast({ title: "Downloaded", description: "Sample Excel template downloaded successfully." });
   };
   
   // Filter quotes based on search criteria
@@ -559,68 +546,64 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
     });
   };
   
-  // Bulk upload handler
+  // Bulk upload handler (Excel)
   const handleBulkUploadFile = async (file: File) => {
-    const text = await file.text();
-    const lines = text.split('\n').filter(l => l.trim());
-    
-    if (lines.length < 2) {
-      toast({ title: "Error", description: "CSV must have header row", variant: "destructive" });
-      return;
-    }
-    
-    const headers = lines[0].split(',').map(h => h.trim());
-    const items: QuoteItem[] = [];
-    
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim());
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => { row[h] = values[idx] || ""; });
+    try {
+      const parsedData = await parseExcelUpload(file);
       
-      const length = parseFloat(row['Length'] || row['L'] || "0");
-      const width = parseFloat(row['Width'] || row['W'] || "0");
-      const height = parseFloat(row['Height'] || row['H'] || "0");
-      
-      if (!length || !width) continue;
-      
-      const itemLayers: LayerSpec[] = [];
-      for (let l = 1; l <= 5; l++) {
-        const gsm = row[`L${l}_GSM`] || "0";
-        const bf = row[`L${l}_BF`] || "0";
-        const rctValue = row[`L${l}_RCT`] || "0";
-        const shade = row[`L${l}_Shade`] || "Kraft/Natural";
-        const rate = row[`L${l}_Rate`] || "0";
-        
-        if (parseFloat(gsm) > 0) {
-          const layerType = l % 2 === 1 ? "liner" : "flute";
-          itemLayers.push({
-            gsm: parseFloat(gsm), bf: parseFloat(bf), flutingFactor: 1, rctValue: parseFloat(rctValue), shade, rate: parseFloat(rate), layerType: layerType as "liner" | "flute"
-          });
-        }
+      if (parsedData.length === 0) {
+        toast({ title: "Error", description: "No valid data found in Excel file", variant: "destructive" });
+        return;
       }
       
-      items.push({
-        id: Math.random().toString(36),
-        boxName: row['Box Name'] || `Box ${i}`,
-        boxDescription: row['Description'] || "",
-        type: row['Type']?.toLowerCase() === 'sheet' ? 'sheet' : 'rsc',
-        ply: (itemLayers.length).toString(),
-        inputUnit: 'mm',
-        measuredOn: 'ID',
-        length, width, height,
-        sheetLength: length,
-        sheetWidth: width,
-        layers: itemLayers,
-        totalValue: 0,
-        paperCost: 0,
-        manufacturingCost: 0,
-      } as unknown as QuoteItem);
-    }
-    
-    if (items.length > 0) {
+      const items: QuoteItem[] = parsedData.map((row, idx) => {
+        const itemLayers: LayerSpec[] = (row.layers || []).map((layer: any, layerIdx: number) => ({
+          layerIndex: layerIdx,
+          layerType: layer.layerType as "liner" | "flute",
+          gsm: parseFloat(layer.gsm) || 180,
+          bf: parseFloat(layer.bf) || 16,
+          flutingFactor: 1.35,
+          rctValue: parseFloat(layer.rctValue) || 5,
+          shade: layer.shade || "Kraft",
+          rate: parseFloat(layer.rate) || 45,
+        }));
+        
+        return {
+          id: Math.random().toString(36),
+          boxName: row.boxName || `Box ${idx + 1}`,
+          boxDescription: "",
+          type: row.type === 'sheet' ? 'sheet' : 'rsc',
+          ply: row.ply || itemLayers.length.toString(),
+          inputUnit: 'mm',
+          measuredOn: 'ID',
+          length: row.length || 0,
+          width: row.width || 0,
+          height: row.height || 0,
+          sheetLength: row.length || 0,
+          sheetWidth: row.width || 0,
+          layerSpecs: itemLayers,
+          quantity: row.quantity || 1000,
+          totalValue: 0,
+          paperCost: 0,
+          printingCost: 0,
+          laminationCost: 0,
+          varnishCost: 0,
+          dieCost: 0,
+          punchingCost: 0,
+          totalCostPerBox: 0,
+          sheetWeight: 0,
+          ect: 0,
+          bct: 0,
+          bs: 0,
+          selected: true,
+        } as unknown as QuoteItem;
+      });
+      
       setQuoteItems([...quoteItems, ...items]);
-      toast({ title: "Success", description: `${items.length} items imported` });
+      toast({ title: "Success", description: `${items.length} items imported from Excel` });
       setShowBulkUpload(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to parse Excel file. Please check the format.", variant: "destructive" });
     }
   };
   
@@ -1312,73 +1295,71 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" data-testid="button-bulk-upload">
                     <Upload className="w-4 h-4 mr-2" />
-                    Upload CSV
+                    Upload Excel
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl">
                   <DialogHeader>
-                    <DialogTitle>Bulk Upload Items from CSV</DialogTitle>
+                    <DialogTitle>Bulk Upload Items from Excel</DialogTitle>
                     <DialogDescription>Import multiple box/sheet items at once</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-6">
                     <div className="space-y-3">
-                      <Label htmlFor="csv-upload" className="text-base font-semibold">Select CSV File</Label>
+                      <Label htmlFor="excel-upload" className="text-base font-semibold">Select Excel File</Label>
                       <div 
                         className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer bg-muted/50"
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => {
                           e.preventDefault();
                           const file = e.dataTransfer.files?.[0];
-                          if (file && file.type === 'text/csv' || file.name.endsWith('.csv')) {
+                          if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
                             handleBulkUploadFile(file);
                           } else {
-                            toast({ title: "Error", description: "Please drop a CSV file", variant: "destructive" });
+                            toast({ title: "Error", description: "Please drop an Excel file (.xlsx or .xls)", variant: "destructive" });
                           }
                         }}
                       >
                         <Input 
-                          id="csv-upload" 
+                          id="excel-upload" 
                           type="file" 
-                          accept=".csv"
+                          accept=".xlsx,.xls"
                           onChange={(e) => {
                             const file = e.currentTarget.files?.[0];
                             if (file) handleBulkUploadFile(file);
                           }}
-                          data-testid="input-csv-upload"
+                          data-testid="input-excel-upload"
                           className="hidden"
                         />
-                        <label htmlFor="csv-upload" className="cursor-pointer">
+                        <label htmlFor="excel-upload" className="cursor-pointer">
                           <div className="space-y-2">
-                            <div className="text-2xl">📁</div>
-                            <p className="font-medium">Drag CSV file here or click to browse</p>
-                            <p className="text-xs text-muted-foreground">Supports .csv format</p>
+                            <div className="text-2xl">📊</div>
+                            <p className="font-medium">Drag Excel file here or click to browse</p>
+                            <p className="text-xs text-muted-foreground">Supports .xlsx and .xls formats</p>
                           </div>
                         </label>
                       </div>
                     </div>
 
                     <div className="space-y-3 bg-muted/50 p-4 rounded-lg">
-                      <p className="font-semibold text-sm">CSV Format Guide:</p>
+                      <p className="font-semibold text-sm">Excel Format Guide:</p>
                       <div className="text-xs space-y-2 text-muted-foreground font-mono">
                         <p>Required columns:</p>
-                        <p className="pl-4">• Box Name, Description, Type (RSC/Sheet)</p>
-                        <p className="pl-4">• Length, Width, Height (for RSC boxes)</p>
-                        <p className="pl-4">• Ply (1, 3, 5, 7, or 9)</p>
-                        <p className="mt-2">For each layer (up to 5):</p>
-                        <p className="pl-4">• L1_GSM, L1_BF, L1_RCT, L1_Shade, L1_Rate</p>
-                        <p className="pl-4">• L2_GSM, L2_BF, L2_RCT, L2_Shade, L2_Rate</p>
-                        <p className="pl-4">• ... (repeat for additional layers)</p>
+                        <p className="pl-4">Box Name, Type (rsc/sheet), Ply, Length(mm), Width(mm), Height(mm), Quantity</p>
+                        <p className="mt-2">For layers use columns like:</p>
+                        <p className="pl-4">L1 GSM, L1 BF, L1 RCT, L1 Shade, L1 Rate (for Liner 1)</p>
+                        <p className="pl-4">F1 GSM, F1 BF, F1 RCT, F1 Shade, F1 Rate (for Flute 1)</p>
+                        <p className="pl-4">L2 GSM, F2 GSM, L3 GSM... (continue for additional layers)</p>
                       </div>
                     </div>
 
                     <Button 
-                      onClick={downloadSampleCSV} 
+                      onClick={handleDownloadSampleTemplate} 
                       variant="outline" 
                       className="w-full"
-                      data-testid="button-download-sample-csv"
+                      data-testid="button-download-sample-excel"
                     >
                       <Download className="w-4 h-4 mr-2" />
-                      Download Sample CSV Template
+                      Download Sample Excel Template
                     </Button>
                   </div>
                 </DialogContent>
@@ -2663,12 +2644,12 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       size="sm" 
                       variant="outline"
                       onClick={() => {
-                        downloadExcel(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile, `quote-${new Date().toISOString().split('T')[0]}.csv`);
+                        downloadExcel(quoteItems, partyName || "Customer", customerCompany || "Company", companyProfile, `quote-${new Date().toISOString().split('T')[0]}.xlsx`);
                       }}
                       data-testid="button-download-excel"
                     >
                       <Download className="w-4 h-4 mr-2" />
-                      Download CSV
+                      Download Excel
                     </Button>
                     
                     {customerMobile && (

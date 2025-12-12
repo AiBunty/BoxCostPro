@@ -1,72 +1,100 @@
+import * as XLSX from 'xlsx';
 import type { QuoteItem, CompanyProfile } from "@shared/schema";
 
-// Simple CSV export function (works better with Excel than complex XLSX)
-export function generateExcelCSV(
+export function generateExcelWorkbook(
   items: QuoteItem[],
   customerName: string,
   customerCompany: string,
   companyProfile: CompanyProfile | null
-): string {
-  const rows: string[] = [];
+): XLSX.WorkBook {
+  const workbook = XLSX.utils.book_new();
   
-  // Header
-  rows.push("Ventura Packagers - Quote Export");
-  rows.push("");
-  rows.push("Customer Details");
-  rows.push(`Party Name,${customerName}`);
-  rows.push(`Company,${customerCompany}`);
-  rows.push("");
+  const quoteData: any[][] = [
+    ["Ventura Packagers - Quote Export"],
+    [],
+    ["Customer Details"],
+    ["Party Name", customerName],
+    ["Company", customerCompany],
+    [],
+    ["Item Details"],
+    ["Item#", "Box Name", "Type", "Ply", "Length(mm)", "Width(mm)", "Height(mm)", "Quantity", 
+     "Sheet Length", "Sheet Width", "Weight(kg)", "ECT", "BCT", "BS", 
+     "Paper Cost", "Printing Cost", "Lamination Cost", "Varnish Cost", "Die Cost", "Punching Cost", 
+     "Cost Per Unit", "Total Value"],
+  ];
   
-  // Item details header
-  rows.push("Item Details");
-  rows.push("Item#,Box Name,Type,Ply,Length(mm),Width(mm),Height(mm),Quantity,Sheet Length,Sheet Width,Weight(kg),ECT,BCT,BS,Paper Cost,Printing Cost,Lamination Cost,Varnish Cost,Die Cost,Punching Cost,Cost Per Unit,Total Value");
-  
-  // Items
   items.forEach((item, idx) => {
-    rows.push([
-      (idx + 1).toString(),
+    quoteData.push([
+      idx + 1,
       item.boxName,
       item.type,
       item.ply,
-      item.length.toFixed(2),
-      item.width.toFixed(2),
-      item.height?.toFixed(2) || "",
-      item.quantity.toString(),
-      item.sheetLength.toFixed(2),
-      item.sheetWidth.toFixed(2),
-      item.sheetWeight.toFixed(3),
-      item.ect.toFixed(2),
-      item.bct.toFixed(1),
-      item.bs.toFixed(2),
-      item.paperCost.toFixed(2),
-      item.printingCost.toFixed(2),
-      item.laminationCost.toFixed(2),
-      item.varnishCost.toFixed(2),
-      item.dieCost.toFixed(2),
-      item.punchingCost.toFixed(2),
-      item.totalCostPerBox.toFixed(2),
-      item.totalValue.toFixed(2),
-    ].map(cell => `"${cell}"`).join(","));
+      parseFloat(item.length.toFixed(2)),
+      parseFloat(item.width.toFixed(2)),
+      item.height ? parseFloat(item.height.toFixed(2)) : "",
+      item.quantity,
+      parseFloat(item.sheetLength.toFixed(2)),
+      parseFloat(item.sheetWidth.toFixed(2)),
+      parseFloat(item.sheetWeight.toFixed(3)),
+      parseFloat(item.ect.toFixed(2)),
+      parseFloat(item.bct.toFixed(1)),
+      parseFloat(item.bs.toFixed(2)),
+      parseFloat(item.paperCost.toFixed(2)),
+      parseFloat((item.printingCost || 0).toFixed(2)),
+      parseFloat((item.laminationCost || 0).toFixed(2)),
+      parseFloat((item.varnishCost || 0).toFixed(2)),
+      parseFloat((item.dieCost || 0).toFixed(2)),
+      parseFloat((item.punchingCost || 0).toFixed(2)),
+      parseFloat(item.totalCostPerBox.toFixed(2)),
+      parseFloat(item.totalValue.toFixed(2)),
+    ]);
   });
   
-  rows.push("");
-  rows.push(`Grand Total,${items.reduce((sum, item) => sum + item.totalValue, 0).toFixed(2)}`);
-  rows.push("");
+  quoteData.push([]);
+  quoteData.push(["Grand Total", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
+    items.reduce((sum, item) => sum + item.totalValue, 0).toFixed(2)]);
+  quoteData.push([]);
   
-  // Company details
   if (companyProfile) {
-    rows.push("Company Details");
-    rows.push(`Company Name,${companyProfile.companyName}`);
-    rows.push(`GST,${companyProfile.gstNo || ""}`);
-    rows.push(`Phone,${companyProfile.phone || ""}`);
-    rows.push(`Email,${companyProfile.email || ""}`);
-    rows.push(`Address,${companyProfile.address || ""}`);
-    rows.push(`Website,${companyProfile.website || ""}`);
-    rows.push(`Payment Terms,${companyProfile.paymentTerms || ""}`);
-    rows.push(`Delivery Time,${companyProfile.deliveryTime || ""}`);
+    quoteData.push(["Company Details"]);
+    quoteData.push(["Company Name", companyProfile.companyName]);
+    quoteData.push(["GST", companyProfile.gstNo || ""]);
+    quoteData.push(["Phone", companyProfile.phone || ""]);
+    quoteData.push(["Email", companyProfile.email || ""]);
+    quoteData.push(["Address", companyProfile.address || ""]);
+    quoteData.push(["Website", companyProfile.website || ""]);
   }
   
-  return rows.join("\n");
+  const worksheet = XLSX.utils.aoa_to_sheet(quoteData);
+  
+  worksheet['!cols'] = [
+    { wch: 8 },   
+    { wch: 25 },  
+    { wch: 10 },  
+    { wch: 8 },   
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 10 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 10 },  
+    { wch: 10 },  
+    { wch: 10 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 10 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 12 },  
+  ];
+  
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Quote");
+  
+  return workbook;
 }
 
 export function downloadExcel(
@@ -74,22 +102,181 @@ export function downloadExcel(
   customerName: string,
   customerCompany: string,
   companyProfile: CompanyProfile | null,
-  filename: string = "quote.csv"
+  filename: string = "quote.xlsx"
 ) {
-  const csv = generateExcelCSV(items, customerName, customerCompany, companyProfile);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
-  
-  link.setAttribute("href", url);
-  link.setAttribute("download", filename);
-  link.style.visibility = "hidden";
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const workbook = generateExcelWorkbook(items, customerName, customerCompany, companyProfile);
+  const xlsxFilename = filename.replace('.csv', '.xlsx');
+  XLSX.writeFile(workbook, xlsxFilename);
 }
-import type { QuoteItem, CompanyProfile } from "@shared/schema";
+
+export function generateSampleUploadTemplate(): XLSX.WorkBook {
+  const workbook = XLSX.utils.book_new();
+  
+  const sampleData: any[][] = [
+    ["Box Name", "Type", "Ply", "Length(mm)", "Width(mm)", "Height(mm)", "Quantity",
+     "L1 GSM", "L1 BF", "L1 RCT", "L1 Shade", "L1 Rate",
+     "F1 GSM", "F1 BF", "F1 RCT", "F1 Shade", "F1 Rate",
+     "L2 GSM", "L2 BF", "L2 RCT", "L2 Shade", "L2 Rate",
+     "F2 GSM", "F2 BF", "F2 RCT", "F2 Shade", "F2 Rate",
+     "L3 GSM", "L3 BF", "L3 RCT", "L3 Shade", "L3 Rate"],
+    ["Sample Box 1", "rsc", "3", "300", "200", "150", "1000",
+     "180", "20", "5", "Kraft", "45",
+     "120", "16", "4", "SemiKraft", "38",
+     "180", "20", "5", "Kraft", "45",
+     "", "", "", "", "",
+     "", "", "", "", ""],
+    ["Sample Box 2", "rsc", "5", "400", "300", "200", "500",
+     "200", "22", "6", "Kraft", "48",
+     "140", "18", "5", "SemiKraft", "40",
+     "180", "20", "5", "Kraft", "45",
+     "140", "18", "5", "SemiKraft", "40",
+     "200", "22", "6", "Kraft", "48"],
+    ["Sample Sheet", "sheet", "3", "600", "400", "", "2000",
+     "180", "20", "5", "Kraft", "45",
+     "120", "16", "4", "SemiKraft", "38",
+     "180", "20", "5", "Kraft", "45",
+     "", "", "", "", "",
+     "", "", "", "", ""],
+  ];
+  
+  const worksheet = XLSX.utils.aoa_to_sheet(sampleData);
+  
+  worksheet['!cols'] = [
+    { wch: 20 },  
+    { wch: 8 },   
+    { wch: 6 },   
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 12 },  
+    { wch: 10 },  
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 12 },  
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 12 },  
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 12 },  
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 12 },  
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 8 },   
+    { wch: 12 },  
+    { wch: 8 },   
+  ];
+  
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Sample Template");
+  
+  return workbook;
+}
+
+export function downloadSampleTemplate() {
+  const workbook = generateSampleUploadTemplate();
+  XLSX.writeFile(workbook, "bulk-upload-template.xlsx");
+}
+
+export function parseExcelUpload(file: File): Promise<any[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        
+        if (jsonData.length < 2) {
+          reject(new Error("File is empty or has no data rows"));
+          return;
+        }
+        
+        const headers = jsonData[0] as string[];
+        const rows = jsonData.slice(1).filter((row: any[]) => row.some(cell => cell !== null && cell !== undefined && cell !== ""));
+        
+        const parsedItems = rows.map((row: any[], idx) => {
+          const getValue = (colName: string) => {
+            const colIdx = headers.findIndex(h => h && h.toString().toLowerCase().includes(colName.toLowerCase()));
+            return colIdx >= 0 ? row[colIdx] : null;
+          };
+          
+          return {
+            boxName: getValue("box name") || `Box ${idx + 1}`,
+            type: (getValue("type") || "rsc").toString().toLowerCase(),
+            ply: getValue("ply") || "3",
+            length: parseFloat(getValue("length") || "0"),
+            width: parseFloat(getValue("width") || "0"),
+            height: parseFloat(getValue("height") || "0"),
+            quantity: parseInt(getValue("quantity") || "1000"),
+            layers: [
+              {
+                layerType: "liner",
+                gsm: getValue("l1 gsm") || "180",
+                bf: getValue("l1 bf") || "20",
+                rctValue: getValue("l1 rct") || "5",
+                shade: getValue("l1 shade") || "Kraft",
+                rate: getValue("l1 rate") || "45",
+              },
+              {
+                layerType: "flute",
+                gsm: getValue("f1 gsm") || "120",
+                bf: getValue("f1 bf") || "16",
+                rctValue: getValue("f1 rct") || "4",
+                shade: getValue("f1 shade") || "SemiKraft",
+                rate: getValue("f1 rate") || "38",
+              },
+              {
+                layerType: "liner",
+                gsm: getValue("l2 gsm") || "180",
+                bf: getValue("l2 bf") || "20",
+                rctValue: getValue("l2 rct") || "5",
+                shade: getValue("l2 shade") || "Kraft",
+                rate: getValue("l2 rate") || "45",
+              },
+              {
+                layerType: "flute",
+                gsm: getValue("f2 gsm") || "",
+                bf: getValue("f2 bf") || "",
+                rctValue: getValue("f2 rct") || "",
+                shade: getValue("f2 shade") || "",
+                rate: getValue("f2 rate") || "",
+              },
+              {
+                layerType: "liner",
+                gsm: getValue("l3 gsm") || "",
+                bf: getValue("l3 bf") || "",
+                rctValue: getValue("l3 rct") || "",
+                shade: getValue("l3 shade") || "",
+                rate: getValue("l3 rate") || "",
+              },
+            ].filter(l => l.gsm && l.gsm !== ""),
+          };
+        });
+        
+        resolve(parsedItems);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsArrayBuffer(file);
+  });
+}
 
 export function downloadQuotePDF(
   items: QuoteItem[],
@@ -199,15 +386,75 @@ export function downloadQuotePDF(
   
   const blob = new Blob([htmlContent], { type: 'text/html' });
   const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `quote-${partyName}-${new Date().toISOString().split('T')[0]}.pdf`;
   
-  // Print to PDF instead of download
   const printWindow = window.open(url, '_blank');
   if (printWindow) {
     printWindow.addEventListener('load', () => {
       printWindow.print();
     });
   }
+}
+
+export function exportReportToExcel(
+  items: QuoteItem[],
+  partyName: string,
+  filename: string = "report.xlsx"
+) {
+  const workbook = XLSX.utils.book_new();
+  
+  const reportData: any[][] = [
+    [`Box History Report - ${partyName}`],
+    [`Generated: ${new Date().toLocaleDateString()}`],
+    [],
+    ["Box Name", "Type", "Ply", "Size (L×W×H)", "Quantity", "Sheet Size", "Weight/Sheet", 
+     "Paper Cost", "Printing", "Lamination", "Varnish", "Die", "Punching", "Cost/Pc", "Total Value"],
+  ];
+  
+  items.forEach((item) => {
+    reportData.push([
+      item.boxName,
+      item.type === 'rsc' ? 'RSC Box' : 'Sheet',
+      `${item.ply}-Ply`,
+      item.height ? `${item.length}×${item.width}×${item.height}` : `${item.length}×${item.width}`,
+      item.quantity,
+      `${item.sheetLength.toFixed(0)}×${item.sheetWidth.toFixed(0)}`,
+      item.sheetWeight.toFixed(3),
+      item.paperCost.toFixed(2),
+      (item.printingCost || 0).toFixed(2),
+      (item.laminationCost || 0).toFixed(2),
+      (item.varnishCost || 0).toFixed(2),
+      (item.dieCost || 0).toFixed(2),
+      (item.punchingCost || 0).toFixed(2),
+      item.totalCostPerBox.toFixed(2),
+      item.totalValue.toFixed(2),
+    ]);
+  });
+  
+  reportData.push([]);
+  reportData.push(["Total Items:", items.length, "", "", "", "", "", "", "", "", "", "", "", "",
+    items.reduce((sum, item) => sum + item.totalValue, 0).toFixed(2)]);
+  
+  const worksheet = XLSX.utils.aoa_to_sheet(reportData);
+  
+  worksheet['!cols'] = [
+    { wch: 25 },
+    { wch: 10 },
+    { wch: 8 },
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 15 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 8 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 12 },
+  ];
+  
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+  
+  XLSX.writeFile(workbook, filename);
 }
