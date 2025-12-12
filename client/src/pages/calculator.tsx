@@ -515,8 +515,9 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
   // Filter quotes based on search criteria
   const filteredQuotes = savedQuotes.filter(quote => {
     const dateMatch = !quoteSearchDate || new Date(quote.createdAt || "").toLocaleDateString().includes(quoteSearchDate);
-    const companyMatch = !quoteSearchCompany || quote.customerCompany.toLowerCase().includes(quoteSearchCompany.toLowerCase());
-    const boxNameMatch = !quoteSearchBoxName || quote.items?.some(item => item.boxName?.toLowerCase().includes(quoteSearchBoxName.toLowerCase()));
+    const companyMatch = !quoteSearchCompany || (quote.customerCompany || "").toLowerCase().includes(quoteSearchCompany.toLowerCase());
+    const quoteItems = Array.isArray(quote.items) ? quote.items : [];
+    const boxNameMatch = !quoteSearchBoxName || quoteItems.some((item: any) => item.boxName?.toLowerCase().includes(quoteSearchBoxName.toLowerCase()));
     return dateMatch && companyMatch && boxNameMatch;
   });
   
@@ -584,7 +585,7 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
         if (parseFloat(gsm) > 0) {
           const layerType = l % 2 === 1 ? "liner" : "flute";
           itemLayers.push({
-            gsm, bf, flutingFactor: "1", rctValue, shade, rate, layerType: layerType as "liner" | "flute"
+            gsm: parseFloat(gsm), bf: parseFloat(bf), flutingFactor: 1, rctValue: parseFloat(rctValue), shade, rate: parseFloat(rate), layerType: layerType as "liner" | "flute"
           });
         }
       }
