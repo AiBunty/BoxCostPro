@@ -1779,10 +1779,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                     <TableHeader>
                       <TableRow>
                         <TableHead>Layer</TableHead>
-                        <TableHead>Type</TableHead>
                         <TableHead>GSM</TableHead>
                         <TableHead>BF</TableHead>
-                        <TableHead>Fluting Factor</TableHead>
                         <TableHead>RCT Value</TableHead>
                         <TableHead>Shade</TableHead>
                         <TableHead>Rate (₹/kg)</TableHead>
@@ -1790,13 +1788,15 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {layers.map((layer, idx) => (
+                      {layers.map((layer, idx) => {
+                        const linerCount = layers.slice(0, idx + 1).filter(l => l.layerType === 'liner').length;
+                        const fluteCount = layers.slice(0, idx + 1).filter(l => l.layerType === 'flute').length;
+                        const layerLabel = layer.layerType === 'liner' ? `L${linerCount}` : `F${fluteCount}`;
+                        return (
                         <TableRow key={idx}>
-                          <TableCell className="font-medium">L{idx + 1}</TableCell>
-                          <TableCell className="capitalize text-sm" data-testid={`text-layer-type-${idx}`}>{layer.layerType}</TableCell>
+                          <TableCell className="font-medium" data-testid={`text-layer-label-${idx}`}>{layerLabel}</TableCell>
                           <TableCell className="text-sm" data-testid={`text-gsm-${idx}`}>{layer.gsm}</TableCell>
                           <TableCell className="text-sm" data-testid={`text-bf-${idx}`}>{layer.bf}</TableCell>
-                          <TableCell className="text-sm" data-testid={`text-fluting-${idx}`}>{layer.flutingFactor}</TableCell>
                           <TableCell className="text-sm" data-testid={`text-rct-${idx}`}>{layer.rctValue}</TableCell>
                           <TableCell className="text-sm" data-testid={`text-shade-${idx}`}>{layer.shade}</TableCell>
                           <TableCell className="text-sm" data-testid={`text-rate-${idx}`}>₹{parseFloat(layer.rate).toFixed(2)}</TableCell>
@@ -1855,7 +1855,8 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                             )}
                           </TableCell>
                         </TableRow>
-                      ))}
+                      );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -2758,10 +2759,10 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                     No items in quote
                   </p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-4">
                     <div className="flex justify-between items-center text-sm mb-2">
                       <span className="text-muted-foreground">
-                        {quoteItems.filter(i => i.selected !== false).length} of {quoteItems.length} selected
+                        {quoteItems.filter(i => i.selected !== false).length} of {quoteItems.length} selected for WhatsApp/Email
                       </span>
                       <div className="flex gap-2">
                         <Button variant="ghost" size="sm" onClick={() => handleSelectAllItems(true)} data-testid="button-select-all">
@@ -2772,41 +2773,85 @@ A4 Paper Sheet,Flat sheet,Sheet,210,297,,160,18,35,White Kraft Liner,56,120,16,2
                         </Button>
                       </div>
                     </div>
-                    {quoteItems.map((item, index) => (
-                      <div 
-                        key={index} 
-                        className={`flex justify-between items-start p-3 border rounded-lg ${item.selected !== false ? '' : 'opacity-50'}`}
-                        data-testid={`quote-item-${index}`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <Checkbox 
-                            checked={item.selected !== false}
-                            onCheckedChange={() => handleToggleItemSelection(index)}
-                            data-testid={`checkbox-item-${index}`}
-                          />
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{item.boxName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {item.ply}-Ply • {item.quantity.toLocaleString()} pcs
-                            </p>
-                            <p className="text-sm font-bold mt-1">
-                              ₹{item.totalValue.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleRemoveItem(index)}
-                          data-testid={`button-remove-${index}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
+                    <div className="overflow-x-auto border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox 
+                                checked={quoteItems.every(i => i.selected !== false)}
+                                onCheckedChange={(checked) => handleSelectAllItems(!!checked)}
+                                data-testid="checkbox-select-all"
+                              />
+                            </TableHead>
+                            <TableHead>Box Name</TableHead>
+                            <TableHead>Size (L×W×H)</TableHead>
+                            <TableHead>Ply</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead className="text-right">Paper (₹)</TableHead>
+                            <TableHead className="text-right">Printing (₹)</TableHead>
+                            <TableHead className="text-right">Lamination (₹)</TableHead>
+                            <TableHead className="text-right">Varnish (₹)</TableHead>
+                            <TableHead className="text-right">Die (₹)</TableHead>
+                            <TableHead className="text-right">Punching (₹)</TableHead>
+                            <TableHead className="text-right">Cost/Pc (₹)</TableHead>
+                            <TableHead className="text-right">Total (₹)</TableHead>
+                            <TableHead className="w-10"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {quoteItems.map((item, index) => (
+                            <TableRow 
+                              key={index} 
+                              className={item.selected !== false ? '' : 'opacity-50'}
+                              data-testid={`quote-item-row-${index}`}
+                            >
+                              <TableCell>
+                                <Checkbox 
+                                  checked={item.selected !== false}
+                                  onCheckedChange={() => handleToggleItemSelection(index)}
+                                  data-testid={`checkbox-item-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium" data-testid={`text-item-name-${index}`}>
+                                {item.boxName}
+                                {item.boxDescription && (
+                                  <span className="block text-xs text-muted-foreground">{item.boxDescription}</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm" data-testid={`text-item-size-${index}`}>
+                                {item.type === 'rsc' 
+                                  ? `${item.length}×${item.width}×${item.height || 0}` 
+                                  : `${item.length}×${item.width}`}
+                              </TableCell>
+                              <TableCell data-testid={`text-item-ply-${index}`}>{item.ply}-Ply</TableCell>
+                              <TableCell className="text-right" data-testid={`text-item-qty-${index}`}>{item.quantity.toLocaleString()}</TableCell>
+                              <TableCell className="text-right" data-testid={`text-item-paper-${index}`}>{(item.paperCost * item.quantity).toFixed(2)}</TableCell>
+                              <TableCell className="text-right" data-testid={`text-item-printing-${index}`}>{((item.printingCost || 0) * item.quantity).toFixed(2)}</TableCell>
+                              <TableCell className="text-right" data-testid={`text-item-lamination-${index}`}>{((item.laminationCost || 0) * item.quantity).toFixed(2)}</TableCell>
+                              <TableCell className="text-right" data-testid={`text-item-varnish-${index}`}>{((item.varnishCost || 0) * item.quantity).toFixed(2)}</TableCell>
+                              <TableCell className="text-right" data-testid={`text-item-die-${index}`}>{((item.dieCost || 0) * item.quantity).toFixed(2)}</TableCell>
+                              <TableCell className="text-right" data-testid={`text-item-punching-${index}`}>{((item.punchingCost || 0) * item.quantity).toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-medium" data-testid={`text-item-costperpc-${index}`}>{item.totalCostPerBox.toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-bold" data-testid={`text-item-total-${index}`}>{item.totalValue.toFixed(2)}</TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveItem(index)}
+                                  data-testid={`button-remove-${index}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                     <Separator />
                     <div className="flex justify-between items-center pt-2">
-                      <span className="font-semibold">Grand Total:</span>
+                      <span className="font-semibold">Grand Total (Selected):</span>
                       <span className="font-bold text-xl text-primary" data-testid="text-grand-total">
                         ₹{grandTotal.toFixed(2)}
                       </span>
