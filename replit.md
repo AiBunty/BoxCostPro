@@ -123,6 +123,37 @@ The frontend is built with React and TypeScript, utilizing Vite for development.
    - Date range filters (start/end date)
    - Party summary cards showing quote counts
    - Detailed box breakdown when a party is selected
+
+## Recent Changes (Session Dec 13, 2025)
+
+### Calculator UI Improvements
+
+1. **Info Icons with Hover Tooltips**
+   - Added info icons (ℹ️) next to Weight and Burst Strength displays
+   - Hovering shows formula explanations for each calculation
+   - Weight formula: Σ GSM (with Fluting Factor applied to flute layers)
+   - BS formula: Liner GSM×BF/1000 + Flute GSM×BF/2000
+
+2. **Quote Item Edit Function**
+   - Pencil icon to edit quote items in the Quote Items table
+   - Edit dialog allows modifying: Box Name, Description, Quantity, and per-box add-on costs
+   - Costs recalculated using calculateTotalCost helper (includes 15% markup and conversion cost)
+
+3. **Column Visibility Checkboxes**
+   - Checkboxes above Quote Items table to show/hide cost columns
+   - Toggleable columns: Paper, Printing, Lamination, Varnish, Die, Punching
+   - Helps customize the view based on relevant cost components
+
+4. **Email Preview with Rich Text**
+   - Email dialog now renders HTML preview instead of showing raw HTML codes
+   - Copy as rich text using ClipboardItem API (preserves formatting when pasted in email clients)
+   - Fallback to plain text for browsers without rich text clipboard support
+
+5. **Default Conversion Cost**
+   - Conversion cost defaults to Rs.15 per kg instead of Rs.0
+
+6. **Paper Specification Edit Mode**
+   - Removed Fluting Factor from layer edit dialog (managed via Fluting Settings instead)
    - Excel export for filtered data
    - Accessible via "Reports" button in calculator header
 
