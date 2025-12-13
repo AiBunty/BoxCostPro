@@ -13,6 +13,12 @@ import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } f
 import { FlutingOnboarding } from "@/components/FlutingOnboarding";
 import { Link } from "wouter";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -282,10 +288,24 @@ export default function Calculator() {
   const [editingLayerIdx, setEditingLayerIdx] = useState<number | null>(null);
   const [editingLayerData, setEditingLayerData] = useState<any>(null);
   
+  // Quote item edit dialog state
+  const [editingQuoteItemIdx, setEditingQuoteItemIdx] = useState<number | null>(null);
+  const [editingQuoteItemData, setEditingQuoteItemData] = useState<Partial<QuoteItem> | null>(null);
+  
   // Message editing state
   const [editableWhatsAppMessage, setEditableWhatsAppMessage] = useState("");
   const [editableEmailBody, setEditableEmailBody] = useState("");
   const [editableEmailSubject, setEditableEmailSubject] = useState("");
+  
+  // Quote Items table column visibility
+  const [visibleCostColumns, setVisibleCostColumns] = useState({
+    paper: true,
+    printing: true,
+    lamination: true,
+    varnish: true,
+    die: true,
+    punching: true,
+  });
   
   // Fetch all company profiles
   const { data: allCompanyProfilesData = [], isLoading: isLoadingProfile } = useQuery<CompanyProfile[]>({
@@ -911,6 +931,68 @@ export default function Calculator() {
     setQuoteItems(quoteItems.filter((_, i) => i !== index));
   };
   
+  const handleEditQuoteItem = (index: number) => {
+    const item = quoteItems[index];
+    setEditingQuoteItemIdx(index);
+    setEditingQuoteItemData({
+      boxName: item.boxName,
+      boxDescription: item.boxDescription,
+      quantity: item.quantity,
+      printingCost: item.printingCost || 0,
+      laminationCost: item.laminationCost || 0,
+      varnishCost: item.varnishCost || 0,
+      dieCost: item.dieCost || 0,
+      punchingCost: item.punchingCost || 0,
+    });
+  };
+  
+  const handleSaveEditedQuoteItem = () => {
+    if (editingQuoteItemIdx === null || !editingQuoteItemData) return;
+    
+    const updatedItems = [...quoteItems];
+    const item = updatedItems[editingQuoteItemIdx];
+    const qty = editingQuoteItemData.quantity ?? item.quantity;
+    
+    // Get new per-box costs (user-edited values)
+    const newPrintingCost = editingQuoteItemData.printingCost ?? item.printingCost ?? 0;
+    const newLaminationCost = editingQuoteItemData.laminationCost ?? item.laminationCost ?? 0;
+    const newVarnishCost = editingQuoteItemData.varnishCost ?? item.varnishCost ?? 0;
+    const newDieCost = editingQuoteItemData.dieCost ?? item.dieCost ?? 0;
+    const newPunchingCost = editingQuoteItemData.punchingCost ?? item.punchingCost ?? 0;
+    
+    // Recalculate total using the same helper as when adding items
+    // Uses stored paperCost and newly edited per-box add-on costs
+    const conversionCostVal = item.sheetWeight * parseFloat(conversionCost || "15");
+    const newTotalCostPerBox = calculateTotalCost({
+      paperCost: item.paperCost,
+      printingCost: newPrintingCost,
+      laminationCost: newLaminationCost,
+      varnishCost: newVarnishCost,
+      dieCost: newDieCost,
+      punchingCost: newPunchingCost,
+      markup: 15,
+    }) + conversionCostVal;
+    
+    updatedItems[editingQuoteItemIdx] = {
+      ...item,
+      boxName: editingQuoteItemData.boxName !== undefined ? editingQuoteItemData.boxName : item.boxName,
+      boxDescription: editingQuoteItemData.boxDescription !== undefined ? editingQuoteItemData.boxDescription : item.boxDescription,
+      quantity: qty,
+      printingCost: newPrintingCost,
+      laminationCost: newLaminationCost,
+      varnishCost: newVarnishCost,
+      dieCost: newDieCost,
+      punchingCost: newPunchingCost,
+      totalCostPerBox: newTotalCostPerBox,
+      totalValue: newTotalCostPerBox * qty,
+    };
+    
+    setQuoteItems(updatedItems);
+    setEditingQuoteItemIdx(null);
+    setEditingQuoteItemData(null);
+    toast({ title: "Updated", description: "Quote item updated successfully." });
+  };
+  
   const handleToggleItemSelection = (index: number) => {
     setQuoteItems(quoteItems.map((item, i) => 
       i === index ? { ...item, selected: !item.selected } : item
@@ -995,6 +1077,7 @@ export default function Calculator() {
   const grandTotal = quoteItems.reduce((sum, item) => sum + item.totalValue, 0);
   
   return (
+    <TooltipProvider>
     <div className="min-h-screen bg-background">
       <FlutingOnboarding onComplete={() => {
         queryClient.invalidateQueries({ queryKey: ['/api/fluting-settings'] });
@@ -2046,12 +2129,12 @@ export default function Calculator() {
 
             {/* Email Message Editing Dialog */}
             <Dialog open={showMessageDialog === "email"} onOpenChange={(open) => !open && setShowMessageDialog(null)}>
-              <DialogContent className="max-w-2xl">
+              <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
                 <DialogHeader>
-                  <DialogTitle>Email Message</DialogTitle>
-                  <DialogDescription>Edit the subject and body and copy when ready</DialogDescription>
+                  <DialogTitle>Email Preview</DialogTitle>
+                  <DialogDescription>Preview and copy the email content</DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4">
+                <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
                   <div className="space-y-2">
                     <Label htmlFor="email-subject" className="text-sm">Subject</Label>
                     <Input
@@ -2061,17 +2144,15 @@ export default function Calculator() {
                       data-testid="input-email-subject"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email-body" className="text-sm">Body</Label>
-                    <textarea
-                      id="email-body"
-                      value={editableEmailBody}
-                      onChange={(e) => setEditableEmailBody(e.target.value)}
-                      className="w-full h-40 p-3 border rounded-md font-mono text-sm resize-none"
-                      data-testid="textarea-email-body"
+                  <div className="space-y-2 flex-1 overflow-hidden flex flex-col">
+                    <Label className="text-sm">Email Preview</Label>
+                    <div 
+                      className="flex-1 overflow-auto border rounded-md p-4 bg-white text-sm"
+                      dangerouslySetInnerHTML={{ __html: editableEmailBody }}
+                      data-testid="div-email-preview"
                     />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 pt-2">
                     <Button
                       variant="outline"
                       onClick={() => setShowMessageDialog(null)}
@@ -2080,16 +2161,28 @@ export default function Calculator() {
                       Cancel
                     </Button>
                     <Button
-                      onClick={() => {
-                        const fullEmail = `Subject: ${editableEmailSubject}\n\n${editableEmailBody}`;
-                        navigator.clipboard.writeText(fullEmail);
-                        toast({ title: "Copied", description: "Email message copied to clipboard" });
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.write([
+                            new ClipboardItem({
+                              'text/html': new Blob([editableEmailBody], { type: 'text/html' }),
+                              'text/plain': new Blob([`Subject: ${editableEmailSubject}`], { type: 'text/plain' })
+                            })
+                          ]);
+                          toast({ title: "Copied", description: "Email copied as rich text. Paste in your email client." });
+                        } catch (err) {
+                          const temp = document.createElement('div');
+                          temp.innerHTML = editableEmailBody;
+                          const plainText = temp.textContent || temp.innerText || '';
+                          await navigator.clipboard.writeText(`Subject: ${editableEmailSubject}\n\n${plainText}`);
+                          toast({ title: "Copied", description: "Email copied as plain text" });
+                        }
                         setShowMessageDialog(null);
                       }}
                       data-testid="button-copy-email-message"
                     >
                       <Copy className="w-4 h-4 mr-2" />
-                      Copy Email
+                      Copy Email (Rich Text)
                     </Button>
                   </div>
                 </div>
@@ -2343,69 +2436,48 @@ export default function Calculator() {
                     <Separator />
                     
                     <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Calculated Sheet Weight:</span>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          Calculated Sheet Weight:
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="w-4 h-4 text-muted-foreground hover:text-primary cursor-help" data-testid="icon-weight-formula" />
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-sm p-3">
+                              <div className="text-xs space-y-1">
+                                <div className="font-semibold">Weight Formula:</div>
+                                <div>Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ...</div>
+                                <div>Where FF = Fluting Factor</div>
+                                <div className="mt-1">Weight = (L × W × Total GSM) / 1,000,000</div>
+                                <div className="text-xs italic mt-1">L = Sheet Length (mm), W = Sheet Width (mm)</div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
                         <span className="font-medium" data-testid="text-sheet-weight">
                           {result.sheetWeight.toFixed(3)} Kg
                         </span>
                       </div>
-                      <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
-                        <div className="font-semibold mb-1">Weight Formula:</div>
-                        <div>Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ... where FF = Fluting Factor</div>
-                        <div>Weight = (L in Meters × W in Meters × Total GSM) / 1,000</div>
-                        <div className="mt-1">
-                          Σ GSM = {(() => {
-                            if (!result || !result.layerSpecs) return "0";
-                            return result.layerSpecs.map((spec: any, idx: number) => {
-                              if (spec.layerType === 'liner') {
-                                return `${spec.gsm}`;
-                              } else {
-                                const ff = spec.flutingFactor || 1.5;
-                                return `(${spec.gsm}×${ff.toFixed(2)})`;
-                              }
-                            }).join(" + ");
-                          })()} = {(() => {
-                            if (!result || !result.layerSpecs) return "0";
-                            const total = result.layerSpecs.reduce((sum: number, spec: any) => {
-                              if (spec.layerType === 'liner') {
-                                return sum + spec.gsm;
-                              } else {
-                                const ff = spec.flutingFactor || 1.5;
-                                return sum + (spec.gsm * ff);
-                              }
-                            }, 0);
-                            return total.toFixed(2);
-                          })()}
-                        </div>
-                        <div className="mt-1 text-xs italic">
-                          Where: L=Sheet Length (mm), W=Sheet Width (mm), Liner=Add GSM directly, Flute=Multiply GSM by Fluting Factor
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Calculated Box BS:</span>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          Calculated Box BS:
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="w-4 h-4 text-muted-foreground hover:text-primary cursor-help" data-testid="icon-bs-formula" />
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-sm p-3">
+                              <div className="text-xs space-y-1">
+                                <div className="font-semibold">Burst Strength (BS) Formula:</div>
+                                <div>BS = Σ (Liner GSM × BF / 1000 + Flute GSM × BF / 2000)</div>
+                                <div className="text-xs italic mt-1">Liner = GSM×BF/1000, Flute = GSM×BF/2000</div>
+                                <div className="text-xs italic">BF = Bursting Factor</div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
                         <span className="font-medium" data-testid="text-bs">
                           {result.bs.toFixed(2)} kg/cm
                         </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
-                        <div className="font-semibold mb-1">Burst Strength (BS) Formula:</div>
-                        <div>BS = Σ (Liner GSM × BF / 1000 + Flute GSM × BF / 2000)</div>
-                        <div className="mt-1">
-                          {(() => {
-                            if (!result || !result.layerSpecs) return "No layers";
-                            return result.layerSpecs.map((spec: any, idx: number) => {
-                              const bf = spec.bf || 14;
-                              if (spec.layerType === 'liner') {
-                                return `L${idx + 1}: (${spec.gsm}×${bf}/1000)`;
-                              } else {
-                                return `L${idx + 1}: (${spec.gsm}×${bf}/2000)`;
-                              }
-                            }).join(" + ");
-                          })()} = {result.bs.toFixed(2)} kg/cm
-                        </div>
-                        <div className="mt-1 text-xs italic">
-                          Where: Liner=GSM×BF/1000, Flute=GSM×BF/2000, BF=Bursting Factor
-                        </div>
                       </div>
                     </div>
                   </>
@@ -2746,6 +2818,27 @@ export default function Calculator() {
                         </Button>
                       </div>
                     </div>
+                    {/* Column visibility controls */}
+                    <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
+                      <span className="text-muted-foreground">Show columns:</span>
+                      {[
+                        { key: 'paper', label: 'Paper' },
+                        { key: 'printing', label: 'Printing' },
+                        { key: 'lamination', label: 'Lamination' },
+                        { key: 'varnish', label: 'Varnish' },
+                        { key: 'die', label: 'Die' },
+                        { key: 'punching', label: 'Punching' },
+                      ].map(col => (
+                        <label key={col.key} className="flex items-center gap-1.5 cursor-pointer">
+                          <Checkbox
+                            checked={visibleCostColumns[col.key as keyof typeof visibleCostColumns]}
+                            onCheckedChange={(checked) => setVisibleCostColumns(prev => ({ ...prev, [col.key]: !!checked }))}
+                            data-testid={`checkbox-col-${col.key}`}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
                     <div className="overflow-x-auto border rounded-md">
                       <Table>
                         <TableHeader>
@@ -2761,12 +2854,12 @@ export default function Calculator() {
                             <TableHead>Size (L×W×H)</TableHead>
                             <TableHead>Ply</TableHead>
                             <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="text-right">Paper (₹)</TableHead>
-                            <TableHead className="text-right">Printing (₹)</TableHead>
-                            <TableHead className="text-right">Lamination (₹)</TableHead>
-                            <TableHead className="text-right">Varnish (₹)</TableHead>
-                            <TableHead className="text-right">Die (₹)</TableHead>
-                            <TableHead className="text-right">Punching (₹)</TableHead>
+                            {visibleCostColumns.paper && <TableHead className="text-right">Paper (₹)</TableHead>}
+                            {visibleCostColumns.printing && <TableHead className="text-right">Printing (₹)</TableHead>}
+                            {visibleCostColumns.lamination && <TableHead className="text-right">Lamination (₹)</TableHead>}
+                            {visibleCostColumns.varnish && <TableHead className="text-right">Varnish (₹)</TableHead>}
+                            {visibleCostColumns.die && <TableHead className="text-right">Die (₹)</TableHead>}
+                            {visibleCostColumns.punching && <TableHead className="text-right">Punching (₹)</TableHead>}
                             <TableHead className="text-right">Cost/Pc (₹)</TableHead>
                             <TableHead className="text-right">Total (₹)</TableHead>
                             <TableHead className="w-10"></TableHead>
@@ -2799,15 +2892,23 @@ export default function Calculator() {
                               </TableCell>
                               <TableCell data-testid={`text-item-ply-${index}`}>{item.ply}-Ply</TableCell>
                               <TableCell className="text-right" data-testid={`text-item-qty-${index}`}>{item.quantity.toLocaleString()}</TableCell>
-                              <TableCell className="text-right" data-testid={`text-item-paper-${index}`}>{(item.paperCost * item.quantity).toFixed(2)}</TableCell>
-                              <TableCell className="text-right" data-testid={`text-item-printing-${index}`}>{((item.printingCost || 0) * item.quantity).toFixed(2)}</TableCell>
-                              <TableCell className="text-right" data-testid={`text-item-lamination-${index}`}>{((item.laminationCost || 0) * item.quantity).toFixed(2)}</TableCell>
-                              <TableCell className="text-right" data-testid={`text-item-varnish-${index}`}>{((item.varnishCost || 0) * item.quantity).toFixed(2)}</TableCell>
-                              <TableCell className="text-right" data-testid={`text-item-die-${index}`}>{((item.dieCost || 0) * item.quantity).toFixed(2)}</TableCell>
-                              <TableCell className="text-right" data-testid={`text-item-punching-${index}`}>{((item.punchingCost || 0) * item.quantity).toFixed(2)}</TableCell>
+                              {visibleCostColumns.paper && <TableCell className="text-right" data-testid={`text-item-paper-${index}`}>{(item.paperCost * item.quantity).toFixed(2)}</TableCell>}
+                              {visibleCostColumns.printing && <TableCell className="text-right" data-testid={`text-item-printing-${index}`}>{((item.printingCost || 0) * item.quantity).toFixed(2)}</TableCell>}
+                              {visibleCostColumns.lamination && <TableCell className="text-right" data-testid={`text-item-lamination-${index}`}>{((item.laminationCost || 0) * item.quantity).toFixed(2)}</TableCell>}
+                              {visibleCostColumns.varnish && <TableCell className="text-right" data-testid={`text-item-varnish-${index}`}>{((item.varnishCost || 0) * item.quantity).toFixed(2)}</TableCell>}
+                              {visibleCostColumns.die && <TableCell className="text-right" data-testid={`text-item-die-${index}`}>{((item.dieCost || 0) * item.quantity).toFixed(2)}</TableCell>}
+                              {visibleCostColumns.punching && <TableCell className="text-right" data-testid={`text-item-punching-${index}`}>{((item.punchingCost || 0) * item.quantity).toFixed(2)}</TableCell>}
                               <TableCell className="text-right font-medium" data-testid={`text-item-costperpc-${index}`}>{item.totalCostPerBox.toFixed(2)}</TableCell>
                               <TableCell className="text-right font-bold" data-testid={`text-item-total-${index}`}>{item.totalValue.toFixed(2)}</TableCell>
-                              <TableCell>
+                              <TableCell className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleEditQuoteItem(index)}
+                                  data-testid={`button-edit-item-${index}`}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -2836,6 +2937,114 @@ export default function Calculator() {
           </div>
         </div>
       </main>
+      
+      {/* Edit Quote Item Dialog */}
+      <Dialog open={editingQuoteItemIdx !== null} onOpenChange={(open) => {
+        if (!open) {
+          setEditingQuoteItemIdx(null);
+          setEditingQuoteItemData(null);
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Quote Item</DialogTitle>
+            <DialogDescription>Modify item details and per-box costs</DialogDescription>
+          </DialogHeader>
+          {editingQuoteItemData && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-box-name">Box Name</Label>
+                <Input
+                  id="edit-box-name"
+                  value={editingQuoteItemData.boxName || ""}
+                  onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, boxName: e.target.value })}
+                  data-testid="input-edit-box-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-box-desc">Description</Label>
+                <Input
+                  id="edit-box-desc"
+                  value={editingQuoteItemData.boxDescription || ""}
+                  onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, boxDescription: e.target.value })}
+                  data-testid="input-edit-box-desc"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-qty">Quantity</Label>
+                <Input
+                  id="edit-qty"
+                  type="number"
+                  value={editingQuoteItemData.quantity || 0}
+                  onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, quantity: parseInt(e.target.value) || 0 })}
+                  data-testid="input-edit-qty"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-printing">Printing (₹/pc)</Label>
+                  <Input
+                    id="edit-printing"
+                    type="number"
+                    step="0.01"
+                    value={editingQuoteItemData.printingCost || 0}
+                    onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, printingCost: parseFloat(e.target.value) || 0 })}
+                    data-testid="input-edit-printing"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-lamination">Lamination (₹/pc)</Label>
+                  <Input
+                    id="edit-lamination"
+                    type="number"
+                    step="0.01"
+                    value={editingQuoteItemData.laminationCost || 0}
+                    onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, laminationCost: parseFloat(e.target.value) || 0 })}
+                    data-testid="input-edit-lamination"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-varnish">Varnish (₹/pc)</Label>
+                  <Input
+                    id="edit-varnish"
+                    type="number"
+                    step="0.01"
+                    value={editingQuoteItemData.varnishCost || 0}
+                    onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, varnishCost: parseFloat(e.target.value) || 0 })}
+                    data-testid="input-edit-varnish"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-die">Die (₹/pc)</Label>
+                  <Input
+                    id="edit-die"
+                    type="number"
+                    step="0.01"
+                    value={editingQuoteItemData.dieCost || 0}
+                    onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, dieCost: parseFloat(e.target.value) || 0 })}
+                    data-testid="input-edit-die"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-punching">Punching (₹/pc)</Label>
+                  <Input
+                    id="edit-punching"
+                    type="number"
+                    step="0.01"
+                    value={editingQuoteItemData.punchingCost || 0}
+                    onChange={(e) => setEditingQuoteItemData({ ...editingQuoteItemData, punchingCost: parseFloat(e.target.value) || 0 })}
+                    data-testid="input-edit-punching"
+                  />
+                </div>
+              </div>
+              <Button onClick={handleSaveEditedQuoteItem} className="w-full" data-testid="button-save-edit-item">
+                Save Changes
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
+    </TooltipProvider>
   );
 }
