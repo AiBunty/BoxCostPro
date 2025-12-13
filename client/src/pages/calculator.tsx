@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet } from "lucide-react";
+import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil } from "lucide-react";
 import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } from "@/components/FlutingSettings";
 import { FlutingOnboarding } from "@/components/FlutingOnboarding";
 import { Link } from "wouter";
@@ -215,7 +215,7 @@ export default function Calculator() {
   const [punchingCost, setPunchingCost] = useState<string>("0");
   
   // Conversion Cost
-  const [conversionCost, setConversionCost] = useState<string>("0"); // INR/Kg
+  const [conversionCost, setConversionCost] = useState<string>("15"); // INR/Kg - Default Rs.15
   
   const [quantity, setQuantity] = useState<string>("1000");
   
@@ -1909,20 +1909,6 @@ export default function Calculator() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="edit-fluting" className="text-sm">Fluting Factor</Label>
-                        <Input
-                          id="edit-fluting"
-                          type="number"
-                          step="0.1"
-                          value={editingLayerData.flutingFactor}
-                          onChange={(e) =>
-                            setEditingLayerData({ ...editingLayerData, flutingFactor: e.target.value })
-                          }
-                          disabled={editingLayerData.layerType === "liner"}
-                          data-testid="input-edit-fluting"
-                        />
-                      </div>
-                      <div className="space-y-2">
                         <Label htmlFor="edit-rct" className="text-sm">RCT Value</Label>
                         <Input
                           id="edit-rct"
@@ -1934,33 +1920,32 @@ export default function Calculator() {
                           data-testid="input-edit-rct"
                         />
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-shade" className="text-sm">Paper Shade</Label>
-                      <Select
-                        value={editingLayerData.shade}
-                        onValueChange={(value) =>
-                          setEditingLayerData({ ...editingLayerData, shade: value })
-                        }
-                      >
-                        <SelectTrigger id="edit-shade" data-testid="select-edit-shade">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
-                          <SelectItem value="Golden (Red)">Golden (Red)</SelectItem>
-                          <SelectItem value="Golden (Brown)">Golden (Brown)</SelectItem>
-                          <SelectItem value="Duplex LWC">Duplex LWC</SelectItem>
-                          <SelectItem value="Duplex HWC">Duplex HWC</SelectItem>
-                          <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
-                          <SelectItem value="Virgin Kraft">Virgin Kraft</SelectItem>
-                          <SelectItem value="Bagass">Bagass</SelectItem>
-                          <SelectItem value="Semi Chemical">Semi Chemical</SelectItem>
-                          <SelectItem value="SBS">SBS</SelectItem>
-                          <SelectItem value="FBB">FBB</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-shade" className="text-sm">Paper Shade</Label>
+                        <Select
+                          value={editingLayerData.shade}
+                          onValueChange={(value) =>
+                            setEditingLayerData({ ...editingLayerData, shade: value })
+                          }
+                        >
+                          <SelectTrigger id="edit-shade" data-testid="select-edit-shade">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
+                            <SelectItem value="Golden (Red)">Golden (Red)</SelectItem>
+                            <SelectItem value="Golden (Brown)">Golden (Brown)</SelectItem>
+                            <SelectItem value="Duplex LWC">Duplex LWC</SelectItem>
+                            <SelectItem value="Duplex HWC">Duplex HWC</SelectItem>
+                            <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
+                            <SelectItem value="Virgin Kraft">Virgin Kraft</SelectItem>
+                            <SelectItem value="Bagass">Bagass</SelectItem>
+                            <SelectItem value="Semi Chemical">Semi Chemical</SelectItem>
+                            <SelectItem value="SBS">SBS</SelectItem>
+                            <SelectItem value="FBB">FBB</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
