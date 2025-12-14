@@ -112,6 +112,11 @@ export function downloadExcel(
 export function generateSampleUploadTemplate(): XLSX.WorkBook {
   const workbook = XLSX.utils.book_new();
   
+  // Valid dropdown options
+  const PAPER_SHADES = ["Kraft/Natural", "Semi Kraft", "Golden (Red)", "Golden (Brown)", "Duplex LWC"];
+  const TYPES = ["rsc", "sheet"];
+  const PLY_OPTIONS = ["1", "3", "5", "7", "9"];
+  
   const sampleData: any[][] = [
     ["Box Name", "Type", "Ply", "Length(mm)", "Width(mm)", "Height(mm)", "Quantity",
      "L1 GSM", "L1 BF", "L1 RCT", "L1 Shade", "L1 Rate",
@@ -120,21 +125,21 @@ export function generateSampleUploadTemplate(): XLSX.WorkBook {
      "F2 GSM", "F2 BF", "F2 RCT", "F2 Shade", "F2 Rate",
      "L3 GSM", "L3 BF", "L3 RCT", "L3 Shade", "L3 Rate"],
     ["Sample Box 1", "rsc", "3", "300", "200", "150", "1000",
-     "180", "20", "5", "Kraft", "45",
-     "120", "16", "4", "SemiKraft", "38",
-     "180", "20", "5", "Kraft", "45",
+     "180", "20", "5", "Kraft/Natural", "45",
+     "120", "16", "4", "Semi Kraft", "38",
+     "180", "20", "5", "Kraft/Natural", "45",
      "", "", "", "", "",
      "", "", "", "", ""],
     ["Sample Box 2", "rsc", "5", "400", "300", "200", "500",
-     "200", "22", "6", "Kraft", "48",
-     "140", "18", "5", "SemiKraft", "40",
-     "180", "20", "5", "Kraft", "45",
-     "140", "18", "5", "SemiKraft", "40",
-     "200", "22", "6", "Kraft", "48"],
+     "200", "22", "6", "Kraft/Natural", "48",
+     "140", "18", "5", "Semi Kraft", "40",
+     "180", "20", "5", "Kraft/Natural", "45",
+     "140", "18", "5", "Semi Kraft", "40",
+     "200", "22", "6", "Kraft/Natural", "48"],
     ["Sample Sheet", "sheet", "3", "600", "400", "", "2000",
-     "180", "20", "5", "Kraft", "45",
-     "120", "16", "4", "SemiKraft", "38",
-     "180", "20", "5", "Kraft", "45",
+     "180", "20", "5", "Golden (Brown)", "45",
+     "120", "16", "4", "Semi Kraft", "38",
+     "180", "20", "5", "Kraft/Natural", "45",
      "", "", "", "", "",
      "", "", "", "", ""],
   ];
@@ -152,31 +157,64 @@ export function generateSampleUploadTemplate(): XLSX.WorkBook {
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
-    { wch: 12 },  
+    { wch: 18 },  
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
-    { wch: 12 },  
+    { wch: 18 },  
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
-    { wch: 12 },  
+    { wch: 18 },  
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
-    { wch: 12 },  
+    { wch: 18 },  
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
     { wch: 8 },   
-    { wch: 12 },  
+    { wch: 18 },  
     { wch: 8 },   
   ];
   
+  // Add data validation for dropdowns (rows 2-100 to allow for many entries)
+  // Note: xlsx library uses 0-indexed columns
+  // Column B (1) = Type, Column C (2) = Ply
+  // Shade columns: K (10), P (15), U (20), Z (25), AE (30)
+  
+  // Add a helper sheet with valid options for reference
+  const validationData: any[][] = [
+    ["Valid Paper Shades:", ...PAPER_SHADES],
+    ["Valid Types:", ...TYPES],
+    ["Valid Ply:", ...PLY_OPTIONS],
+    [],
+    ["Instructions:"],
+    ["1. Type must be: rsc (for box) or sheet (for flat sheet)"],
+    ["2. Ply must be: 1, 3, 5, 7, or 9"],
+    ["3. Paper Shade options: Kraft/Natural, Semi Kraft, Golden (Red), Golden (Brown), Duplex LWC"],
+    ["4. For sheets, leave Height column empty"],
+    ["5. Fill layer columns based on ply count:"],
+    ["   - 3-Ply: L1, F1, L2 (3 layers)"],
+    ["   - 5-Ply: L1, F1, L2, F2, L3 (5 layers)"],
+    ["   - etc."],
+  ];
+  
+  const validationSheet = XLSX.utils.aoa_to_sheet(validationData);
+  validationSheet['!cols'] = [
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+  ];
+  
   XLSX.utils.book_append_sheet(workbook, worksheet, "Sample Template");
+  XLSX.utils.book_append_sheet(workbook, validationSheet, "Valid Options");
   
   return workbook;
 }

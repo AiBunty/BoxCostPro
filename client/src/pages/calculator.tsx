@@ -8,8 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calculator as CalculatorIcon, Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil } from "lucide-react";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil } from "lucide-react";
 import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } from "@/components/FlutingSettings";
+import brandLogo from "@assets/Untitled_(Invitation_(Square))_(2)_1765696414282.png";
 import { FlutingOnboarding } from "@/components/FlutingOnboarding";
 import { Link } from "wouter";
 import { Separator } from "@/components/ui/separator";
@@ -582,39 +583,108 @@ export default function Calculator() {
           layerType: layer.layerType as "liner" | "flute",
           gsm: parseFloat(layer.gsm) || 180,
           bf: parseFloat(layer.bf) || 16,
-          flutingFactor: 1.35,
+          flutingFactor: layer.layerType === 'flute' ? (fluteSettings['B'] || 1.35) : 1.0,
           rctValue: parseFloat(layer.rctValue) || 5,
           shade: layer.shade || "Kraft",
           rate: parseFloat(layer.rate) || 45,
         }));
         
-        return {
-          id: Math.random().toString(36),
-          boxName: row.boxName || `Box ${idx + 1}`,
-          boxDescription: "",
-          type: row.type === 'sheet' ? 'sheet' : 'rsc',
-          ply: row.ply || itemLayers.length.toString(),
-          inputUnit: 'mm',
-          measuredOn: 'ID',
-          length: row.length || 0,
-          width: row.width || 0,
-          height: row.height || 0,
-          sheetLength: row.length || 0,
-          sheetWidth: row.width || 0,
+        const itemPly = row.ply || itemLayers.length.toString();
+        const itemType = row.type === 'sheet' ? 'sheet' : 'rsc';
+        const itemLength = parseFloat(row.length) || 0;
+        const itemWidth = parseFloat(row.width) || 0;
+        const itemHeight = parseFloat(row.height) || 0;
+        const itemQuantity = parseInt(row.quantity) || 1000;
+        
+        // Calculate sheet dimensions based on type
+        let sheetLen = 0;
+        let sheetWid = 0;
+        
+        if (itemType === 'rsc' && itemLength && itemWidth && itemHeight) {
+          const gf = GLUE_FLAP_DEFAULTS[itemPly] || 50;
+          const da = DECKLE_ALLOWANCE_DEFAULTS[itemPly] || 30;
+          const rscResult = calculateRSCSheet({
+            length: itemLength,
+            width: itemWidth,
+            height: itemHeight,
+            glueFlap: gf,
+            deckleAllowance: da,
+            ply: itemPly,
+          });
+          sheetLen = rscResult.sheetLength;
+          sheetWid = rscResult.sheetWidth;
+        } else if (itemType === 'sheet' && itemLength && itemWidth) {
+          const flatResult = calculateFlatSheet({
+            length: itemLength,
+            width: itemWidth,
+            allowance: 10,
+          });
+          sheetLen = flatResult.sheetLength;
+          sheetWid = flatResult.sheetWidth;
+        }
+        
+        // Calculate weight
+        const weightResult = calculateSheetWeight({
+          sheetLength: sheetLen,
+          sheetWidth: sheetWid,
           layerSpecs: itemLayers,
-          quantity: row.quantity || 1000,
-          totalValue: 0,
-          paperCost: 0,
+          ply: itemPly,
+        });
+        
+        // Calculate strength metrics
+        const bs = calculateBurstStrength(itemLayers);
+        const ect = calculateECT(itemLayers);
+        const boardThickness = calculateBoardThickness(itemPly, itemLayers, PLY_THICKNESS);
+        const boxPerimeter = 2 * (itemLength + itemWidth);
+        const bct = calculateMcKeeFormula({ ect, boardThickness, boxPerimeter });
+        
+        // Calculate paper cost
+        const paperCost = calculatePaperCost(weightResult.totalWeight, itemLayers);
+        
+        // Calculate conversion cost (default Rs.15/Kg)
+        const conversionCostValue = parseFloat(conversionCost) || 15;
+        const conversionCostPerItem = weightResult.totalWeight * conversionCostValue;
+        
+        // Calculate total cost per box (with 15% markup)
+        const totalCostPerBox = calculateTotalCost({
+          paperCost,
           printingCost: 0,
           laminationCost: 0,
           varnishCost: 0,
           dieCost: 0,
           punchingCost: 0,
-          totalCostPerBox: 0,
-          sheetWeight: 0,
-          ect: 0,
-          bct: 0,
-          bs: 0,
+          markup: 15,
+        }) + conversionCostPerItem;
+        
+        const totalValue = totalCostPerBox * itemQuantity;
+        
+        return {
+          id: Math.random().toString(36),
+          boxName: row.boxName || `Box ${idx + 1}`,
+          boxDescription: "",
+          type: itemType,
+          ply: itemPly,
+          inputUnit: 'mm',
+          measuredOn: 'ID',
+          length: itemLength,
+          width: itemWidth,
+          height: itemHeight,
+          sheetLength: sheetLen,
+          sheetWidth: sheetWid,
+          layerSpecs: itemLayers,
+          quantity: itemQuantity,
+          totalValue,
+          paperCost,
+          printingCost: 0,
+          laminationCost: 0,
+          varnishCost: 0,
+          dieCost: 0,
+          punchingCost: 0,
+          totalCostPerBox,
+          sheetWeight: weightResult.totalWeight,
+          ect,
+          bct,
+          bs,
           selected: true,
         } as unknown as QuoteItem;
       });
@@ -1086,7 +1156,7 @@ export default function Calculator() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <CalculatorIcon className="w-8 h-8 text-primary" />
+              <img src={brandLogo} alt="Logo" className="w-10 h-10 rounded-md" />
               <div>
                 <h1 className="text-2xl font-bold" data-testid="text-app-title">
                   {appSettings?.appTitle || "Box Costing Calculator"}
@@ -1258,7 +1328,7 @@ export default function Calculator() {
                   </SelectTrigger>
                   <SelectContent>
                     {allPartyProfiles.map((p: any) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name} ({p.companyName})</SelectItem>
+                      <SelectItem key={p.id} value={p.id}>{p.personName} ({p.companyName})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1317,9 +1387,9 @@ export default function Calculator() {
                             return;
                           }
                           savePartyProfileMutation.mutate({
-                            name: partyPersonName || "N/A",
+                            personName: partyPersonName || "N/A",
                             companyName: partyCompanyName || "N/A",
-                            mobile: partyMobile || "",
+                            mobileNo: partyMobile || "",
                             email: partyEmail || "",
                             gstNo: partyGst || "",
                             address: partyAddress || "",
@@ -1360,18 +1430,18 @@ export default function Calculator() {
                           className="mb-2"
                         />
                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {allPartyProfiles.filter((p: any) => (p.name + p.companyName).toLowerCase().includes(partySearchTerm.toLowerCase())).map((profile: any) => (
+                          {allPartyProfiles.filter((p: any) => ((p.personName || "") + (p.companyName || "")).toLowerCase().includes(partySearchTerm.toLowerCase())).map((profile: any) => (
                             <Card key={profile.id} className="p-2 cursor-pointer hover-elevate" onClick={() => {
                               setEditingPartyId(profile.id);
-                              setPartyPersonName(profile.name);
-                              setPartyCompanyName(profile.companyName);
-                              setPartyMobile(profile.mobile || "");
+                              setPartyPersonName(profile.personName || "");
+                              setPartyCompanyName(profile.companyName || "");
+                              setPartyMobile(profile.mobileNo || "");
                               setPartyEmail(profile.email || "");
                               setPartyGst(profile.gstNo || "");
                               setPartyAddress(profile.address || "");
                             }}>
-                              <div className="text-sm font-medium">{profile.name} ({profile.companyName})</div>
-                              <div className="text-xs text-muted-foreground">{profile.mobile} • {profile.email}</div>
+                              <div className="text-sm font-medium">{profile.personName} ({profile.companyName})</div>
+                              <div className="text-xs text-muted-foreground">{profile.mobileNo} • {profile.email}</div>
                             </Card>
                           ))}
                         </div>
