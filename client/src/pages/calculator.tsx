@@ -8,7 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil } from "lucide-react";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } from "@/components/FlutingSettings";
 import brandLogo from "@assets/Untitled_(Invitation_(Square))_(2)_1765696414282.png";
 import { FlutingOnboarding } from "@/components/FlutingOnboarding";
@@ -1597,6 +1605,37 @@ export default function Calculator() {
                   </div>
                 </DialogContent>
               </Dialog>
+              
+              {user && typeof user === 'object' ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" data-testid="button-user-menu">
+                      <User className="w-4 h-4 mr-2" />
+                      {('firstName' in user && user.firstName) || ('email' in user && user.email) || "Account"}
+                      <ChevronDown className="w-4 h-4 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="text-muted-foreground text-xs" disabled>
+                      {'email' in user && user.email ? String(user.email) : "No email"}
+                    </DropdownMenuItem>
+                    {'role' in user && user.role === 'owner' && (
+                      <DropdownMenuItem className="text-muted-foreground text-xs" disabled>
+                        <Badge variant="secondary" className="text-xs">Owner</Badge>
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <a href="/api/logout" className="cursor-pointer text-destructive" data-testid="button-logout">
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Sign Out
+                      </a>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </div>
           </div>
         </div>

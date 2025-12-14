@@ -41,7 +41,7 @@ import {
   ownerSettings
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, ilike } from "drizzle-orm";
+import { eq, and, or, ilike, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 export interface IStorage {
@@ -142,18 +142,75 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
+    if (!userData.id) {
+      throw new Error("User ID is required");
+    }
+    
+    // Check if user already exists
+    const existingUser = await this.getUser(userData.id);
+    if (existingUser) {
+      // User exists, just update non-role fields (preserve existing role)
+      const [user] = await db
+        .update(users)
+        .set({
+          email: userData.email,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImageUrl: userData.profileImageUrl,
           updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return user;
+        })
+        .where(eq(users.id, userData.id))
+        .returning();
+      return user;
+    }
+    
+    // New user - insert first with role='user', then atomically promote to owner if no owners exist
+    const now = new Date();
+    
+    try {
+      // Insert new user with default role='user'
+      const [insertedUser] = await db
+        .insert(users)
+        .values({
+          id: userData.id,
+          email: userData.email,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImageUrl: userData.profileImageUrl,
+          role: 'user',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      
+      // Atomically promote to owner if no owner exists yet
+      // A partial unique index (users_single_owner_idx) ensures only one user can have role='owner'
+      // This makes the promotion race-condition safe at the database level
+      try {
+        await db.execute(sql`
+          UPDATE users 
+          SET role = 'owner', updated_at = NOW()
+          WHERE id = ${userData.id}
+          AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner')
+        `);
+      } catch (promoteError: any) {
+        // Unique constraint violation means another user already became owner - that's fine
+        if (!promoteError.message?.includes('unique')) {
+          console.log('Owner promotion note:', promoteError.message);
+        }
+      }
+      
+      // Return the final user state (may have been promoted to owner)
+      const finalUser = await this.getUser(userData.id);
+      return finalUser || insertedUser;
+    } catch (error: any) {
+      // Handle potential race condition - if insert fails due to duplicate key
+      const existingAfterRace = await this.getUser(userData.id);
+      if (existingAfterRace) {
+        return existingAfterRace;
+      }
+      throw error;
+    }
   }
 
   // Company Profiles
