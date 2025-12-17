@@ -220,6 +220,8 @@ export default function Calculator() {
   const [laminationEnabled, setLaminationEnabled] = useState(false);
   const [dieEnabled, setDieEnabled] = useState(false);
   const [punchingEnabled, setPunchingEnabled] = useState(false);
+  const [varnishEnabled, setVarnishEnabled] = useState(false);
+  const [showMfgCosts, setShowMfgCosts] = useState(true);
   
   // Print Type and Colours
   const [printType, setPrintType] = useState<string>("Flexo");
@@ -999,7 +1001,11 @@ export default function Calculator() {
       punchingTotal = parseFloat(punchingCost) || 0;
     }
     
-    const varnishTotal = parseFloat(varnishCost) || 0;
+    // Varnish cost: only if enabled
+    let varnishTotal = 0;
+    if (varnishEnabled) {
+      varnishTotal = parseFloat(varnishCost) || 0;
+    }
     
     return { printing: printingTotal, lamination: laminationTotal, varnish: varnishTotal, die: dieTotal, punching: punchingTotal };
   };
@@ -1137,6 +1143,7 @@ export default function Calculator() {
     setCustomLaminationW("");
     setShowLaminationCustomize(false);
     setDieDevelopmentCharge("0");
+    setVarnishEnabled(false);
     setVarnishCost("0");
     setPunchingCost("0");
     
@@ -1341,6 +1348,13 @@ export default function Calculator() {
               </Link>
               
               <FlutingSettings onSettingsChange={setFluteSettings} />
+              
+              <Link href="/paper-setup">
+                <Button variant="outline" size="sm" data-testid="button-paper-settings">
+                  <FileText className="w-4 h-4 mr-2" />
+                  Paper Settings
+                </Button>
+              </Link>
               
               {allCompanyProfiles.length > 0 && (
                 <Select value={selectedCompanyProfileId} onValueChange={setSelectedCompanyProfileId}>
@@ -1815,29 +1829,6 @@ export default function Calculator() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="box-name-rsc">Box Name</Label>
-                        <Input
-                          id="box-name-rsc"
-                          placeholder="e.g., 10kg Apple Box"
-                          value={boxName}
-                          onChange={(e) => setBoxName(e.target.value)}
-                          data-testid="input-box-name"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="box-description-rsc">Box Description (Optional)</Label>
-                        <Input
-                          id="box-description-rsc"
-                          placeholder="e.g., Heavy duty corrugated"
-                          value={boxDescription}
-                          onChange={(e) => setBoxDescription(e.target.value)}
-                          data-testid="input-box-description"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
                         <Label htmlFor="input-unit">Input Unit</Label>
                         <Select value={inputUnit} onValueChange={(v: "mm" | "inches") => setInputUnit(v)}>
                           <SelectTrigger id="input-unit" data-testid="select-input-unit">
@@ -1932,8 +1923,8 @@ export default function Calculator() {
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                      <div className="space-y-2">
+                    <div className="mt-4">
+                      <div className="space-y-2 max-w-xs">
                         <Label htmlFor="conversion-cost">Conversion Cost (₹/Kg)</Label>
                         <Input
                           id="conversion-cost"
@@ -1948,16 +1939,6 @@ export default function Calculator() {
                           Cost/Box: ₹{conversionCostPerBox.toFixed(2)}
                         </p>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="quantity">Quantity (pcs)</Label>
-                        <Input
-                          id="quantity"
-                          type="number"
-                          value={quantity}
-                          onChange={(e) => setQuantity(e.target.value)}
-                          data-testid="input-quantity"
-                        />
-                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1970,17 +1951,6 @@ export default function Calculator() {
                     <CardDescription>Enter sheet size in millimeters</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="box-name-sheet">Sheet Name</Label>
-                      <Input
-                        id="box-name-sheet"
-                        placeholder="e.g., Custom Sheet"
-                        value={boxName}
-                        onChange={(e) => setBoxName(e.target.value)}
-                        data-testid="input-box-name"
-                      />
-                    </div>
-                    
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="sheet-length">Length (mm)</Label>
@@ -2481,9 +2451,23 @@ export default function Calculator() {
             
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle>Manufacturing Costs</CardTitle>
-                <CardDescription>Toggle options to enable cost sections</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Manufacturing Costs</CardTitle>
+                    <CardDescription>Toggle options to enable cost sections</CardDescription>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowMfgCosts(!showMfgCosts)}
+                    data-testid="button-toggle-mfg-costs"
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform ${showMfgCosts ? '' : '-rotate-90'}`} />
+                    {showMfgCosts ? 'Collapse' : 'Expand'}
+                  </Button>
+                </div>
               </CardHeader>
+              {showMfgCosts && (
               <CardContent className="space-y-4">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
@@ -2705,19 +2689,97 @@ export default function Calculator() {
                   )}
                 </div>
 
-                <Separator />
-                
-                <div className="space-y-1">
-                  <Label htmlFor="varnish-cost">Varnish Cost (₹/unit)</Label>
-                  <Input
-                    id="varnish-cost"
-                    type="number"
-                    step="0.01"
-                    value={varnishCost}
-                    onChange={(e) => setVarnishCost(e.target.value)}
-                    data-testid="input-varnish-cost"
-                  />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="varnish-toggle"
+                        checked={varnishEnabled}
+                        onCheckedChange={(checked) => setVarnishEnabled(checked === true)}
+                        data-testid="checkbox-varnish-enabled"
+                      />
+                      <Label htmlFor="varnish-toggle" className="font-medium cursor-pointer">
+                        Varnish {varnishEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.varnish.toFixed(2)}</Badge>}
+                      </Label>
+                    </div>
+                  </div>
+                  {varnishEnabled && (
+                    <div className="pl-6 space-y-3 border-l-2 border-primary/30 ml-2">
+                      <div className="space-y-1">
+                        <Label className="text-sm">Varnish Cost (₹/unit)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={varnishCost}
+                          onChange={(e) => setVarnishCost(e.target.value)}
+                          data-testid="input-varnish-cost"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
+              </CardContent>
+            )}
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle>Quote Item Details</CardTitle>
+                <CardDescription>Enter item information before adding to quote</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="quote-box-name">Box Name</Label>
+                    <Input
+                      id="quote-box-name"
+                      placeholder="e.g., 10kg Apple Box"
+                      value={boxName}
+                      onChange={(e) => setBoxName(e.target.value)}
+                      data-testid="input-quote-box-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="quote-box-desc">Description (Optional)</Label>
+                    <Input
+                      id="quote-box-desc"
+                      placeholder="e.g., Heavy duty"
+                      value={boxDescription}
+                      onChange={(e) => setBoxDescription(e.target.value)}
+                      data-testid="input-quote-box-desc"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="quote-quantity">Quantity (pcs)</Label>
+                    <Input
+                      id="quote-quantity"
+                      type="number"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      data-testid="input-quote-quantity"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Cost Summary</Label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">₹{totalCostPerBox.toFixed(2)}/pc</span>
+                      <span className="text-muted-foreground">×</span>
+                      <span className="text-sm font-bold text-primary">₹{totalValue.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+                <Button 
+                  className="w-full" 
+                  size="lg" 
+                  onClick={handleAddToQuote}
+                  disabled={!result}
+                  data-testid="button-add-to-quote"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add to Quote
+                </Button>
               </CardContent>
             </Card>
           </div>
@@ -2996,33 +3058,21 @@ export default function Calculator() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {result ? (
-                  <>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-muted-foreground">Cost/unit:</span>
-                        <span className="font-bold text-lg" data-testid="text-cost-per-unit">
-                          ₹{totalCostPerBox.toFixed(2)}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between pt-2 border-t">
-                        <span className="font-semibold">Total:</span>
-                        <span className="font-bold text-xl text-primary" data-testid="text-total-value">
-                          ₹{totalValue.toFixed(2)}
-                        </span>
-                      </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Cost/unit:</span>
+                      <span className="font-bold text-lg" data-testid="text-cost-per-unit">
+                        ₹{totalCostPerBox.toFixed(2)}
+                      </span>
                     </div>
                     
-                    <Button 
-                      className="w-full" 
-                      size="lg" 
-                      onClick={handleAddToQuote}
-                      data-testid="button-add-to-quote"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add to Quote
-                    </Button>
-                  </>
+                    <div className="flex justify-between pt-2 border-t">
+                      <span className="font-semibold">Total:</span>
+                      <span className="font-bold text-xl text-primary" data-testid="text-total-value">
+                        ₹{totalValue.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     Enter dimensions to calculate
