@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { calculatePaperRate } from "@/lib/paperPricing";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -204,24 +205,24 @@ export default function PaperSetup() {
   const previewCalculation = useMemo(() => {
     if (!previewBf) return null;
     
-    const bfPrice = bfPrices.find(p => p.bf === previewBf);
-    if (!bfPrice) return null;
-
-    const basePrice = bfPrice.basePrice;
+    const pricingData = {
+      bfPrices,
+      shadePremiums,
+      rules: {
+        id: '',
+        userId: '',
+        lowGsmLimit: rules.lowGsmLimit,
+        highGsmLimit: rules.highGsmLimit,
+        lowGsmAdjustment: rules.lowGsmAdjustment,
+        highGsmAdjustment: rules.highGsmAdjustment,
+        marketAdjustment: rules.marketAdjustment
+      } as PaperPricingRules
+    };
     
-    let gsmAdjustment = 0;
-    if (previewGsm <= rules.lowGsmLimit) {
-      gsmAdjustment = rules.lowGsmAdjustment;
-    } else if (previewGsm >= rules.highGsmLimit) {
-      gsmAdjustment = rules.highGsmAdjustment;
-    }
-    
-    const shadePremium = shadePremiums.find(s => s.shade === previewShade)?.premium || 0;
-    const marketAdjustment = rules.marketAdjustment;
-    
-    const finalRate = basePrice + gsmAdjustment + shadePremium + marketAdjustment;
-    
-    return { basePrice, gsmAdjustment, shadePremium, marketAdjustment, finalRate };
+    return calculatePaperRate(
+      { bf: previewBf, gsm: previewGsm, shade: previewShade || "Kraft" },
+      pricingData
+    );
   }, [previewBf, previewGsm, previewShade, bfPrices, shadePremiums, rules]);
 
   const handleAddBfPrice = () => {
@@ -569,7 +570,7 @@ export default function PaperSetup() {
                   <div className="bg-muted/50 p-3 rounded-lg space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span>BF Base Price:</span>
-                      <span>₹{previewCalculation.basePrice.toFixed(2)}</span>
+                      <span>₹{previewCalculation.bfBasePrice.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>+ GSM Adjustment:</span>
