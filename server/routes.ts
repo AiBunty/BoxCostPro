@@ -528,6 +528,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     { bf: 35, basePrice: 50.00 }
   ];
   
+  // Default paper shade types with ₹0 premium (user can edit premiums later)
+  const DEFAULT_SHADE_TYPES = [
+    { shade: "Kraft/Natural", premium: 0 },
+    { shade: "Golden Kraft", premium: 0 },
+    { shade: "Testliner", premium: 0 },
+    { shade: "Virgin Kraft Liner", premium: 0 },
+    { shade: "White Kraft Liner", premium: 0 },
+    { shade: "White Top Testliner", premium: 0 },
+    { shade: "Duplex Grey Back (LWC)", premium: 0 },
+    { shade: "Duplex Grey Back (HWC)", premium: 0 },
+    { shade: "Semi Chemical Fluting", premium: 0 },
+    { shade: "Recycled Fluting", premium: 0 },
+    { shade: "Bagass (Agro based)", premium: 0 }
+  ];
+  
   app.get("/api/paper-bf-prices", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -555,20 +570,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Check if user already has BF prices
+      // Check and create BF prices if needed
       const existingPrices = await storage.getPaperBfPrices(userId);
-      if (existingPrices.length > 0) {
-        return res.json({ message: "User already has BF prices configured", prices: existingPrices });
-      }
-      
-      // Create default prices
       const createdPrices = [];
-      for (const price of DEFAULT_BF_PRICES) {
-        const created = await storage.createPaperBfPrice({ userId, ...price });
-        createdPrices.push(created);
+      if (existingPrices.length === 0) {
+        for (const price of DEFAULT_BF_PRICES) {
+          const created = await storage.createPaperBfPrice({ userId, ...price });
+          createdPrices.push(created);
+        }
       }
       
-      res.status(201).json({ message: "Default prices initialized", prices: createdPrices });
+      // Check and create default shade types if needed
+      const existingShades = await storage.getShadePremiums(userId);
+      const createdShades = [];
+      if (existingShades.length === 0) {
+        for (const shadeType of DEFAULT_SHADE_TYPES) {
+          const created = await storage.createShadePremium({ userId, ...shadeType });
+          createdShades.push(created);
+        }
+      }
+      
+      const alreadyConfigured = existingPrices.length > 0 && existingShades.length > 0;
+      if (alreadyConfigured) {
+        return res.json({ message: "User already has defaults configured", prices: existingPrices, shades: existingShades });
+      }
+      
+      res.status(201).json({ 
+        message: "Default prices and shades initialized", 
+        prices: createdPrices.length > 0 ? createdPrices : existingPrices, 
+        shades: createdShades.length > 0 ? createdShades : existingShades 
+      });
     } catch (error: any) {
       console.error("Init defaults error:", error);
       res.status(400).json({ error: "Failed to initialize default prices", details: error?.message });

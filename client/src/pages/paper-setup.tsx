@@ -30,6 +30,8 @@ export default function PaperSetup() {
   const [isShadeDialogOpen, setIsShadeDialogOpen] = useState(false);
   const [editingShade, setEditingShade] = useState<ShadePremium | null>(null);
   const [newShade, setNewShade] = useState({ shade: "", premium: "0" });
+  const [isCustomShade, setIsCustomShade] = useState(false);
+  const [customShadeName, setCustomShadeName] = useState("");
 
   // Rules state
   const [rules, setRules] = useState({
@@ -58,23 +60,27 @@ export default function PaperSetup() {
     queryKey: ["/api/paper-pricing-rules"]
   });
 
-  // Mutation to initialize default BF prices
+  // Mutation to initialize default BF prices and shade types
   const initDefaultsMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("POST", "/api/paper-bf-prices/init-defaults", {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/paper-bf-prices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shade-premiums"] });
       setDefaultsInitialized(true);
     }
   });
 
-  // Initialize default BF prices if user has none
+  // Initialize defaults if user has no BF prices or no shades
   useEffect(() => {
-    if (bfFetched && bfPrices.length === 0 && !defaultsInitialized && !initDefaultsMutation.isPending) {
+    const needsBfPrices = bfFetched && bfPrices.length === 0;
+    const needsShades = !shadesLoading && shadePremiums.length === 0;
+    
+    if ((needsBfPrices || needsShades) && !defaultsInitialized && !initDefaultsMutation.isPending) {
       initDefaultsMutation.mutate();
     }
-  }, [bfFetched, bfPrices.length, defaultsInitialized, initDefaultsMutation.isPending]);
+  }, [bfFetched, bfPrices.length, shadesLoading, shadePremiums.length, defaultsInitialized, initDefaultsMutation.isPending]);
 
   useEffect(() => {
     if (pricingRules) {
@@ -239,13 +245,23 @@ export default function PaperSetup() {
 
   const handleAddShadePremium = () => {
     const premium = parseFloat(newShade.premium);
+    const shadeName = isCustomShade ? customShadeName.trim() : newShade.shade;
 
-    if (!newShade.shade || isNaN(premium)) {
+    if (!shadeName || isNaN(premium)) {
       toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
+    
+    // Check if shade already exists
+    const existingShade = shadePremiums.find(sp => sp.shade.toLowerCase() === shadeName.toLowerCase());
+    if (existingShade) {
+      toast({ title: "This shade already exists. Use edit to change its premium.", variant: "destructive" });
+      return;
+    }
 
-    createShadePremiumMutation.mutate({ shade: newShade.shade, premium });
+    createShadePremiumMutation.mutate({ shade: shadeName, premium });
+    setIsCustomShade(false);
+    setCustomShadeName("");
   };
 
   const handleSaveAndContinue = () => {
@@ -710,22 +726,74 @@ export default function PaperSetup() {
       </Dialog>
 
       {/* Add Shade Premium Dialog */}
-      <Dialog open={isShadeDialogOpen} onOpenChange={setIsShadeDialogOpen}>
+      <Dialog open={isShadeDialogOpen} onOpenChange={(open) => {
+        setIsShadeDialogOpen(open);
+        if (!open) {
+          setIsCustomShade(false);
+          setCustomShadeName("");
+          setNewShade({ shade: "", premium: "0" });
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Paper Shade</DialogTitle>
+            <DialogTitle>Add New Paper Shade</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Shade Name</Label>
-              <Input
-                value={newShade.shade}
-                onChange={(e) => setNewShade({ ...newShade, shade: e.target.value })}
-                placeholder="e.g., Golden, Kraft, White, Custom"
-                data-testid="input-new-shade-name"
-              />
+              {!isCustomShade ? (
+                <Select
+                  value={newShade.shade}
+                  onValueChange={(value) => {
+                    if (value === "__custom__") {
+                      setIsCustomShade(true);
+                      setNewShade({ ...newShade, shade: "" });
+                    } else {
+                      setNewShade({ ...newShade, shade: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="select-new-shade">
+                    <SelectValue placeholder="Select or add shade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
+                    <SelectItem value="Golden Kraft">Golden Kraft</SelectItem>
+                    <SelectItem value="Testliner">Testliner</SelectItem>
+                    <SelectItem value="Virgin Kraft Liner">Virgin Kraft Liner</SelectItem>
+                    <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
+                    <SelectItem value="White Top Testliner">White Top Testliner</SelectItem>
+                    <SelectItem value="Duplex Grey Back (LWC)">Duplex Grey Back (LWC)</SelectItem>
+                    <SelectItem value="Duplex Grey Back (HWC)">Duplex Grey Back (HWC)</SelectItem>
+                    <SelectItem value="Semi Chemical Fluting">Semi Chemical Fluting</SelectItem>
+                    <SelectItem value="Recycled Fluting">Recycled Fluting</SelectItem>
+                    <SelectItem value="Bagass (Agro based)">Bagass (Agro based)</SelectItem>
+                    <SelectItem value="__custom__" className="text-primary font-medium">+ Add Custom Shade...</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="space-y-2">
+                  <Input
+                    value={customShadeName}
+                    onChange={(e) => setCustomShadeName(e.target.value)}
+                    placeholder="Enter custom shade name"
+                    data-testid="input-custom-shade-name"
+                  />
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => {
+                      setIsCustomShade(false);
+                      setCustomShadeName("");
+                    }}
+                    className="text-xs"
+                  >
+                    ← Back to dropdown
+                  </Button>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
-                Enter any shade name (e.g., Golden, Kraft, White, Semi-Kraft, Duplex, or custom)
+                Select from common shades or add your own custom shade name
               </p>
             </div>
             <div className="space-y-2">
@@ -752,7 +820,7 @@ export default function PaperSetup() {
               disabled={createShadePremiumMutation.isPending}
               data-testid="button-confirm-add-shade"
             >
-              Add Premium
+              Add Shade
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -766,11 +834,19 @@ export default function PaperSetup() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label>Shade Name</Label>
+              <Input
+                value={editingShade?.shade || ""}
+                disabled
+                className="bg-muted"
+              />
+            </div>
+            <div className="space-y-2">
               <Label>Premium Amount (₹/Kg)</Label>
               <Input
                 type="number"
                 step="0.01"
-                defaultValue={editingShade?.premium}
+                value={editingShade?.premium ?? 0}
                 onChange={(e) => {
                   if (editingShade) {
                     setEditingShade({ ...editingShade, premium: parseFloat(e.target.value) || 0 });

@@ -121,35 +121,35 @@ const createLayersForPly = (plyNum: number) => {
       flutingFactorValue = isFlute ? "1.5" : "1.0";
       gsm = i === 0 ? "180" : "150";
       bf = i === 0 ? "24" : "18";
-      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
+      shade = i === 0 ? "Golden Kraft" : "Kraft/Natural";
     } else if (plyNum === 5) {
       // 5-ply: L1, L3, L5 Liner (indices 0, 2, 4), L2, L4 Flute (indices 1, 3)
       isFlute = i === 1 || i === 3;
       flutingFactorValue = isFlute ? "1.5" : "1.0";
       gsm = i === 0 ? "180" : "120";
       bf = i === 0 ? "24" : "18";
-      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
+      shade = i === 0 ? "Golden Kraft" : "Kraft/Natural";
     } else if (plyNum === 7) {
       // 7-ply: L1, L3, L5, L7 Liner (indices 0, 2, 4, 6), L2, L4, L6 Flute (indices 1, 3, 5)
       isFlute = i === 1 || i === 3 || i === 5;
       flutingFactorValue = isFlute ? "1.5" : "1.0";
       gsm = i === 0 ? "180" : "120";
       bf = i === 0 ? "24" : "18";
-      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
+      shade = i === 0 ? "Golden Kraft" : "Kraft/Natural";
     } else if (plyNum === 9) {
       // 9-ply: L1, L3, L5, L7, L9 Liner (indices 0, 2, 4, 6, 8), L2, L4, L6, L8 Flute (indices 1, 3, 5, 7)
       isFlute = i === 1 || i === 3 || i === 5 || i === 7;
       flutingFactorValue = isFlute ? "1.5" : "1.0";
       gsm = i === 0 ? "180" : "120";
       bf = i === 0 ? "24" : "18";
-      shade = i === 0 ? "Golden (Brown)" : "Kraft/Natural";
+      shade = i === 0 ? "Golden Kraft" : "Kraft/Natural";
     } else {
       // 1-ply: just liner
       isFlute = false;
       flutingFactorValue = "1.0";
       gsm = "180";
       bf = "24";
-      shade = "Golden (Brown)";
+      shade = "Golden Kraft";
     }
     
     defaultLayers.push({
@@ -2261,17 +2261,19 @@ export default function Calculator() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
-                            <SelectItem value="Golden (Red)">Golden (Red)</SelectItem>
-                            <SelectItem value="Golden (Brown)">Golden (Brown)</SelectItem>
-                            <SelectItem value="Duplex LWC">Duplex LWC</SelectItem>
-                            <SelectItem value="Duplex HWC">Duplex HWC</SelectItem>
-                            <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
-                            <SelectItem value="Virgin Kraft">Virgin Kraft</SelectItem>
-                            <SelectItem value="Bagass">Bagass</SelectItem>
-                            <SelectItem value="Semi Chemical">Semi Chemical</SelectItem>
-                            <SelectItem value="SBS">SBS</SelectItem>
-                            <SelectItem value="FBB">FBB</SelectItem>
+                            {shadePremiumsData.length > 0 ? (
+                              shadePremiumsData.map((shade: any) => (
+                                <SelectItem key={shade.id} value={shade.shade}>
+                                  {shade.shade}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <>
+                                <SelectItem value="Kraft/Natural">Kraft/Natural</SelectItem>
+                                <SelectItem value="Golden Kraft">Golden Kraft</SelectItem>
+                                <SelectItem value="White Kraft Liner">White Kraft Liner</SelectItem>
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
