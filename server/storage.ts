@@ -27,6 +27,10 @@ import {
   type InsertChatbotWidget,
   type PaperPrice,
   type InsertPaperPrice,
+  type PaperBfPrice,
+  type InsertPaperBfPrice,
+  type ShadePremium,
+  type InsertShadePremium,
   type PaperPricingRules,
   type InsertPaperPricingRules,
   type UserQuoteTerms,
@@ -50,6 +54,8 @@ import {
   chatbotWidgets,
   ownerSettings,
   paperPrices,
+  paperBfPrices,
+  shadePremiums,
   paperPricingRules,
   userQuoteTerms,
   boxSpecifications,
@@ -148,13 +154,29 @@ export interface IStorage {
   getOwnerSettings(): Promise<any>;
   updateOwnerSettings(updates: any): Promise<any>;
   
-  // Paper Prices (per user)
+  // Paper Prices (legacy - per user)
   getPaperPrices(userId: string): Promise<PaperPrice[]>;
   getPaperPrice(id: string): Promise<PaperPrice | undefined>;
   getPaperPriceBySpec(userId: string, gsm: number, bf: number, shade: string): Promise<PaperPrice | undefined>;
   createPaperPrice(price: InsertPaperPrice): Promise<PaperPrice>;
   updatePaperPrice(id: string, updates: Partial<InsertPaperPrice>): Promise<PaperPrice | undefined>;
   deletePaperPrice(id: string): Promise<boolean>;
+  
+  // BF-Based Paper Prices (per user)
+  getPaperBfPrices(userId: string): Promise<PaperBfPrice[]>;
+  getPaperBfPrice(id: string): Promise<PaperBfPrice | undefined>;
+  getPaperBfPriceByBf(userId: string, bf: number): Promise<PaperBfPrice | undefined>;
+  createPaperBfPrice(price: InsertPaperBfPrice): Promise<PaperBfPrice>;
+  updatePaperBfPrice(id: string, updates: Partial<InsertPaperBfPrice>): Promise<PaperBfPrice | undefined>;
+  deletePaperBfPrice(id: string): Promise<boolean>;
+  
+  // Shade Premiums (per user)
+  getShadePremiums(userId: string): Promise<ShadePremium[]>;
+  getShadePremium(id: string): Promise<ShadePremium | undefined>;
+  getShadePremiumByShade(userId: string, shade: string): Promise<ShadePremium | undefined>;
+  createShadePremium(premium: InsertShadePremium): Promise<ShadePremium>;
+  updateShadePremium(id: string, updates: Partial<InsertShadePremium>): Promise<ShadePremium | undefined>;
+  deleteShadePremium(id: string): Promise<boolean>;
   
   // Paper Pricing Rules (per user)
   getPaperPricingRules(userId: string): Promise<PaperPricingRules | undefined>;
@@ -730,6 +752,76 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
   
+  // ========== BF-BASED PAPER PRICES ==========
+  async getPaperBfPrices(userId: string): Promise<PaperBfPrice[]> {
+    return await db.select().from(paperBfPrices).where(eq(paperBfPrices.userId, userId));
+  }
+  
+  async getPaperBfPrice(id: string): Promise<PaperBfPrice | undefined> {
+    const [price] = await db.select().from(paperBfPrices).where(eq(paperBfPrices.id, id));
+    return price;
+  }
+  
+  async getPaperBfPriceByBf(userId: string, bf: number): Promise<PaperBfPrice | undefined> {
+    const [price] = await db.select().from(paperBfPrices).where(
+      and(eq(paperBfPrices.userId, userId), eq(paperBfPrices.bf, bf))
+    );
+    return price;
+  }
+  
+  async createPaperBfPrice(price: InsertPaperBfPrice): Promise<PaperBfPrice> {
+    const [created] = await db.insert(paperBfPrices).values(price).returning();
+    return created;
+  }
+  
+  async updatePaperBfPrice(id: string, updates: Partial<InsertPaperBfPrice>): Promise<PaperBfPrice | undefined> {
+    const [updated] = await db.update(paperBfPrices)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(paperBfPrices.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deletePaperBfPrice(id: string): Promise<boolean> {
+    await db.delete(paperBfPrices).where(eq(paperBfPrices.id, id));
+    return true;
+  }
+  
+  // ========== SHADE PREMIUMS ==========
+  async getShadePremiums(userId: string): Promise<ShadePremium[]> {
+    return await db.select().from(shadePremiums).where(eq(shadePremiums.userId, userId));
+  }
+  
+  async getShadePremium(id: string): Promise<ShadePremium | undefined> {
+    const [premium] = await db.select().from(shadePremiums).where(eq(shadePremiums.id, id));
+    return premium;
+  }
+  
+  async getShadePremiumByShade(userId: string, shade: string): Promise<ShadePremium | undefined> {
+    const [premium] = await db.select().from(shadePremiums).where(
+      and(eq(shadePremiums.userId, userId), eq(shadePremiums.shade, shade))
+    );
+    return premium;
+  }
+  
+  async createShadePremium(premium: InsertShadePremium): Promise<ShadePremium> {
+    const [created] = await db.insert(shadePremiums).values(premium).returning();
+    return created;
+  }
+  
+  async updateShadePremium(id: string, updates: Partial<InsertShadePremium>): Promise<ShadePremium | undefined> {
+    const [updated] = await db.update(shadePremiums)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(shadePremiums.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteShadePremium(id: string): Promise<boolean> {
+    await db.delete(shadePremiums).where(eq(shadePremiums.id, id));
+    return true;
+  }
+  
   // ========== PAPER PRICING RULES ==========
   async getPaperPricingRules(userId: string): Promise<PaperPricingRules | undefined> {
     const [rules] = await db.select().from(paperPricingRules).where(eq(paperPricingRules.userId, userId));
@@ -751,14 +843,16 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
   
-  async getPaperSetupStatus(userId: string): Promise<{ completed: boolean; rules: PaperPricingRules | null; pricesCount: number }> {
+  async getPaperSetupStatus(userId: string): Promise<{ completed: boolean; rules: PaperPricingRules | null; pricesCount: number; bfPricesCount: number }> {
     const rules = await this.getPaperPricingRules(userId);
     const prices = await this.getPaperPrices(userId);
+    const bfPrices = await this.getPaperBfPrices(userId);
     
     return {
       completed: rules?.paperSetupCompleted || false,
       rules: rules || null,
-      pricesCount: prices.length
+      pricesCount: prices.length,
+      bfPricesCount: bfPrices.length
     };
   }
   

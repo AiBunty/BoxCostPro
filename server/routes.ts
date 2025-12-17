@@ -14,6 +14,8 @@ import {
   insertFlutingSettingSchema, 
   insertChatbotWidgetSchema,
   insertPaperPriceSchema,
+  insertPaperBfPriceSchema,
+  insertShadePremiumSchema,
   insertPaperPricingRulesSchema,
   insertUserQuoteTermsSchema,
   insertBoxSpecificationSchema,
@@ -509,6 +511,185 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(status);
     } catch (error) {
       res.status(500).json({ error: "Failed to check paper setup status" });
+    }
+  });
+
+  // ========== BF-BASED PAPER PRICES (per user) ==========
+  app.get("/api/paper-bf-prices", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const prices = await storage.getPaperBfPrices(userId);
+      res.json(prices);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch BF paper prices" });
+    }
+  });
+
+  app.post("/api/paper-bf-prices", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Ensure user exists
+      const existingUser = await storage.getUser(userId);
+      if (!existingUser) {
+        await storage.upsertUser({
+          id: userId,
+          email: req.user.claims.email,
+          firstName: req.user.claims.first_name,
+          lastName: req.user.claims.last_name,
+          profileImageUrl: req.user.claims.profile_image_url,
+        });
+      }
+      
+      const data = insertPaperBfPriceSchema.parse({ ...req.body, userId });
+      
+      // Check if BF already exists for this user
+      const existing = await storage.getPaperBfPriceByBf(userId, data.bf);
+      if (existing) {
+        const updated = await storage.updatePaperBfPrice(existing.id, { basePrice: data.basePrice });
+        return res.json(updated);
+      }
+      
+      const price = await storage.createPaperBfPrice(data);
+      res.status(201).json(price);
+    } catch (error: any) {
+      console.error("BF price creation error:", error);
+      res.status(400).json({ error: "Failed to create BF paper price", details: error?.message });
+    }
+  });
+
+  app.patch("/api/paper-bf-prices/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const data = insertPaperBfPriceSchema.partial().parse(req.body);
+      const price = await storage.updatePaperBfPrice(req.params.id, data);
+      if (!price) {
+        return res.status(404).json({ error: "BF price not found" });
+      }
+      res.json(price);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update BF price" });
+    }
+  });
+
+  app.delete("/api/paper-bf-prices/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deletePaperBfPrice(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: "Failed to delete BF price" });
+    }
+  });
+
+  // ========== SHADE PREMIUMS (per user) ==========
+  app.get("/api/shade-premiums", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const premiums = await storage.getShadePremiums(userId);
+      res.json(premiums);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shade premiums" });
+    }
+  });
+
+  app.post("/api/shade-premiums", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Ensure user exists
+      const existingUser = await storage.getUser(userId);
+      if (!existingUser) {
+        await storage.upsertUser({
+          id: userId,
+          email: req.user.claims.email,
+          firstName: req.user.claims.first_name,
+          lastName: req.user.claims.last_name,
+          profileImageUrl: req.user.claims.profile_image_url,
+        });
+      }
+      
+      const data = insertShadePremiumSchema.parse({ ...req.body, userId });
+      
+      // Check if shade already exists for this user
+      const existing = await storage.getShadePremiumByShade(userId, data.shade);
+      if (existing) {
+        const updated = await storage.updateShadePremium(existing.id, { premium: data.premium });
+        return res.json(updated);
+      }
+      
+      const premium = await storage.createShadePremium(data);
+      res.status(201).json(premium);
+    } catch (error: any) {
+      console.error("Shade premium creation error:", error);
+      res.status(400).json({ error: "Failed to create shade premium", details: error?.message });
+    }
+  });
+
+  app.patch("/api/shade-premiums/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const data = insertShadePremiumSchema.partial().parse(req.body);
+      const premium = await storage.updateShadePremium(req.params.id, data);
+      if (!premium) {
+        return res.status(404).json({ error: "Shade premium not found" });
+      }
+      res.json(premium);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update shade premium" });
+    }
+  });
+
+  app.delete("/api/shade-premiums/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteShadePremium(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: "Failed to delete shade premium" });
+    }
+  });
+
+  // Calculate paper rate with new BF-based pricing
+  app.get("/api/calculate-paper-rate/:bf/:gsm/:shade", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const bf = parseInt(req.params.bf);
+      const gsm = parseInt(req.params.gsm);
+      const shade = req.params.shade;
+      
+      // Get BF base price
+      const bfPrice = await storage.getPaperBfPriceByBf(userId, bf);
+      if (!bfPrice) {
+        return res.status(404).json({ error: "No base price found for this BF" });
+      }
+      
+      // Get pricing rules
+      const rules = await storage.getPaperPricingRules(userId);
+      let gsmAdjustment = 0;
+      let marketAdjustment = 0;
+      
+      if (rules) {
+        if (gsm <= (rules.lowGsmLimit || 100)) {
+          gsmAdjustment = rules.lowGsmAdjustment || 0;
+        } else if (gsm >= (rules.highGsmLimit || 201)) {
+          gsmAdjustment = rules.highGsmAdjustment || 0;
+        }
+        marketAdjustment = rules.marketAdjustment || 0;
+      }
+      
+      // Get shade premium
+      const shadePremiumEntry = await storage.getShadePremiumByShade(userId, shade);
+      const shadePremium = shadePremiumEntry?.premium || 0;
+      
+      // Calculate final rate
+      const finalRate = bfPrice.basePrice + gsmAdjustment + shadePremium + marketAdjustment;
+      
+      res.json({
+        bfBasePrice: bfPrice.basePrice,
+        gsmAdjustment,
+        shadePremium,
+        marketAdjustment,
+        finalRate
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to calculate paper rate" });
     }
   });
 

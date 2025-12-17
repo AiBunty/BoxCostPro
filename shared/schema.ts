@@ -344,14 +344,14 @@ export type LayerSpec = z.infer<typeof layerSpecSchema>;
 
 // ========== PAPER PRICE SETUP (per user) ==========
 
-// Paper Prices table - stores user's paper inventory with base prices
+// Legacy Paper Prices table (deprecated - use paper_bf_prices instead)
 export const paperPrices = pgTable("paper_prices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(),
   gsm: integer("gsm").notNull(),
   bf: integer("bf").notNull(),
-  shade: varchar("shade").notNull(), // 'Kraft', 'White', 'Semi-Kraft', 'Golden', etc.
-  basePrice: real("base_price").notNull(), // Base price per Kg
+  shade: varchar("shade").notNull(),
+  basePrice: real("base_price").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -359,6 +359,34 @@ export const paperPrices = pgTable("paper_prices", {
 export const insertPaperPriceSchema = createInsertSchema(paperPrices).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertPaperPrice = z.infer<typeof insertPaperPriceSchema>;
 export type PaperPrice = typeof paperPrices.$inferSelect;
+
+// BF-Based Paper Prices - Base price defined ONLY by BF (Bursting Factor)
+export const paperBfPrices = pgTable("paper_bf_prices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  bf: integer("bf").notNull(), // Bursting Factor (e.g., 18, 20, 22, 25)
+  basePrice: real("base_price").notNull(), // Base price per Kg for this BF
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPaperBfPriceSchema = createInsertSchema(paperBfPrices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPaperBfPrice = z.infer<typeof insertPaperBfPriceSchema>;
+export type PaperBfPrice = typeof paperBfPrices.$inferSelect;
+
+// Shade Premiums - User-defined premium for paper shades (e.g., Golden)
+export const shadePremiums = pgTable("shade_premiums", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  shade: varchar("shade").notNull(), // 'Golden', 'White', 'Kraft', etc.
+  premium: real("premium").notNull().default(0), // Premium amount to add per Kg
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertShadePremiumSchema = createInsertSchema(shadePremiums).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertShadePremium = z.infer<typeof insertShadePremiumSchema>;
+export type ShadePremium = typeof shadePremiums.$inferSelect;
 
 // Paper Pricing Rules table - stores user's GSM adjustment rules and market adjustment
 export const paperPricingRules = pgTable("paper_pricing_rules", {
