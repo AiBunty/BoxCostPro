@@ -2754,321 +2754,11 @@ export default function Calculator() {
               </CardContent>
             )}
             </Card>
-          </div>
-
-          <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Calculated Sheet Blank Size</CardTitle>
-                <CardDescription>Dimensions and specifications</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {result ? (
-                  <>
-                    <div className="space-y-2">
-                      <div className="text-sm font-semibold text-foreground mb-2">Sheet Cut Length (L-blank):</div>
-                      <div className="flex justify-between text-sm pl-2">
-                        <span className="text-muted-foreground">Length (mm):</span>
-                        <span className="font-medium" data-testid="text-sheet-length-mm">
-                          {result.sheetLength.toFixed(2)} mm
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm pl-2">
-                        <span className="text-muted-foreground">Length (inches):</span>
-                        <span className="font-medium" data-testid="text-sheet-length-in">
-                          {mmToInches(result.sheetLength).toFixed(2)} in
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="text-sm font-semibold text-foreground mb-2">Reel Size / Deckle (W-blank):</div>
-                      <div className="flex justify-between text-sm pl-2">
-                        <span className="text-muted-foreground">Width (mm):</span>
-                        <span className="font-medium" data-testid="text-sheet-width-mm">
-                          {result.sheetWidth.toFixed(2)} mm
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm pl-2">
-                        <span className="text-muted-foreground">Width (inches):</span>
-                        <span className="font-medium" data-testid="text-sheet-width-in">
-                          {mmToInches(result.sheetWidth).toFixed(2)} in
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <div className="text-sm font-semibold text-foreground mb-2">Total GSM:</div>
-                      <div className="flex justify-between text-sm pl-2">
-                        <span className="text-muted-foreground">Ply:</span>
-                        <span className="font-medium">{ply}-Ply</span>
-                      </div>
-                      <div className="flex justify-between text-sm pl-2">
-                        <span className="text-muted-foreground">Layer Specifications:</span>
-                        <span className="font-medium">{(() => {
-                          if (!result || !result.layerSpecs || result.layerSpecs.length === 0) return "No layers";
-                          return result.layerSpecs.map((spec: any, idx: number) => 
-                            `L${idx + 1}: ${spec.gsm}`
-                          ).join(" + ");
-                        })()}</span>
-                      </div>
-                      <div className="flex justify-between text-sm pl-2 bg-accent/20 p-2 rounded">
-                        <span className="text-muted-foreground font-semibold">Total GSM (Σ):</span>
-                        <span className="font-bold" data-testid="text-total-gsm">
-                          {(() => {
-                            if (!result || !result.layerSpecs) return "0";
-                            const total = result.layerSpecs.reduce((sum: number, spec: any) => {
-                              if (spec.layerType === 'liner') {
-                                return sum + spec.gsm;
-                              } else {
-                                const ff = spec.flutingFactor || 1.5;
-                                return sum + (spec.gsm * ff);
-                              }
-                            }, 0);
-                            return total.toFixed(2);
-                          })()}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          Calculated Sheet Weight:
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Info className="w-4 h-4 text-muted-foreground hover:text-primary cursor-help" data-testid="icon-weight-formula" />
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="max-w-sm p-3">
-                              <div className="text-xs space-y-1">
-                                <div className="font-semibold">Weight Formula:</div>
-                                <div>Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ...</div>
-                                <div>Where FF = Fluting Factor</div>
-                                <div className="mt-1">Weight = (L × W × Total GSM) / 1,000,000</div>
-                                <div className="text-xs italic mt-1">L = Sheet Length (mm), W = Sheet Width (mm)</div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </span>
-                        <span className="font-medium" data-testid="text-sheet-weight">
-                          {result.sheetWeight.toFixed(3)} Kg
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          Calculated Box BS:
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Info className="w-4 h-4 text-muted-foreground hover:text-primary cursor-help" data-testid="icon-bs-formula" />
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="max-w-sm p-3">
-                              <div className="text-xs space-y-1">
-                                <div className="font-semibold">Burst Strength (BS) Formula:</div>
-                                <div>BS = Σ (Liner GSM × BF / 1000 + Flute GSM × BF / 2000)</div>
-                                <div className="text-xs italic mt-1">Liner = GSM×BF/1000, Flute = GSM×BF/2000</div>
-                                <div className="text-xs italic">BF = Bursting Factor</div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </span>
-                        <span className="font-medium" data-testid="text-bs">
-                          {result.bs.toFixed(2)} kg/cm
-                        </span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Enter dimensions to see calculated values</p>
-                )}
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Strength Analysis (McKee Formula)</CardTitle>
-                <CardDescription>Box compression test predictions</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {result ? (
-                  <>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Board Thickness (mm):</span>
-                        <span className="font-medium" data-testid="text-board-thickness">
-                          {result.boardThickness.toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Box Perimeter (mm):</span>
-                        <span className="font-medium" data-testid="text-box-perimeter">
-                          {result.boxPerimeter.toFixed(0)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Calculated ECT:</span>
-                        <span className="font-medium" data-testid="text-ect">
-                          {result.ect.toFixed(2)} kN/m
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Predicted BCT:</span>
-                        <span className="font-medium" data-testid="text-bct">
-                          {result.bct.toFixed(1)} Kg
-                        </span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Enter dimensions to see strength analysis</p>
-                )}
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Paper Cost & Weight Analysis</CardTitle>
-                <CardDescription>Formula: Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {result && result.layerSpecs && result.layerSpecs.length > 0 && result.layerWeights && result.layerWeights.length > 0 ? (
-                  <>
-                    <div className="space-y-3">
-                      <div className="text-sm font-semibold">Per-Layer Breakdown:</div>
-                      <div className="space-y-2">
-                        {result.layerSpecs.map((spec: any, idx: number) => {
-                          const layerWeight = result.layerWeights[idx];
-                          const layerCost = layerWeight * spec.rate;
-                          return (
-                            <div key={idx} className="flex justify-between text-xs p-2 bg-muted rounded">
-                              <div>
-                                <span className="font-medium">L{idx + 1}: GSM {spec.gsm}, BF {spec.bf}, {spec.shade}</span>
-                              </div>
-                              <div className="text-right">
-                                <div>Weight: {layerWeight.toFixed(3)} Kg</div>
-                                <div>Cost: ₹{layerCost.toFixed(2)}</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-3">
-                      <div className="text-sm font-semibold">Total Paper Summary:</div>
-                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
-                        <span>Total Average Paper Cost (per unit):</span>
-                        <span className="font-bold">₹{result.paperCost.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
-                        <span>Total Sheet Weight (per unit):</span>
-                        <span className="font-bold">{result.sheetWeight.toFixed(3)} Kg</span>
-                      </div>
-                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
-                        <span>Total KGs for Order ({qty} units):</span>
-                        <span className="font-bold text-lg">{(result.sheetWeight * qty).toFixed(2)} Kg</span>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-3">
-                      <div className="text-sm font-semibold">Grouped Paper Combinations:</div>
-                      <div className="space-y-2">
-                        {(() => {
-                          // Group by GSM+BF+Shade combination
-                          const groupedPapers: Record<string, {gsm: number; bf: number; shade: string; weight: number; rate: number; quantity: number}> = {};
-                          
-                          result.layerSpecs.forEach((spec: any, idx: number) => {
-                            const key = `${spec.gsm}-${spec.bf}-${spec.shade}`;
-                            const layerWeight = result.layerWeights[idx];
-                            const weight = layerWeight * qty;
-                            
-                            if (groupedPapers[key]) {
-                              groupedPapers[key].weight += weight;
-                            } else {
-                              groupedPapers[key] = {
-                                gsm: spec.gsm,
-                                bf: spec.bf,
-                                shade: spec.shade,
-                                weight,
-                                rate: spec.rate,
-                                quantity: qty
-                              };
-                            }
-                          });
-                          
-                          return Object.entries(groupedPapers).map(([key, paper]) => (
-                            <div key={key} className="flex justify-between text-xs p-2 bg-muted rounded">
-                              <div>
-                                <span className="font-medium">GSM {paper.gsm} | BF {paper.bf} | {paper.shade}</span>
-                              </div>
-                              <div className="text-right">
-                                <div>{paper.weight.toFixed(2)} Kg</div>
-                                <div>₹{(paper.rate * paper.weight).toFixed(2)}</div>
-                              </div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Enter dimensions to see paper analysis</p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Cost Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {result ? (
-                  <>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-muted-foreground">Cost/unit:</span>
-                        <span className="font-bold text-lg" data-testid="text-cost-per-unit">
-                          ₹{totalCostPerBox.toFixed(2)}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between pt-2 border-t">
-                        <span className="font-semibold">Total:</span>
-                        <span className="font-bold text-xl text-primary" data-testid="text-total-value">
-                          ₹{totalValue.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <Button 
-                      className="w-full" 
-                      size="lg" 
-                      onClick={handleAddToQuote}
-                      data-testid="button-add-to-quote"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add to Quote
-                    </Button>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    Enter dimensions to calculate
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </main>
-      
-      {/* Edit Quote Item Dialog */}
+                <div className="flex justify-between items-center gap-4">
+                  <div>
+                    <CardTitle>Quote Items</CardTitle>
                     <CardDescription>{quoteItems.length} items</CardDescription>
                   </div>
                   {quoteItems.length > 0 && <div className="flex gap-2 flex-wrap">
@@ -3378,6 +3068,316 @@ export default function Calculator() {
                       </span>
                     </div>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Calculated Sheet Blank Size</CardTitle>
+                <CardDescription>Dimensions and specifications</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result ? (
+                  <>
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold text-foreground mb-2">Sheet Cut Length (L-blank):</div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Length (mm):</span>
+                        <span className="font-medium" data-testid="text-sheet-length-mm">
+                          {result.sheetLength.toFixed(2)} mm
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Length (inches):</span>
+                        <span className="font-medium" data-testid="text-sheet-length-in">
+                          {mmToInches(result.sheetLength).toFixed(2)} in
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold text-foreground mb-2">Reel Size / Deckle (W-blank):</div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Width (mm):</span>
+                        <span className="font-medium" data-testid="text-sheet-width-mm">
+                          {result.sheetWidth.toFixed(2)} mm
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Width (inches):</span>
+                        <span className="font-medium" data-testid="text-sheet-width-in">
+                          {mmToInches(result.sheetWidth).toFixed(2)} in
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <Separator />
+                    
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold text-foreground mb-2">Total GSM:</div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Ply:</span>
+                        <span className="font-medium">{ply}-Ply</span>
+                      </div>
+                      <div className="flex justify-between text-sm pl-2">
+                        <span className="text-muted-foreground">Layer Specifications:</span>
+                        <span className="font-medium">{(() => {
+                          if (!result || !result.layerSpecs || result.layerSpecs.length === 0) return "No layers";
+                          return result.layerSpecs.map((spec: any, idx: number) => 
+                            `L${idx + 1}: ${spec.gsm}`
+                          ).join(" + ");
+                        })()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm pl-2 bg-accent/20 p-2 rounded">
+                        <span className="text-muted-foreground font-semibold">Total GSM (Σ):</span>
+                        <span className="font-bold" data-testid="text-total-gsm">
+                          {(() => {
+                            if (!result || !result.layerSpecs) return "0";
+                            const total = result.layerSpecs.reduce((sum: number, spec: any) => {
+                              if (spec.layerType === 'liner') {
+                                return sum + spec.gsm;
+                              } else {
+                                const ff = spec.flutingFactor || 1.5;
+                                return sum + (spec.gsm * ff);
+                              }
+                            }, 0);
+                            return total.toFixed(2);
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <Separator />
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          Calculated Sheet Weight:
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="w-4 h-4 text-muted-foreground hover:text-primary cursor-help" data-testid="icon-weight-formula" />
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-sm p-3">
+                              <div className="text-xs space-y-1">
+                                <div className="font-semibold">Weight Formula:</div>
+                                <div>Σ GSM = L1 + (L2 × FF) + L3 + (L4 × FF) + ...</div>
+                                <div>Where FF = Fluting Factor</div>
+                                <div className="mt-1">Weight = (L × W × Total GSM) / 1,000,000</div>
+                                <div className="text-xs italic mt-1">L = Sheet Length (mm), W = Sheet Width (mm)</div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                        <span className="font-medium" data-testid="text-sheet-weight">
+                          {result.sheetWeight.toFixed(3)} Kg
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          Calculated Box BS:
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="w-4 h-4 text-muted-foreground hover:text-primary cursor-help" data-testid="icon-bs-formula" />
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-sm p-3">
+                              <div className="text-xs space-y-1">
+                                <div className="font-semibold">Burst Strength (BS) Formula:</div>
+                                <div>BS = Σ (Liner GSM × BF / 1000 + Flute GSM × BF / 2000)</div>
+                                <div className="text-xs italic mt-1">Liner = GSM×BF/1000, Flute = GSM×BF/2000</div>
+                                <div className="text-xs italic">BF = Bursting Factor</div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                        <span className="font-medium" data-testid="text-bs">
+                          {result.bs.toFixed(2)} kg/cm
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Enter dimensions to see calculated values</p>
+                )}
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Strength Analysis (McKee Formula)</CardTitle>
+                <CardDescription>Box compression test predictions</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result ? (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Board Thickness (mm):</span>
+                        <span className="font-medium" data-testid="text-board-thickness">
+                          {result.boardThickness.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Box Perimeter (mm):</span>
+                        <span className="font-medium" data-testid="text-box-perimeter">
+                          {result.boxPerimeter.toFixed(0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Calculated ECT:</span>
+                        <span className="font-medium" data-testid="text-ect">
+                          {result.ect.toFixed(2)} kN/m
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Predicted BCT:</span>
+                        <span className="font-medium" data-testid="text-bct">
+                          {result.bct.toFixed(1)} Kg
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Enter dimensions to see strength analysis</p>
+                )}
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Paper Cost & Weight Analysis</CardTitle>
+                <CardDescription>Formula: Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result && result.layerSpecs && result.layerSpecs.length > 0 && result.layerWeights && result.layerWeights.length > 0 ? (
+                  <>
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold">Per-Layer Breakdown:</div>
+                      <div className="space-y-2">
+                        {result.layerSpecs.map((spec: any, idx: number) => {
+                          const layerWeight = result.layerWeights[idx];
+                          const layerCost = layerWeight * spec.rate;
+                          return (
+                            <div key={idx} className="flex justify-between text-xs p-2 bg-muted rounded">
+                              <div>
+                                <span className="font-medium">L{idx + 1}: GSM {spec.gsm}, BF {spec.bf}, {spec.shade}</span>
+                              </div>
+                              <div className="text-right">
+                                <div>Weight: {layerWeight.toFixed(3)} Kg</div>
+                                <div>Cost: ₹{layerCost.toFixed(2)}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold">Total Paper Summary:</div>
+                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
+                        <span>Total Average Paper Cost (per unit):</span>
+                        <span className="font-bold">₹{result.paperCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
+                        <span>Total Sheet Weight (per unit):</span>
+                        <span className="font-bold">{result.sheetWeight.toFixed(3)} Kg</span>
+                      </div>
+                      <div className="flex justify-between text-sm p-2 bg-accent/20 rounded">
+                        <span>Total KGs for Order ({qty} units):</span>
+                        <span className="font-bold text-lg">{(result.sheetWeight * qty).toFixed(2)} Kg</span>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold">Grouped Paper Combinations:</div>
+                      <div className="space-y-2">
+                        {(() => {
+                          // Group by GSM+BF+Shade combination
+                          const groupedPapers: Record<string, {gsm: number; bf: number; shade: string; weight: number; rate: number; quantity: number}> = {};
+                          
+                          result.layerSpecs.forEach((spec: any, idx: number) => {
+                            const key = `${spec.gsm}-${spec.bf}-${spec.shade}`;
+                            const layerWeight = result.layerWeights[idx];
+                            const weight = layerWeight * qty;
+                            
+                            if (groupedPapers[key]) {
+                              groupedPapers[key].weight += weight;
+                            } else {
+                              groupedPapers[key] = {
+                                gsm: spec.gsm,
+                                bf: spec.bf,
+                                shade: spec.shade,
+                                weight,
+                                rate: spec.rate,
+                                quantity: qty
+                              };
+                            }
+                          });
+                          
+                          return Object.entries(groupedPapers).map(([key, paper]) => (
+                            <div key={key} className="flex justify-between text-xs p-2 bg-muted rounded">
+                              <div>
+                                <span className="font-medium">GSM {paper.gsm} | BF {paper.bf} | {paper.shade}</span>
+                              </div>
+                              <div className="text-right">
+                                <div>{paper.weight.toFixed(2)} Kg</div>
+                                <div>₹{(paper.rate * paper.weight).toFixed(2)}</div>
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Enter dimensions to see paper analysis</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Cost Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result ? (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">Cost/unit:</span>
+                        <span className="font-bold text-lg" data-testid="text-cost-per-unit">
+                          ₹{totalCostPerBox.toFixed(2)}
+                        </span>
+                      </div>
+                      
+                      <div className="flex justify-between pt-2 border-t">
+                        <span className="font-semibold">Total:</span>
+                        <span className="font-bold text-xl text-primary" data-testid="text-total-value">
+                          ₹{totalValue.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      className="w-full" 
+                      size="lg" 
+                      onClick={handleAddToQuote}
+                      data-testid="button-add-to-quote"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add to Quote
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    Enter dimensions to calculate
+                  </p>
                 )}
               </CardContent>
             </Card>
