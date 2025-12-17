@@ -1,0 +1,263 @@
+Build a secure onboarding, verification, and notification system for
+Paperboxe ERP – a Cloud-Based Corrugated Box Costing Software.
+
+====================================================
+CORE BUSINESS RULES (VERY IMPORTANT)
+====================================================
+
+- Platform is STRICTLY for corrugators (manufacturers).
+- Purchase managers, buyers, traders, or non-manufacturers must NOT be allowed.
+- All users must be manually verified by admin before accessing the software.
+- Fluting Factor Setup already exists as a MENU inside the app.
+- DO NOT create a separate Fluting Setup onboarding screen.
+- Theme: Professional red & white SaaS UI.
+
+Official Website & Login URL (used in all communications):
+https://paperboxerp.com
+
+====================================================
+1. SIGNUP → WELCOME POPUP
+====================================================
+
+On first login after signup, show a mandatory modal popup (cannot be skipped).
+
+Title:
+"Welcome to Paperboxe ERP"
+
+Message:
+"Thank you for signing up.
+To protect genuine corrugators and maintain industry integrity, every account is manually verified.
+This software is exclusively for corrugators and not for purchase managers or buyers."
+
+Primary CTA Button:
+"Proceed to Verification"
+
+====================================================
+2. BUSINESS PROFILE & VERIFICATION FORM
+====================================================
+
+After clicking the welcome CTA, show a locked onboarding screen.
+User CANNOT access the dashboard until verification is approved.
+
+Required Fields:
+- Owner / Contact Person Name
+- Business Name
+- Mobile Number
+- Business Address
+- GST Number (format validation)
+- Email Address (auto-fetched from login DB, read-only)
+
+Optional Fields:
+- Website URL
+- Google Maps Location
+- Instagram Profile URL
+- LinkedIn Profile URL
+
+----------------------------------------------------
+Verification Declaration (Mandatory)
+----------------------------------------------------
+
+Show highlighted warning text:
+
+"⚠️ Verification Required
+Paperboxe ERP is strictly for corrugators (manufacturers).
+Accounts belonging to purchase managers or non-manufacturers will be permanently rejected."
+
+Mandatory Checkbox:
+"I confirm that I am a corrugator / manufacturer and not a purchase manager."
+
+Disable submit unless checkbox is checked.
+
+----------------------------------------------------
+On Submission:
+----------------------------------------------------
+- Save business profile data
+- Set user status = PENDING_VERIFICATION
+- Lock all app features
+- Show status screen:
+
+"Your profile has been submitted for verification.
+You will be notified once your account is approved."
+
+====================================================
+3. ADMIN PANEL – USER VERIFICATION
+====================================================
+
+Create / enhance Admin Panel with a "User Verification" section.
+
+Admin Table Columns:
+- User Name
+- Business Name
+- Mobile
+- Email
+- GST Number
+- Registration Date
+- Status (Pending / Approved / Rejected)
+
+Admin Actions:
+- Approve Corrugator
+- Reject Registration
+
+----------------------------------------------------
+On APPROVE:
+----------------------------------------------------
+- Set user status = VERIFIED
+- Unlock full dashboard access
+- Send Approval Email (HTML)
+- Send WhatsApp Approval Message
+- Log approval timestamp
+- Prevent duplicate notifications
+
+----------------------------------------------------
+On REJECT:
+----------------------------------------------------
+- Set user status = REJECTED
+- Permanently block system access
+- Send Rejection Email
+- Optional rejection reason
+- Log rejection timestamp
+
+====================================================
+4. EMAIL NOTIFICATIONS (TRANSACTIONAL)
+====================================================
+
+Use SMTP / SendGrid / Resend / Nodemailer placeholder.
+
+----------------------------------------------------
+A. APPROVAL EMAIL (HTML – RED & WHITE)
+----------------------------------------------------
+
+Subject:
+"Your Paperboxe ERP Account Is Verified 🎉"
+
+Body:
+"Dear {{UserName}},
+
+We are happy to inform you that your account has been successfully verified.
+
+Welcome aboard! 🎉  
+You can now access Paperboxe ERP — a cloud-based costing platform built exclusively for corrugators.
+
+👉 Login to your account:
+https://paperboxerp.com
+
+Next Steps:
+• Log in using your registered email
+• Go to Settings → Fluting Factor Setup
+• Start using the costing software
+
+If you need any assistance, our support team is always here to help.
+
+Warm regards,
+Team Paperboxe ERP
+
+Disclaimer:
+This platform is exclusively for corrugators (manufacturers)."
+
+----------------------------------------------------
+B. REJECTION EMAIL
+----------------------------------------------------
+
+Subject:
+"Update on Your Paperboxe ERP Registration"
+
+Body:
+"Dear {{UserName}},
+
+Thank you for registering on Paperboxe ERP.
+
+After reviewing your details, we are unable to approve your registration as this platform is strictly reserved for corrugators (manufacturers).
+
+To maintain industry safety and data integrity, accounts belonging to purchase managers or non-manufacturers are not permitted.
+
+If you believe this decision is incorrect, please contact our support team.
+
+Regards,
+Team Paperboxe ERP"
+
+----------------------------------------------------
+C. VERIFICATION REMINDER EMAIL (48 HOURS)
+----------------------------------------------------
+
+Trigger:
+If user status = PENDING_VERIFICATION for more than 48 hours.
+
+Subject:
+"Your Verification Is in Progress – Paperboxe ERP"
+
+Body:
+"Dear {{UserName}},
+
+Your registration on Paperboxe ERP is currently under verification.
+
+Our team is reviewing your details to ensure the platform remains exclusive for genuine corrugators.
+You will be notified as soon as your account is approved.
+
+Thank you for your patience.
+
+Regards,
+Team Paperboxe ERP"
+
+====================================================
+5. WHATSAPP NOTIFICATIONS
+====================================================
+
+Integrate WhatsApp messaging using API placeholder
+(Twilio / WhatsApp Business API / Gupshup).
+
+----------------------------------------------------
+A. APPROVAL WHATSAPP MESSAGE
+----------------------------------------------------
+
+"✅ Hello {{UserName}},
+
+Your Paperboxe ERP account has been VERIFIED 🎉
+
+You can now log in and start using the costing software.
+
+👉 Login here:
+https://paperboxerp.com
+
+Next step:
+Go to Settings → Fluting Factor Setup to configure your plant.
+
+Welcome aboard!
+– Team Paperboxe ERP"
+
+----------------------------------------------------
+B. REJECTION WHATSAPP MESSAGE (OPTIONAL)
+----------------------------------------------------
+
+"Hello {{UserName}},
+
+Your registration on Paperboxe ERP could not be approved as the platform is exclusively for corrugators (manufacturers).
+
+For any clarification, please contact our support team.
+
+– Team Paperboxe ERP"
+
+====================================================
+6. USER ACCESS STATES
+====================================================
+
+NEW → PROFILE_SUBMITTED → PENDING_VERIFICATION → VERIFIED → ACTIVE  
+REJECTED → ACCESS_BLOCKED
+
+====================================================
+7. UI & TECH REQUIREMENTS
+====================================================
+
+- Clean SaaS UI
+- Red & white professional theme
+- Mobile responsive
+- Role-based access control
+- Secure backend validation
+- Admin-only approval rights
+- Email & WhatsApp delivery logs
+- Prevent duplicate notifications
+
+====================================================
+OUTPUT EXPECTATION:
+Generate frontend UI components, backend logic placeholders,
+database schema suggestions, admin workflows,
+email templates, WhatsApp triggers, and verification logic.

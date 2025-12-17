@@ -216,6 +216,18 @@ export const quotes = pgTable("quotes", {
   totalValue: real("total_value").notNull(),
   items: jsonb("items").notNull(),
   companyProfileId: varchar("company_profile_id"),
+  termsSnapshot: jsonb("terms_snapshot"), // Immutable snapshot of quote terms at creation
+  paperPricesSnapshot: jsonb("paper_prices_snapshot"), // Snapshot of paper prices used for calculations
+  transportSnapshot: jsonb("transport_snapshot"), // Snapshot of transport settings
+  moqEnabled: boolean("moq_enabled").default(false), // Minimum order quantity enabled
+  moqValue: real("moq_value"), // MOQ amount if enabled
+  paymentType: varchar("payment_type").default("advance"), // 'advance', 'credit', 'partial'
+  advancePercent: integer("advance_percent"),
+  creditDays: integer("credit_days"),
+  customDeliveryText: text("custom_delivery_text"),
+  quoteNumber: varchar("quote_number"), // Optional user-readable quote number
+  validUntil: timestamp("valid_until"), // Quote validity date
+  status: varchar("status").default("draft"), // 'draft', 'sent', 'accepted', 'rejected', 'expired'
   createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -312,9 +324,160 @@ export const quoteItemSchema = z.object({
   quantity: z.number(),
   totalValue: z.number(),
   
+  // Negotiation fields
+  negotiationMode: z.enum(['none', 'percentage', 'fixed']).optional().default('none'),
+  negotiationValue: z.number().optional(), // Discount percentage or fixed price
+  originalPrice: z.number().optional(), // Original calculated price before negotiation
+  negotiatedPrice: z.number().optional(), // Final negotiated price per box
+  negotiationNote: z.string().optional(), // Optional note about negotiation
+  
+  // Box specification versioning
+  boxSpecId: z.string().optional(), // Link to box_specifications table
+  boxSpecVersionNumber: z.number().optional(), // Version at time of quote
+  
   // Selection for sending via WhatsApp/Email
   selected: z.boolean().default(true),
 });
 
 export type QuoteItem = z.infer<typeof quoteItemSchema>;
 export type LayerSpec = z.infer<typeof layerSpecSchema>;
+
+// ========== PAPER PRICE SETUP (per user) ==========
+
+// Paper Prices table - stores user's paper inventory with base prices
+export const paperPrices = pgTable("paper_prices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  gsm: integer("gsm").notNull(),
+  bf: integer("bf").notNull(),
+  shade: varchar("shade").notNull(), // 'Kraft', 'White', 'Semi-Kraft', 'Golden', etc.
+  basePrice: real("base_price").notNull(), // Base price per Kg
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPaperPriceSchema = createInsertSchema(paperPrices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPaperPrice = z.infer<typeof insertPaperPriceSchema>;
+export type PaperPrice = typeof paperPrices.$inferSelect;
+
+// Paper Pricing Rules table - stores user's GSM adjustment rules and market adjustment
+export const paperPricingRules = pgTable("paper_pricing_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(), // One rule set per user
+  lowGsmLimit: integer("low_gsm_limit").default(100), // GSM <= this gets low adjustment
+  lowGsmAdjustment: real("low_gsm_adjustment").default(1), // Amount to add for low GSM
+  highGsmLimit: integer("high_gsm_limit").default(201), // GSM >= this gets high adjustment
+  highGsmAdjustment: real("high_gsm_adjustment").default(1), // Amount to add for high GSM
+  marketAdjustment: real("market_adjustment").default(0), // Global adjustment for all prices
+  paperSetupCompleted: boolean("paper_setup_completed").default(false), // Flag for setup completion
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPaperPricingRulesSchema = createInsertSchema(paperPricingRules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPaperPricingRules = z.infer<typeof insertPaperPricingRulesSchema>;
+export type PaperPricingRules = typeof paperPricingRules.$inferSelect;
+
+// ========== USER QUOTE TERMS (per user defaults) ==========
+
+export const userQuoteTerms = pgTable("user_quote_terms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  validityDays: integer("validity_days").default(7),
+  defaultDeliveryText: text("default_delivery_text").default("10-15 working days after order confirmation and advance payment"),
+  defaultPaymentType: varchar("default_payment_type").default("advance"), // 'advance', 'credit'
+  defaultCreditDays: integer("default_credit_days"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserQuoteTermsSchema = createInsertSchema(userQuoteTerms).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserQuoteTerms = z.infer<typeof insertUserQuoteTermsSchema>;
+export type UserQuoteTerms = typeof userQuoteTerms.$inferSelect;
+
+// ========== BOX SPECIFICATIONS (Master + Versioning) ==========
+
+// Master table for unique box specifications
+export const boxSpecifications = pgTable("box_specifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  customerId: varchar("customer_id").references(() => partyProfiles.id),
+  boxType: varchar("box_type").notNull(), // 'rsc', 'sheet'
+  length: real("length").notNull(),
+  breadth: real("breadth").notNull(),
+  height: real("height"),
+  ply: varchar("ply").notNull(), // '3', '5', '7', '9'
+  currentVersion: integer("current_version").default(1),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertBoxSpecificationSchema = createInsertSchema(boxSpecifications).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertBoxSpecification = z.infer<typeof insertBoxSpecificationSchema>;
+export type BoxSpecification = typeof boxSpecifications.$inferSelect;
+
+// Version history table for box specifications
+export const boxSpecVersions = pgTable("box_spec_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  specId: varchar("spec_id").references(() => boxSpecifications.id).notNull(),
+  versionNumber: integer("version_number").notNull(),
+  dataSnapshot: jsonb("data_snapshot").notNull(), // Full snapshot of all spec data
+  editedBy: varchar("edited_by").references(() => users.id),
+  editedAt: timestamp("edited_at").defaultNow(),
+  changeNote: text("change_note"),
+});
+
+export const insertBoxSpecVersionSchema = createInsertSchema(boxSpecVersions).omit({ id: true, editedAt: true });
+export type InsertBoxSpecVersion = z.infer<typeof insertBoxSpecVersionSchema>;
+export type BoxSpecVersion = typeof boxSpecVersions.$inferSelect;
+
+// ========== EXTENDED QUOTE ITEM SCHEMA (with negotiation & snapshots) ==========
+
+export const extendedQuoteItemSchema = quoteItemSchema.extend({
+  // Box specification reference
+  specId: z.string().optional(),
+  specVersion: z.number().optional(),
+  
+  // Negotiation fields (overrides base schema for extended use)
+  negotiationMode: z.enum(['none', 'percentage', 'fixed']).default('none'),
+  negotiationValue: z.number().optional(), // Discount percentage or fixed price
+  originalUnitPrice: z.number().optional(), // Original calculated price
+  negotiatedUnitPrice: z.number().optional(), // Final negotiated price
+  originalTotalPrice: z.number().optional(),
+  negotiatedTotalPrice: z.number().optional(),
+  
+  // Paper pricing snapshot (frozen at quote creation)
+  paperPricingSnapshot: z.object({
+    gsm: z.number(),
+    bf: z.number(),
+    shade: z.string(),
+    basePrice: z.number(),
+    gsmAdjustment: z.number(),
+    marketAdjustment: z.number(),
+    finalRate: z.number(),
+  }).optional(),
+});
+
+export type ExtendedQuoteItem = z.infer<typeof extendedQuoteItemSchema>;
+
+// Quote terms snapshot schema
+export const quoteTermsSnapshotSchema = z.object({
+  includeMoq: z.boolean().default(false),
+  moqQuantity: z.number().optional(),
+  validityDays: z.number().default(7),
+  deliveryText: z.string(),
+  paymentType: z.enum(['advance', 'credit']).default('advance'),
+  creditDays: z.number().optional(),
+});
+
+export type QuoteTermsSnapshot = z.infer<typeof quoteTermsSnapshotSchema>;
+
+// Transport snapshot schema
+export const transportSnapshotSchema = z.object({
+  mode: z.enum(['included', 'fixed', 'actuals']).default('included'),
+  amount: z.number().optional(),
+  remark: z.string().optional(),
+});
+
+export type TransportSnapshot = z.infer<typeof transportSnapshotSchema>;

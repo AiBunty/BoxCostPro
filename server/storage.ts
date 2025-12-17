@@ -25,6 +25,16 @@ import {
   type InsertFlutingSetting,
   type ChatbotWidget,
   type InsertChatbotWidget,
+  type PaperPrice,
+  type InsertPaperPrice,
+  type PaperPricingRules,
+  type InsertPaperPricingRules,
+  type UserQuoteTerms,
+  type InsertUserQuoteTerms,
+  type BoxSpecification,
+  type InsertBoxSpecification,
+  type BoxSpecVersion,
+  type InsertBoxSpecVersion,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -38,7 +48,12 @@ import {
   paymentTransactions,
   flutingSettings,
   chatbotWidgets,
-  ownerSettings
+  ownerSettings,
+  paperPrices,
+  paperPricingRules,
+  userQuoteTerms,
+  boxSpecifications,
+  boxSpecVersions
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, sql } from "drizzle-orm";
@@ -132,6 +147,35 @@ export interface IStorage {
   // Owner Settings
   getOwnerSettings(): Promise<any>;
   updateOwnerSettings(updates: any): Promise<any>;
+  
+  // Paper Prices (per user)
+  getPaperPrices(userId: string): Promise<PaperPrice[]>;
+  getPaperPrice(id: string): Promise<PaperPrice | undefined>;
+  getPaperPriceBySpec(userId: string, gsm: number, bf: number, shade: string): Promise<PaperPrice | undefined>;
+  createPaperPrice(price: InsertPaperPrice): Promise<PaperPrice>;
+  updatePaperPrice(id: string, updates: Partial<InsertPaperPrice>): Promise<PaperPrice | undefined>;
+  deletePaperPrice(id: string): Promise<boolean>;
+  
+  // Paper Pricing Rules (per user)
+  getPaperPricingRules(userId: string): Promise<PaperPricingRules | undefined>;
+  createOrUpdatePaperPricingRules(rules: InsertPaperPricingRules): Promise<PaperPricingRules>;
+  getPaperSetupStatus(userId: string): Promise<{ completed: boolean; rules: PaperPricingRules | null; pricesCount: number }>;
+  
+  // User Quote Terms (per user)
+  getUserQuoteTerms(userId: string): Promise<UserQuoteTerms | undefined>;
+  createOrUpdateUserQuoteTerms(terms: InsertUserQuoteTerms): Promise<UserQuoteTerms>;
+  
+  // Box Specifications (per user with versioning)
+  getBoxSpecification(id: string): Promise<BoxSpecification | undefined>;
+  getBoxSpecifications(userId: string, customerId?: string): Promise<BoxSpecification[]>;
+  findExistingBoxSpec(userId: string, customerId: string | null, boxType: string, length: number, breadth: number, height: number | null, ply: string): Promise<BoxSpecification | undefined>;
+  createBoxSpecification(spec: InsertBoxSpecification): Promise<BoxSpecification>;
+  updateBoxSpecification(id: string, updates: Partial<InsertBoxSpecification>): Promise<BoxSpecification | undefined>;
+  
+  // Box Spec Versions
+  getBoxSpecVersions(specId: string): Promise<BoxSpecVersion[]>;
+  getBoxSpecVersion(specId: string, versionNumber: number): Promise<BoxSpecVersion | undefined>;
+  createBoxSpecVersion(version: InsertBoxSpecVersion): Promise<BoxSpecVersion>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -644,6 +688,175 @@ export class DatabaseStorage implements IStorage {
       .where(eq(ownerSettings.id, existing.id))
       .returning();
     return updated;
+  }
+  
+  // ========== PAPER PRICES ==========
+  async getPaperPrices(userId: string): Promise<PaperPrice[]> {
+    return await db.select().from(paperPrices).where(eq(paperPrices.userId, userId));
+  }
+  
+  async getPaperPrice(id: string): Promise<PaperPrice | undefined> {
+    const [price] = await db.select().from(paperPrices).where(eq(paperPrices.id, id));
+    return price;
+  }
+  
+  async getPaperPriceBySpec(userId: string, gsm: number, bf: number, shade: string): Promise<PaperPrice | undefined> {
+    const [price] = await db.select().from(paperPrices).where(
+      and(
+        eq(paperPrices.userId, userId),
+        eq(paperPrices.gsm, gsm),
+        eq(paperPrices.bf, bf),
+        eq(paperPrices.shade, shade)
+      )
+    );
+    return price;
+  }
+  
+  async createPaperPrice(price: InsertPaperPrice): Promise<PaperPrice> {
+    const [created] = await db.insert(paperPrices).values(price).returning();
+    return created;
+  }
+  
+  async updatePaperPrice(id: string, updates: Partial<InsertPaperPrice>): Promise<PaperPrice | undefined> {
+    const [updated] = await db.update(paperPrices)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(paperPrices.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deletePaperPrice(id: string): Promise<boolean> {
+    await db.delete(paperPrices).where(eq(paperPrices.id, id));
+    return true;
+  }
+  
+  // ========== PAPER PRICING RULES ==========
+  async getPaperPricingRules(userId: string): Promise<PaperPricingRules | undefined> {
+    const [rules] = await db.select().from(paperPricingRules).where(eq(paperPricingRules.userId, userId));
+    return rules;
+  }
+  
+  async createOrUpdatePaperPricingRules(rules: InsertPaperPricingRules): Promise<PaperPricingRules> {
+    const existing = await this.getPaperPricingRules(rules.userId);
+    
+    if (existing) {
+      const [updated] = await db.update(paperPricingRules)
+        .set({ ...rules, updatedAt: new Date() })
+        .where(eq(paperPricingRules.id, existing.id))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db.insert(paperPricingRules).values(rules).returning();
+    return created;
+  }
+  
+  async getPaperSetupStatus(userId: string): Promise<{ completed: boolean; rules: PaperPricingRules | null; pricesCount: number }> {
+    const rules = await this.getPaperPricingRules(userId);
+    const prices = await this.getPaperPrices(userId);
+    
+    return {
+      completed: rules?.paperSetupCompleted || false,
+      rules: rules || null,
+      pricesCount: prices.length
+    };
+  }
+  
+  // ========== USER QUOTE TERMS ==========
+  async getUserQuoteTerms(userId: string): Promise<UserQuoteTerms | undefined> {
+    const [terms] = await db.select().from(userQuoteTerms).where(eq(userQuoteTerms.userId, userId));
+    return terms;
+  }
+  
+  async createOrUpdateUserQuoteTerms(terms: InsertUserQuoteTerms): Promise<UserQuoteTerms> {
+    const existing = await this.getUserQuoteTerms(terms.userId);
+    
+    if (existing) {
+      const [updated] = await db.update(userQuoteTerms)
+        .set({ ...terms, updatedAt: new Date() })
+        .where(eq(userQuoteTerms.id, existing.id))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db.insert(userQuoteTerms).values(terms).returning();
+    return created;
+  }
+  
+  // ========== BOX SPECIFICATIONS ==========
+  async getBoxSpecification(id: string): Promise<BoxSpecification | undefined> {
+    const [spec] = await db.select().from(boxSpecifications).where(eq(boxSpecifications.id, id));
+    return spec;
+  }
+  
+  async getBoxSpecifications(userId: string, customerId?: string): Promise<BoxSpecification[]> {
+    if (customerId) {
+      return await db.select().from(boxSpecifications).where(
+        and(eq(boxSpecifications.userId, userId), eq(boxSpecifications.customerId, customerId))
+      );
+    }
+    return await db.select().from(boxSpecifications).where(eq(boxSpecifications.userId, userId));
+  }
+  
+  async findExistingBoxSpec(
+    userId: string, 
+    customerId: string | null, 
+    boxType: string, 
+    length: number, 
+    breadth: number, 
+    height: number | null, 
+    ply: string
+  ): Promise<BoxSpecification | undefined> {
+    // Build conditions for exact match
+    const conditions = [
+      eq(boxSpecifications.userId, userId),
+      eq(boxSpecifications.boxType, boxType),
+      eq(boxSpecifications.length, length),
+      eq(boxSpecifications.breadth, breadth),
+      eq(boxSpecifications.ply, ply),
+      eq(boxSpecifications.isActive, true)
+    ];
+    
+    const results = await db.select().from(boxSpecifications).where(and(...conditions));
+    
+    // Filter for customerId and height match (handle nulls)
+    return results.find(spec => {
+      const customerMatch = customerId ? spec.customerId === customerId : spec.customerId === null;
+      const heightMatch = height !== null ? spec.height === height : spec.height === null;
+      return customerMatch && heightMatch;
+    });
+  }
+  
+  async createBoxSpecification(spec: InsertBoxSpecification): Promise<BoxSpecification> {
+    const [created] = await db.insert(boxSpecifications).values(spec).returning();
+    return created;
+  }
+  
+  async updateBoxSpecification(id: string, updates: Partial<InsertBoxSpecification>): Promise<BoxSpecification | undefined> {
+    const [updated] = await db.update(boxSpecifications)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(boxSpecifications.id, id))
+      .returning();
+    return updated;
+  }
+  
+  // ========== BOX SPEC VERSIONS ==========
+  async getBoxSpecVersions(specId: string): Promise<BoxSpecVersion[]> {
+    return await db.select().from(boxSpecVersions)
+      .where(eq(boxSpecVersions.specId, specId))
+      .orderBy(boxSpecVersions.versionNumber);
+  }
+  
+  async getBoxSpecVersion(specId: string, versionNumber: number): Promise<BoxSpecVersion | undefined> {
+    const [version] = await db.select().from(boxSpecVersions).where(
+      and(eq(boxSpecVersions.specId, specId), eq(boxSpecVersions.versionNumber, versionNumber))
+    );
+    return version;
+  }
+  
+  async createBoxSpecVersion(version: InsertBoxSpecVersion): Promise<BoxSpecVersion> {
+    const [created] = await db.insert(boxSpecVersions).values(version).returning();
+    return created;
   }
 }
 

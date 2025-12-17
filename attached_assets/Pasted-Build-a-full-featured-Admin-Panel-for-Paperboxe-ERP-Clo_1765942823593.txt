@@ -1,0 +1,234 @@
+Build a full-featured Admin Panel for Paperboxe ERP
+(Cloud-Based Corrugated Costing Software).
+
+====================================================
+ADMIN PANEL GOAL
+====================================================
+
+The Admin Panel should allow super-admins to:
+- Manage users and subscriptions
+- Control verification & access
+- Run CRM-style follow-ups
+- Send emails, WhatsApp messages, and downtime alerts
+- Handle offline payment users
+- View reports & analytics
+- Provide customer support
+
+====================================================
+1. ADMIN DASHBOARD (OVERVIEW)
+====================================================
+
+Create an Admin Dashboard with summary cards:
+
+- Total Users
+- Verified Users
+- Pending Verification
+- Active Subscriptions
+- Expired Subscriptions
+- Offline Payment Users
+- Support Tickets Open
+- Revenue Summary (Monthly)
+
+Include charts:
+- User growth over time
+- Subscription status breakdown
+- Login activity
+
+====================================================
+2. USER MANAGEMENT (FULL DATABASE VIEW)
+====================================================
+
+Create a "Users" module with a searchable table.
+
+Columns:
+- User Name
+- Company Name
+- Mobile Number
+- Email Address
+- GST Number
+- Registration Date
+- Verification Status
+- Subscription Status
+- Payment Mode (Online / Offline)
+- Account Status (Active / Blocked)
+
+Actions per User:
+- View Full Profile
+- Edit Profile Details
+- Approve / Reject Verification
+- Block / Unblock Account
+- Login as User (admin-only)
+- Send Email
+- Send WhatsApp
+- Assign Follow-up
+- View Activity Log
+
+====================================================
+3. USER PROFILE (ADMIN VIEW)
+====================================================
+
+Admin should be able to view & edit:
+- Name
+- Company
+- Mobile
+- Email
+- Address
+- GST
+- Subscription plan
+- Subscription start & expiry
+- Payment mode
+- Notes (internal CRM notes)
+
+====================================================
+4. SUBSCRIPTION MANAGEMENT
+====================================================
+
+Create "Subscriptions" module.
+
+Features:
+- Create subscription plans
+- Set duration (monthly / yearly)
+- Set pricing
+- Enable / disable plans
+- Assign plans manually to users
+- Extend subscription for offline payments
+- Pause / resume subscriptions
+
+Offline Payment Handling:
+- Mark user as "Offline Paid"
+- Enter receipt reference
+- Manually activate subscription
+- Set expiry date
+
+====================================================
+5. COUPONS & OFFERS MANAGEMENT
+====================================================
+
+Create "Coupons & Offers" module.
+
+Admin can:
+- Create coupon codes
+- Set discount type (Flat / Percentage)
+- Set validity period
+- Usage limits
+- Assign coupon to specific users
+- Enable / disable coupons
+
+====================================================
+6. CRM & FOLLOW-UP SYSTEM (ADMIN)
+====================================================
+
+Create a CRM-style module for admins.
+
+Features:
+- View all users as leads
+- Assign follow-ups to admin/team
+- Follow-up status:
+  • New
+  • Contacted
+  • Interested
+  • Converted
+  • Inactive
+- Add follow-up notes
+- Set reminder dates
+- Auto reminders for:
+  • Pending verification
+  • Subscription expiry
+  • Inactive users
+
+====================================================
+7. COMMUNICATION CENTER
+====================================================
+
+Create a centralized Communication module.
+
+Email Capabilities:
+- Send individual emails
+- Send bulk emails
+- Send verification reminders
+- Send subscription expiry reminders
+- Send downtime / maintenance emails
+
+WhatsApp Capabilities:
+- Send individual WhatsApp messages
+- Send bulk WhatsApp messages
+- Predefined templates:
+  • Verification pending
+  • Subscription expiring
+  • Payment reminder
+  • Account approved
+
+Downtime / Maintenance Broadcast:
+- Admin writes downtime message
+- Select audience (All / Active users)
+- Schedule or send instantly
+
+====================================================
+8. SUPPORT & HELPDESK (CRM)
+====================================================
+
+Create "Support Tickets" module.
+
+Features:
+- View all user tickets
+- Ticket status:
+  • Open
+  • In Progress
+  • Resolved
+  • Closed
+- Assign tickets to admin/support staff
+- Internal notes
+- Reply via email or in-app message
+- Attach files/screenshots
+
+====================================================
+9. REPORTS & ANALYTICS
+====================================================
+
+Create Reports module.
+
+Reports include:
+- User registration report
+- Verification status report
+- Active vs inactive users
+- Subscription revenue report
+- Offline payments report
+- Login activity report
+
+Allow:
+- Date range filter
+- Export to CSV / Excel
+
+====================================================
+10. ADMIN ROLES & SECURITY
+====================================================
+
+Admin Roles:
+- Super Admin (full access)
+- Support Admin (tickets & CRM)
+- Finance Admin (subscriptions & payments)
+
+Security:
+- Role-based access
+- Activity logs for admin actions
+- Audit trail for:
+  • Verification
+  • Subscription changes
+  • Profile edits
+
+====================================================
+11. UI & TECH REQUIREMENTS
+====================================================
+
+- Clean enterprise admin UI
+- Red & white theme
+- Sidebar navigation
+- Search, filter, pagination
+- Responsive design
+- Secure backend validation
+
+====================================================
+OUTPUT EXPECTATION:
+Generate admin UI components, backend logic placeholders,
+database schema suggestions, role-based permissions,
+CRM workflows, communication triggers, and reports structure.

@@ -2,7 +2,23 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertCompanyProfileSchema, insertPartyProfileSchema, insertQuoteSchema, insertAppSettingsSchema, insertRateMemorySchema, insertSubscriptionPlanSchema, insertCouponSchema, insertTrialInviteSchema, insertFlutingSettingSchema, insertChatbotWidgetSchema } from "@shared/schema";
+import { 
+  insertCompanyProfileSchema, 
+  insertPartyProfileSchema, 
+  insertQuoteSchema, 
+  insertAppSettingsSchema, 
+  insertRateMemorySchema, 
+  insertSubscriptionPlanSchema, 
+  insertCouponSchema, 
+  insertTrialInviteSchema, 
+  insertFlutingSettingSchema, 
+  insertChatbotWidgetSchema,
+  insertPaperPriceSchema,
+  insertPaperPricingRulesSchema,
+  insertUserQuoteTermsSchema,
+  insertBoxSpecificationSchema,
+  insertBoxSpecVersionSchema
+} from "@shared/schema";
 
 // Owner authorization middleware
 const isOwner = async (req: any, res: Response, next: NextFunction) => {
@@ -341,6 +357,327 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(400).json({ error: "Failed to delete fluting setting" });
+    }
+  });
+
+  // ========== PAPER PRICES (per user) ==========
+  app.get("/api/paper-prices", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const prices = await storage.getPaperPrices(userId);
+      res.json(prices);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch paper prices" });
+    }
+  });
+
+  app.get("/api/paper-prices/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const price = await storage.getPaperPrice(req.params.id);
+      if (!price) {
+        return res.status(404).json({ error: "Paper price not found" });
+      }
+      res.json(price);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch paper price" });
+    }
+  });
+
+  app.post("/api/paper-prices", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Ensure user exists in database (handles OIDC test bypass scenarios)
+      const existingUser = await storage.getUser(userId);
+      if (!existingUser) {
+        await storage.upsertUser({
+          id: userId,
+          email: req.user.claims.email,
+          firstName: req.user.claims.first_name,
+          lastName: req.user.claims.last_name,
+          profileImageUrl: req.user.claims.profile_image_url,
+        });
+      }
+      
+      const data = insertPaperPriceSchema.parse({ ...req.body, userId });
+      const price = await storage.createPaperPrice(data);
+      res.status(201).json(price);
+    } catch (error: any) {
+      console.error("Paper price creation error:", error);
+      res.status(400).json({ error: "Failed to create paper price", details: error?.message });
+    }
+  });
+
+  app.patch("/api/paper-prices/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const data = insertPaperPriceSchema.partial().parse(req.body);
+      const price = await storage.updatePaperPrice(req.params.id, data);
+      if (!price) {
+        return res.status(404).json({ error: "Paper price not found" });
+      }
+      res.json(price);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update paper price" });
+    }
+  });
+
+  app.delete("/api/paper-prices/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deletePaperPrice(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: "Failed to delete paper price" });
+    }
+  });
+
+  // Lookup paper price by GSM/BF/Shade for calculator auto-fill
+  app.get("/api/paper-prices/lookup/:gsm/:bf/:shade", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const gsm = parseInt(req.params.gsm);
+      const bf = parseInt(req.params.bf);
+      const shade = req.params.shade;
+      
+      const price = await storage.getPaperPriceBySpec(userId, gsm, bf, shade);
+      if (!price) {
+        return res.status(404).json({ error: "Paper price not found for this specification" });
+      }
+      
+      // Get pricing rules to calculate final price
+      const rules = await storage.getPaperPricingRules(userId);
+      let gsmAdjustment = 0;
+      let marketAdjustment = 0;
+      
+      if (rules) {
+        // Apply GSM adjustment based on user's rules
+        if (gsm <= (rules.lowGsmLimit || 100)) {
+          gsmAdjustment = rules.lowGsmAdjustment || 0;
+        } else if (gsm >= (rules.highGsmLimit || 201)) {
+          gsmAdjustment = rules.highGsmAdjustment || 0;
+        }
+        marketAdjustment = rules.marketAdjustment || 0;
+      }
+      
+      const finalRate = price.basePrice + gsmAdjustment + marketAdjustment;
+      
+      res.json({
+        ...price,
+        gsmAdjustment,
+        marketAdjustment,
+        finalRate
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to lookup paper price" });
+    }
+  });
+
+  // ========== PAPER PRICING RULES (per user) ==========
+  app.get("/api/paper-pricing-rules", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const rules = await storage.getPaperPricingRules(userId);
+      res.json(rules || {
+        lowGsmLimit: 100,
+        lowGsmAdjustment: 1,
+        highGsmLimit: 201,
+        highGsmAdjustment: 1,
+        marketAdjustment: 0,
+        paperSetupCompleted: false
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch paper pricing rules" });
+    }
+  });
+
+  app.post("/api/paper-pricing-rules", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = insertPaperPricingRulesSchema.parse({ ...req.body, userId });
+      const rules = await storage.createOrUpdatePaperPricingRules(data);
+      res.status(201).json(rules);
+    } catch (error) {
+      console.error("Failed to save paper pricing rules:", error);
+      res.status(400).json({ error: "Failed to save paper pricing rules" });
+    }
+  });
+
+  // Paper Setup Status (for first-login check)
+  app.get("/api/paper-setup-status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const status = await storage.getPaperSetupStatus(userId);
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check paper setup status" });
+    }
+  });
+
+  // ========== USER QUOTE TERMS (per user) ==========
+  app.get("/api/user-quote-terms", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const terms = await storage.getUserQuoteTerms(userId);
+      res.json(terms || {
+        validityDays: 7,
+        defaultDeliveryText: "10-15 working days after order confirmation and advance payment",
+        defaultPaymentType: "advance",
+        defaultCreditDays: null
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user quote terms" });
+    }
+  });
+
+  app.post("/api/user-quote-terms", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = insertUserQuoteTermsSchema.parse({ ...req.body, userId });
+      const terms = await storage.createOrUpdateUserQuoteTerms(data);
+      res.status(201).json(terms);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to save user quote terms" });
+    }
+  });
+
+  // ========== BOX SPECIFICATIONS (per user with versioning) ==========
+  app.get("/api/box-specifications", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const customerId = req.query.customerId as string | undefined;
+      const specs = await storage.getBoxSpecifications(userId, customerId);
+      res.json(specs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch box specifications" });
+    }
+  });
+
+  app.get("/api/box-specifications/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const spec = await storage.getBoxSpecification(req.params.id);
+      if (!spec) {
+        return res.status(404).json({ error: "Box specification not found" });
+      }
+      res.json(spec);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch box specification" });
+    }
+  });
+
+  app.get("/api/box-specifications/:id/versions", isAuthenticated, async (req: any, res) => {
+    try {
+      const versions = await storage.getBoxSpecVersions(req.params.id);
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch box specification versions" });
+    }
+  });
+
+  // Create or update box specification with versioning
+  app.post("/api/box-specifications", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { customerId, boxType, length, breadth, height, ply, dataSnapshot, changeNote } = req.body;
+      
+      // Check for existing spec with same unique combination
+      const existingSpec = await storage.findExistingBoxSpec(
+        userId, customerId || null, boxType, length, breadth, height || null, ply
+      );
+      
+      if (existingSpec) {
+        // Create new version for existing spec
+        const newVersionNumber = (existingSpec.currentVersion || 1) + 1;
+        
+        await storage.createBoxSpecVersion({
+          specId: existingSpec.id,
+          versionNumber: newVersionNumber,
+          dataSnapshot,
+          editedBy: userId,
+          changeNote
+        });
+        
+        // Update master record
+        const updatedSpec = await storage.updateBoxSpecification(existingSpec.id, {
+          currentVersion: newVersionNumber
+        });
+        
+        res.status(201).json({ 
+          spec: updatedSpec, 
+          versionNumber: newVersionNumber, 
+          isNewSpec: false 
+        });
+      } else {
+        // Create new spec with version 1
+        const spec = await storage.createBoxSpecification({
+          userId,
+          customerId: customerId || null,
+          boxType,
+          length,
+          breadth,
+          height: height || null,
+          ply,
+          currentVersion: 1,
+          isActive: true
+        });
+        
+        await storage.createBoxSpecVersion({
+          specId: spec.id,
+          versionNumber: 1,
+          dataSnapshot,
+          editedBy: userId,
+          changeNote: changeNote || "Initial version"
+        });
+        
+        res.status(201).json({ 
+          spec, 
+          versionNumber: 1, 
+          isNewSpec: true 
+        });
+      }
+    } catch (error) {
+      console.error("Failed to save box specification:", error);
+      res.status(400).json({ error: "Failed to save box specification" });
+    }
+  });
+
+  // Restore a previous version
+  app.post("/api/box-specifications/:id/restore/:versionNumber", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const specId = req.params.id;
+      const versionNumber = parseInt(req.params.versionNumber);
+      
+      const spec = await storage.getBoxSpecification(specId);
+      if (!spec) {
+        return res.status(404).json({ error: "Box specification not found" });
+      }
+      
+      const version = await storage.getBoxSpecVersion(specId, versionNumber);
+      if (!version) {
+        return res.status(404).json({ error: "Version not found" });
+      }
+      
+      // Create a new version with the restored data
+      const newVersionNumber = (spec.currentVersion || 1) + 1;
+      
+      await storage.createBoxSpecVersion({
+        specId,
+        versionNumber: newVersionNumber,
+        dataSnapshot: version.dataSnapshot as Record<string, unknown>,
+        editedBy: userId,
+        changeNote: `Restored from version ${versionNumber}`
+      });
+      
+      await storage.updateBoxSpecification(specId, {
+        currentVersion: newVersionNumber
+      });
+      
+      res.json({ 
+        success: true, 
+        newVersionNumber,
+        message: `Restored to version ${versionNumber}` 
+      });
+    } catch (error) {
+      res.status(400).json({ error: "Failed to restore version" });
     }
   });
 

@@ -160,3 +160,23 @@ The frontend is built with React and TypeScript, utilizing Vite for development.
 ### New Files
 - `client/src/pages/reports.tsx` - Reports page component
 - `client/src/lib/excelExport.ts` - Excel utility functions (downloadGenericExcel, parseExcelUpload, downloadSampleTemplate, etc.)
+
+## Recent Changes (Session Dec 17, 2025)
+
+### Negotiated Pricing UI
+
+1. **Per-Item Negotiation Dialog**
+   - Tag icon button in quote items table to negotiate individual item prices
+   - Three negotiation modes: None (original price), Percentage Discount, Fixed Price
+   - Live preview showing original price, negotiated price, and total calculation
+   - Toast notifications for applied negotiations
+
+2. **Visual Price Indicators**
+   - Strikethrough original price with new negotiated price displayed in green
+   - Negotiate button highlighted (secondary variant) when item has active negotiation
+   - Tooltip shows negotiation details (percentage off or fixed price)
+   - Grand Total uses negotiated prices for selected items
+
+3. **Schema Alignment**
+   - Consistent 'percentage' enum value across quoteItemSchema and extendedQuoteItemSchema
+   - QuoteItem type includes: negotiationMode, negotiationValue, originalPrice, negotiatedPrice, negotiationNote

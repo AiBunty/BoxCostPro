@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User } from "lucide-react";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -301,6 +301,11 @@ export default function Calculator() {
   const [editingQuoteItemIdx, setEditingQuoteItemIdx] = useState<number | null>(null);
   const [editingQuoteItemData, setEditingQuoteItemData] = useState<Partial<QuoteItem> | null>(null);
   
+  // Negotiation dialog state
+  const [negotiatingItemIdx, setNegotiatingItemIdx] = useState<number | null>(null);
+  const [negotiationMode, setNegotiationMode] = useState<'none' | 'percentage' | 'fixed'>('none');
+  const [negotiationValue, setNegotiationValue] = useState<string>('');
+  
   // Message editing state
   const [editableWhatsAppMessage, setEditableWhatsAppMessage] = useState("");
   const [editableEmailBody, setEditableEmailBody] = useState("");
@@ -358,6 +363,38 @@ export default function Calculator() {
     queryKey: ["/api/rate-memory"],
   });
 
+  // Fetch paper prices and pricing rules for auto-fill
+  const { data: paperPricesData = [] } = useQuery<any[]>({
+    queryKey: ["/api/paper-prices"],
+  });
+  
+  const { data: pricingRulesData } = useQuery<any>({
+    queryKey: ["/api/paper-pricing-rules"],
+  });
+
+  // Lookup paper price with GSM/BF/Shade and apply adjustments
+  const lookupPaperPrice = (gsm: number, bf: number, shade: string): number | null => {
+    if (!paperPricesData || paperPricesData.length === 0) return null;
+    
+    const match = paperPricesData.find(
+      (p: any) => p.gsm === gsm && p.bf === bf && p.shade === shade
+    );
+    
+    if (!match) return null;
+    
+    const rules = pricingRulesData || {};
+    let gsmAdjustment = 0;
+    
+    if (gsm <= (rules.lowGsmLimit || 100)) {
+      gsmAdjustment = rules.lowGsmAdjustment || 0;
+    } else if (gsm >= (rules.highGsmLimit || 201)) {
+      gsmAdjustment = rules.highGsmAdjustment || 0;
+    }
+    
+    const marketAdjustment = rules.marketAdjustment || 0;
+    return match.basePrice + gsmAdjustment + marketAdjustment;
+  };
+
   // Mutation to save rate memory
   const saveRateMemoryMutation = useMutation({
     mutationFn: async (data: { bfValue: string; shade: string; rate: number }) => {
@@ -375,6 +412,10 @@ export default function Calculator() {
       customerCompany: string;
       customerEmail: string;
       customerMobile: string;
+      paymentTerms?: string;
+      deliveryDays?: string;
+      transportCharge?: number;
+      transportRemark?: string;
       totalValue: number;
       items: QuoteItem[];
     }) => {
@@ -970,6 +1011,11 @@ export default function Calculator() {
       totalCostPerBox,
       quantity: qty,
       totalValue: totalValue,
+      
+      // Negotiation fields (default values)
+      negotiationMode: 'none' as const,
+      originalPrice: totalCostPerBox,
+      
       selected: true,
     };
     
@@ -1152,7 +1198,14 @@ export default function Calculator() {
     });
   };
   
-  const grandTotal = quoteItems.reduce((sum, item) => sum + item.totalValue, 0);
+  const grandTotal = quoteItems
+    .filter(item => item.selected !== false)
+    .reduce((sum, item) => {
+      // Use negotiated price if available, otherwise fall back to totalCostPerBox or derive from totalValue
+      const perBoxPrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+      const qty = item.quantity || 0;
+      return sum + (perBoxPrice * qty);
+    }, 0);
   
   return (
     <TooltipProvider>
@@ -1611,7 +1664,7 @@ export default function Calculator() {
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" data-testid="button-user-menu">
                       <User className="w-4 h-4 mr-2" />
-                      {('firstName' in user && user.firstName) || ('email' in user && user.email) || "Account"}
+                      {('firstName' in user && user.firstName) ? String(user.firstName) : ('email' in user && user.email) ? String(user.email) : "Account"}
                       <ChevronDown className="w-4 h-4 ml-1" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -2066,9 +2119,20 @@ export default function Calculator() {
                           id="edit-gsm"
                           type="number"
                           value={editingLayerData.gsm}
-                          onChange={(e) =>
-                            setEditingLayerData({ ...editingLayerData, gsm: e.target.value })
-                          }
+                          onChange={(e) => {
+                            const newGsm = e.target.value;
+                            const updated = { ...editingLayerData, gsm: newGsm };
+                            const price = lookupPaperPrice(parseInt(newGsm), parseInt(editingLayerData.bf), editingLayerData.shade);
+                            if (price !== null) {
+                              updated.rate = price.toFixed(2);
+                            } else {
+                              const memoryKey = `${editingLayerData.bf}|${editingLayerData.shade}`;
+                              if (rateMemory[memoryKey]) {
+                                updated.rate = rateMemory[memoryKey];
+                              }
+                            }
+                            setEditingLayerData(updated);
+                          }}
                           data-testid="input-edit-gsm"
                         />
                       </div>
@@ -2076,9 +2140,19 @@ export default function Calculator() {
                         <Label htmlFor="edit-bf" className="text-sm">BF</Label>
                         <Select
                           value={editingLayerData.bf}
-                          onValueChange={(value) =>
-                            setEditingLayerData({ ...editingLayerData, bf: value })
-                          }
+                          onValueChange={(value) => {
+                            const updated = { ...editingLayerData, bf: value };
+                            const price = lookupPaperPrice(parseInt(editingLayerData.gsm), parseInt(value), editingLayerData.shade);
+                            if (price !== null) {
+                              updated.rate = price.toFixed(2);
+                            } else {
+                              const memoryKey = `${value}|${editingLayerData.shade}`;
+                              if (rateMemory[memoryKey]) {
+                                updated.rate = rateMemory[memoryKey];
+                              }
+                            }
+                            setEditingLayerData(updated);
+                          }}
                         >
                           <SelectTrigger id="edit-bf" data-testid="select-edit-bf">
                             <SelectValue />
@@ -2116,9 +2190,19 @@ export default function Calculator() {
                         <Label htmlFor="edit-shade" className="text-sm">Paper Shade</Label>
                         <Select
                           value={editingLayerData.shade}
-                          onValueChange={(value) =>
-                            setEditingLayerData({ ...editingLayerData, shade: value })
-                          }
+                          onValueChange={(value) => {
+                            const updated = { ...editingLayerData, shade: value };
+                            const price = lookupPaperPrice(parseInt(editingLayerData.gsm), parseInt(editingLayerData.bf), value);
+                            if (price !== null) {
+                              updated.rate = price.toFixed(2);
+                            } else {
+                              const memoryKey = `${editingLayerData.bf}|${value}`;
+                              if (rateMemory[memoryKey]) {
+                                updated.rate = rateMemory[memoryKey];
+                              }
+                            }
+                            setEditingLayerData(updated);
+                          }}
                         >
                           <SelectTrigger id="edit-shade" data-testid="select-edit-shade">
                             <SelectValue />
@@ -3007,9 +3091,45 @@ export default function Calculator() {
                               {visibleCostColumns.varnish && <TableCell className="text-right" data-testid={`text-item-varnish-${index}`}>{((item.varnishCost || 0) * item.quantity).toFixed(2)}</TableCell>}
                               {visibleCostColumns.die && <TableCell className="text-right" data-testid={`text-item-die-${index}`}>{((item.dieCost || 0) * item.quantity).toFixed(2)}</TableCell>}
                               {visibleCostColumns.punching && <TableCell className="text-right" data-testid={`text-item-punching-${index}`}>{((item.punchingCost || 0) * item.quantity).toFixed(2)}</TableCell>}
-                              <TableCell className="text-right font-medium" data-testid={`text-item-costperpc-${index}`}>{item.totalCostPerBox.toFixed(2)}</TableCell>
-                              <TableCell className="text-right font-bold" data-testid={`text-item-total-${index}`}>{item.totalValue.toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-medium" data-testid={`text-item-costperpc-${index}`}>
+                                {item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice ? (
+                                  <div className="flex flex-col items-end">
+                                    <span className="line-through text-muted-foreground text-xs">{(item.originalPrice || 0).toFixed(2)}</span>
+                                    <span className="text-green-600 font-bold">{item.negotiatedPrice.toFixed(2)}</span>
+                                  </div>
+                                ) : (
+                                  (item.totalCostPerBox || 0).toFixed(2)
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-bold" data-testid={`text-item-total-${index}`}>
+                                {item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice ? (
+                                  <span className="text-green-600">{(item.negotiatedPrice * (item.quantity || 0)).toFixed(2)}</span>
+                                ) : (
+                                  (item.totalValue || 0).toFixed(2)
+                                )}
+                              </TableCell>
                               <TableCell className="flex gap-1">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant={item.negotiationMode && item.negotiationMode !== 'none' ? "secondary" : "ghost"}
+                                      size="icon"
+                                      onClick={() => {
+                                        setNegotiatingItemIdx(index);
+                                        setNegotiationMode(item.negotiationMode || 'none');
+                                        setNegotiationValue(item.negotiationValue?.toString() || '');
+                                      }}
+                                      data-testid={`button-negotiate-item-${index}`}
+                                    >
+                                      <Tag className="w-4 h-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {item.negotiationMode && item.negotiationMode !== 'none' 
+                                      ? `Negotiated: ${item.negotiationMode === 'percentage' ? `${item.negotiationValue}% off` : `₹${item.negotiatedPrice}/pc`}`
+                                      : 'Negotiate price'}
+                                  </TooltipContent>
+                                </Tooltip>
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -3151,6 +3271,169 @@ export default function Calculator() {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Negotiation Dialog */}
+      <Dialog open={negotiatingItemIdx !== null} onOpenChange={(open) => {
+        if (!open) {
+          setNegotiatingItemIdx(null);
+          setNegotiationMode('none');
+          setNegotiationValue('');
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="w-5 h-5" />
+              Negotiate Price
+            </DialogTitle>
+            <DialogDescription>
+              {negotiatingItemIdx !== null && quoteItems[negotiatingItemIdx] && (
+                <span>
+                  {quoteItems[negotiatingItemIdx].boxName} - Original: ₹{quoteItems[negotiatingItemIdx].totalCostPerBox.toFixed(2)}/pc
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Negotiation Type</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant={negotiationMode === 'none' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    setNegotiationMode('none');
+                    setNegotiationValue('');
+                  }}
+                  data-testid="button-nego-none"
+                >
+                  None
+                </Button>
+                <Button
+                  variant={negotiationMode === 'percentage' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setNegotiationMode('percentage')}
+                  data-testid="button-nego-percentage"
+                >
+                  <Percent className="w-4 h-4 mr-1" />
+                  Discount %
+                </Button>
+                <Button
+                  variant={negotiationMode === 'fixed' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setNegotiationMode('fixed')}
+                  data-testid="button-nego-fixed"
+                >
+                  <DollarSign className="w-4 h-4 mr-1" />
+                  Fixed Price
+                </Button>
+              </div>
+            </div>
+
+            {negotiationMode !== 'none' && (
+              <div className="space-y-2">
+                <Label htmlFor="nego-value">
+                  {negotiationMode === 'percentage' ? 'Discount Percentage (%)' : 'Fixed Price per Box (₹)'}
+                </Label>
+                <Input
+                  id="nego-value"
+                  type="number"
+                  step="0.01"
+                  placeholder={negotiationMode === 'percentage' ? 'e.g. 10' : 'e.g. 25.00'}
+                  value={negotiationValue}
+                  onChange={(e) => setNegotiationValue(e.target.value)}
+                  data-testid="input-nego-value"
+                />
+              </div>
+            )}
+
+            {negotiatingItemIdx !== null && quoteItems[negotiatingItemIdx] && negotiationMode !== 'none' && negotiationValue && (
+              <div className="p-3 bg-muted rounded-lg space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Original Price:</span>
+                  <span className="line-through">₹{quoteItems[negotiatingItemIdx].totalCostPerBox.toFixed(2)}/pc</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span>Negotiated Price:</span>
+                  <span className="text-green-600">
+                    ₹{(negotiationMode === 'percentage' 
+                      ? quoteItems[negotiatingItemIdx].totalCostPerBox * (1 - parseFloat(negotiationValue) / 100)
+                      : parseFloat(negotiationValue)
+                    ).toFixed(2)}/pc
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">New Total ({quoteItems[negotiatingItemIdx].quantity} pcs):</span>
+                  <span className="text-green-600 font-semibold">
+                    ₹{((negotiationMode === 'percentage' 
+                      ? quoteItems[negotiatingItemIdx].totalCostPerBox * (1 - parseFloat(negotiationValue) / 100)
+                      : parseFloat(negotiationValue)
+                    ) * quoteItems[negotiatingItemIdx].quantity).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setNegotiatingItemIdx(null);
+                  setNegotiationMode('none');
+                  setNegotiationValue('');
+                }}
+                className="flex-1"
+                data-testid="button-cancel-nego"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (negotiatingItemIdx !== null) {
+                    const item = quoteItems[negotiatingItemIdx];
+                    let newNegotiatedPrice: number | undefined;
+                    
+                    if (negotiationMode === 'none') {
+                      newNegotiatedPrice = undefined;
+                    } else if (negotiationMode === 'percentage') {
+                      newNegotiatedPrice = item.totalCostPerBox * (1 - parseFloat(negotiationValue) / 100);
+                    } else {
+                      newNegotiatedPrice = parseFloat(negotiationValue);
+                    }
+                    
+                    const newItems = [...quoteItems];
+                    newItems[negotiatingItemIdx] = {
+                      ...item,
+                      negotiationMode: negotiationMode,
+                      negotiationValue: parseFloat(negotiationValue) || undefined,
+                      originalPrice: item.totalCostPerBox,
+                      negotiatedPrice: newNegotiatedPrice,
+                      totalValue: newNegotiatedPrice 
+                        ? newNegotiatedPrice * item.quantity 
+                        : item.totalCostPerBox * item.quantity,
+                    };
+                    setQuoteItems(newItems);
+                    setNegotiatingItemIdx(null);
+                    setNegotiationMode('none');
+                    setNegotiationValue('');
+                    
+                    toast({
+                      title: negotiationMode === 'none' ? "Negotiation removed" : "Price negotiated",
+                      description: negotiationMode === 'none' 
+                        ? "Price reset to original" 
+                        : `New price: ₹${newNegotiatedPrice?.toFixed(2)}/pc`,
+                    });
+                  }
+                }}
+                className="flex-1"
+                data-testid="button-apply-nego"
+              >
+                Apply
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
