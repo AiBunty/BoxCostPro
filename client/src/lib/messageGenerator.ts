@@ -16,13 +16,17 @@ export function generateWhatsAppMessage(
     ``,
   ];
 
-  // Filter only selected items
   const selectedItems = items.filter(item => item.selected !== false);
   
   selectedItems.forEach((item, index) => {
     const fluteType = item.ply === '3' ? 'B' : item.ply === '5' ? 'BC' : item.ply === '7' ? 'BCE' : 'B';
-    const rateExclGst = item.totalCostPerBox / 1.05;
-    const rateInclGst = item.totalCostPerBox;
+    
+    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    const originalPrice = item.originalPrice || item.totalCostPerBox || effectivePrice;
+    const hasNegotiation = item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice;
+    
+    const rateExclGst = effectivePrice / 1.05;
+    const originalRateExclGst = originalPrice / 1.05;
     
     lines.push(`*Item ${index + 1}*`);
     lines.push(`*Box Size :* (${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit})`);
@@ -44,12 +48,25 @@ export function generateWhatsAppMessage(
     
     lines.push(``);
     lines.push(`*Quantity:* ${item.quantity.toLocaleString()} Pcs`);
-    lines.push(`*Total Rate (Excl. GST):* Rs.${rateExclGst.toFixed(2)} /pc`);
-    lines.push(`*Total Rate (Incl. GST 5%):* Rs.${rateInclGst.toFixed(2)} /pc`);
+    
+    if (hasNegotiation) {
+      const discountNote = item.negotiationMode === 'percentage' 
+        ? ` (${item.negotiationValue}% off)` 
+        : '';
+      lines.push(`*Rate (Excl. GST):* ~Rs.${originalRateExclGst.toFixed(2)}~ → *Rs.${rateExclGst.toFixed(2)}* /pc${discountNote}`);
+      lines.push(`*Rate (Incl. GST 5%):* ~Rs.${originalPrice.toFixed(2)}~ → *Rs.${effectivePrice.toFixed(2)}* /pc`);
+    } else {
+      lines.push(`*Total Rate (Excl. GST):* Rs.${rateExclGst.toFixed(2)} /pc`);
+      lines.push(`*Total Rate (Incl. GST 5%):* Rs.${effectivePrice.toFixed(2)} /pc`);
+    }
     lines.push(``);
   });
 
-  const grandTotal = selectedItems.reduce((sum, item) => sum + item.totalValue, 0);
+  const grandTotal = selectedItems.reduce((sum, item) => {
+    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    return sum + (effectivePrice * (item.quantity || 0));
+  }, 0);
+  
   lines.push(`*Grand Total Value (Incl. GST): Rs.${grandTotal.toFixed(2)}*`);
   lines.push(``);
   
@@ -85,32 +102,52 @@ export function generateEmailContent(
   const companyName = companyProfile?.companyName || "Ventura Packagers Private Limited";
   const today = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
   
-  // Filter only selected items
   const selectedItems = items.filter(item => item.selected !== false);
   
   const subject = `Quote for Corrugated Packaging - ${partyProfile?.companyName || partyName}`;
 
-  // Generate table rows for items
   const itemRows = selectedItems.map((item, index) => {
     const fluteType = item.ply === '3' ? 'B' : item.ply === '5' ? 'BC' : item.ply === '7' ? 'BCE' : 'B';
     const paperSpecs = item.layerSpecs.map(s => `${s.gsm}/${s.bf}`).join(', ');
-    const rateExclGst = item.totalCostPerBox / 1.05;
+    
+    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    const originalPrice = item.originalPrice || item.totalCostPerBox || effectivePrice;
+    const hasNegotiation = item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice;
+    
+    const rateExclGst = effectivePrice / 1.05;
+    const originalRateExclGst = originalPrice / 1.05;
+    
+    let priceCell = `Rs.${rateExclGst.toFixed(2)}`;
+    if (hasNegotiation) {
+      const discountBadge = item.negotiationMode === 'percentage' 
+        ? `<span style="background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${item.negotiationValue}% off</span>` 
+        : '';
+      priceCell = `<span style="text-decoration: line-through; color: #999;">Rs.${originalRateExclGst.toFixed(2)}</span><br><span style="color: #16a34a; font-weight: bold;">Rs.${rateExclGst.toFixed(2)}</span>${discountBadge}`;
+    }
+    
+    const lineTotal = rateExclGst * (item.quantity || 0);
     
     return `            <tr>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.boxName}<br><small>${item.boxDescription || 'Plain Box'}</small></td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit}<br><small>${item.ply}-Ply (${fluteType})</small><br><small>Paper: ${paperSpecs}</small></td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">RSC</td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: center;">${item.bs.toFixed(1)}</td>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${rateExclGst.toFixed(2)}</td>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">${item.quantity.toLocaleString()}</td>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${(rateExclGst * item.quantity).toFixed(2)}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">${priceCell}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">${(item.quantity || 0).toLocaleString()}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${lineTotal.toFixed(2)}</td>
             </tr>`;
   }).join('\n');
 
-  const subtotal = selectedItems.reduce((sum, item) => sum + (item.totalCostPerBox / 1.05) * item.quantity, 0);
+  const subtotal = selectedItems.reduce((sum, item) => {
+    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    return sum + (effectivePrice / 1.05) * (item.quantity || 0);
+  }, 0);
   const gstAmount = subtotal * 0.05;
   const grandTotal = subtotal + gstAmount;
-  const totalQuantity = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalQuantity = selectedItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+  
+  const hasAnyNegotiations = selectedItems.some(item => item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice);
+  const savingsNote = hasAnyNegotiations ? `<p style="color: #16a34a; margin-top: 10px;">* Special negotiated pricing applied to some items</p>` : '';
 
   const body = `
 <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
@@ -171,6 +208,7 @@ ${itemRows}
             </tr>
         </tfoot>
     </table>
+    ${savingsNote}
 
     <div style="margin-top: 30px; border-top: 2px solid #eee; padding-top: 20px;">
         <h3 style="color: #1e40af; font-size: 16px; margin-bottom: 10px; text-decoration: underline;">Terms & Conditions</h3>
