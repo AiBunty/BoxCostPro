@@ -35,7 +35,7 @@ export default function PaperSetup() {
 
   // Rules state
   const [rules, setRules] = useState({
-    lowGsmLimit: 100,
+    lowGsmLimit: 101,
     lowGsmAdjustment: 1,
     highGsmLimit: 201,
     highGsmAdjustment: 1,
@@ -85,7 +85,7 @@ export default function PaperSetup() {
   useEffect(() => {
     if (pricingRules) {
       setRules({
-        lowGsmLimit: pricingRules.lowGsmLimit ?? 100,
+        lowGsmLimit: pricingRules.lowGsmLimit ?? 101,
         lowGsmAdjustment: pricingRules.lowGsmAdjustment ?? 1,
         highGsmLimit: pricingRules.highGsmLimit ?? 201,
         highGsmAdjustment: pricingRules.highGsmAdjustment ?? 1,
@@ -383,7 +383,7 @@ export default function PaperSetup() {
                     <Input
                       type="number"
                       value={rules.lowGsmLimit}
-                      onChange={(e) => setRules({ ...rules, lowGsmLimit: parseInt(e.target.value) || 100 })}
+                      onChange={(e) => setRules({ ...rules, lowGsmLimit: parseInt(e.target.value) || 101 })}
                       data-testid="input-low-gsm-limit"
                     />
                   </div>

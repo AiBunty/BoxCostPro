@@ -452,7 +452,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (rules) {
         // Apply GSM adjustment based on user's rules
-        if (gsm <= (rules.lowGsmLimit || 100)) {
+        if (gsm <= (rules.lowGsmLimit || 101)) {
           gsmAdjustment = rules.lowGsmAdjustment || 0;
         } else if (gsm >= (rules.highGsmLimit || 201)) {
           gsmAdjustment = rules.highGsmAdjustment || 0;
@@ -479,7 +479,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const rules = await storage.getPaperPricingRules(userId);
       res.json(rules || {
-        lowGsmLimit: 100,
+        lowGsmLimit: 101,
         lowGsmAdjustment: 1,
         highGsmLimit: 201,
         highGsmAdjustment: 1,
@@ -747,7 +747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let marketAdjustment = 0;
       
       if (rules) {
-        if (gsm <= (rules.lowGsmLimit || 100)) {
+        if (gsm <= (rules.lowGsmLimit || 101)) {
           gsmAdjustment = rules.lowGsmAdjustment || 0;
         } else if (gsm >= (rules.highGsmLimit || 201)) {
           gsmAdjustment = rules.highGsmAdjustment || 0;

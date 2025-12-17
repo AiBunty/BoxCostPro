@@ -392,7 +392,7 @@ export type ShadePremium = typeof shadePremiums.$inferSelect;
 export const paperPricingRules = pgTable("paper_pricing_rules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull().unique(), // One rule set per user
-  lowGsmLimit: integer("low_gsm_limit").default(100), // GSM <= this gets low adjustment
+  lowGsmLimit: integer("low_gsm_limit").default(101), // GSM <= this gets low adjustment
   lowGsmAdjustment: real("low_gsm_adjustment").default(1), // Amount to add for low GSM
   highGsmLimit: integer("high_gsm_limit").default(201), // GSM >= this gets high adjustment
   highGsmAdjustment: real("high_gsm_adjustment").default(1), // Amount to add for high GSM

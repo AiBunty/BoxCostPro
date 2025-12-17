@@ -427,10 +427,10 @@ export default function Calculator() {
     
     // Apply GSM adjustments
     let gsmAdjustment = 0;
-    const lowLimit = rules.lowGsmLimit || 100;
+    const lowLimit = rules.lowGsmLimit || 101;
     const highLimit = rules.highGsmLimit || 201;
     
-    if (gsm < lowLimit) {
+    if (gsm <= lowLimit) {
       gsmAdjustment = Number(rules.lowGsmAdjustment) || 0;
     } else if (gsm >= highLimit) {
       gsmAdjustment = Number(rules.highGsmAdjustment) || 0;

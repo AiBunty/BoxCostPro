@@ -40,14 +40,14 @@ export function calculatePaperRate(
 
   let gsmAdjustment = 0;
   if (rules) {
-    const lowLimit = rules.lowGsmLimit ?? 100;
+    const lowLimit = rules.lowGsmLimit ?? 101;
     const highLimit = rules.highGsmLimit ?? 200;
     const lowAdj = Number(rules.lowGsmAdjustment ?? 0);
     const highAdj = Number(rules.highGsmAdjustment ?? 0);
 
-    if (gsm < lowLimit) {
+    if (gsm <= lowLimit) {
       gsmAdjustment = lowAdj;
-      notes.push(`GSM ${gsm} below ${lowLimit}: +₹${lowAdj.toFixed(2)}`);
+      notes.push(`GSM ${gsm} at/below ${lowLimit}: +₹${lowAdj.toFixed(2)}`);
     } else if (gsm >= highLimit) {
       gsmAdjustment = highAdj;
       notes.push(`GSM ${gsm} at/above ${highLimit}: +₹${highAdj.toFixed(2)}`);
