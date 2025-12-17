@@ -342,6 +342,13 @@ export const quoteItemSchema = z.object({
   
   // Selection for sending via WhatsApp/Email
   selected: z.boolean().default(true),
+  
+  // Visibility controls for quote generation (what details to show)
+  showPaperSpec: z.boolean().default(true), // Show paper specifications in quote
+  showPrinting: z.boolean().default(true), // Show printing details in quote
+  showBS: z.boolean().default(true), // Show Burst Strength in quote
+  showCS: z.boolean().default(true), // Show Compression Strength (BCT) in quote
+  showWeight: z.boolean().default(true), // Show box weight in quote
 });
 
 export type QuoteItem = z.infer<typeof quoteItemSchema>;

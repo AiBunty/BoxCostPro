@@ -324,7 +324,8 @@ export function downloadQuotePDF(
   paymentTerms: string,
   deliveryDays: string,
   transportCharge: string,
-  transportRemark: string
+  transportRemark: string,
+  taxRate: number = 18 // GST percentage, default 18%
 ) {
   let htmlContent = `
     <html>
@@ -401,18 +402,21 @@ export function downloadQuotePDF(
     `;
   });
   
-  const grandTotal = items.reduce((sum, item) => sum + item.totalValue, 0);
+  const subtotal = items.reduce((sum, item) => sum + item.totalValue, 0);
   const transportCost = parseFloat(transportCharge) || 0;
-  const finalTotal = grandTotal + transportCost;
+  const subtotalWithTransport = subtotal + transportCost;
+  const taxAmount = taxRate > 0 ? subtotalWithTransport * (taxRate / 100) : 0;
+  const grandTotal = subtotalWithTransport + taxAmount;
   
   htmlContent += `
         </tbody>
       </table>
       
       <div class="total">
-        Sub Total: ₹${grandTotal.toFixed(2)}<br>
+        Subtotal (Before Tax): ₹${subtotal.toFixed(2)}<br>
         ${transportCost > 0 ? `Transport Charge${transportRemark ? ` (${transportRemark})` : ''}: ₹${transportCost.toFixed(2)}<br>` : ''}
-        <strong>Grand Total: ₹${finalTotal.toFixed(2)}</strong>
+        ${taxRate > 0 ? `GST (${taxRate}%): ₹${taxAmount.toFixed(2)}<br>` : ''}
+        <strong>Grand Total${taxRate > 0 ? ' (Incl. GST)' : ''}: ₹${grandTotal.toFixed(2)}</strong>
       </div>
       
       <div class="footer">

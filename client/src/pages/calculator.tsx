@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw, Menu, Palette } from "lucide-react";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw, Menu, Palette, Eye, EyeOff } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   DropdownMenu,
@@ -59,6 +59,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -269,6 +274,10 @@ export default function Calculator() {
   // Transport Charge
   const [transportCharge, setTransportCharge] = useState<string>("");
   const [transportRemark, setTransportRemark] = useState<string>("");
+  
+  // Tax Rate (GST percentage - applied to total when quote is made)
+  const [taxRate, setTaxRate] = useState<string>("18"); // Default 18% GST
+  
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showQuotesDialog, setShowQuotesDialog] = useState(false);
   const [showMessageDialog, setShowMessageDialog] = useState<"whatsapp" | "email" | null>(null);
@@ -344,6 +353,9 @@ export default function Calculator() {
     varnish: true,
     die: true,
     punching: true,
+    bs: true, // Burst Strength
+    cs: true, // Compression Strength (BCT)
+    weight: true, // Box Weight
   });
   
   // Fetch all company profiles
@@ -1112,6 +1124,13 @@ export default function Calculator() {
       originalPrice: totalCostPerBox,
       
       selected: true,
+      
+      // Visibility controls for quote generation (all true by default)
+      showPaperSpec: true,
+      showPrinting: true,
+      showBS: true,
+      showCS: true,
+      showWeight: true,
     };
     
     setQuoteItems([...quoteItems, item]);
@@ -1229,6 +1248,13 @@ export default function Calculator() {
     setQuoteItems(quoteItems.map(item => ({ ...item, selected })));
   };
   
+  // Update item visibility settings for quote generation
+  const handleUpdateItemVisibility = (index: number, field: 'showPaperSpec' | 'showPrinting' | 'showBS' | 'showCS' | 'showWeight', value: boolean) => {
+    setQuoteItems(quoteItems.map((item, i) => 
+      i === index ? { ...item, [field]: value } : item
+    ));
+  };
+  
   const handleSaveQuote = () => {
     if (quoteItems.length === 0) {
       toast({
@@ -1300,7 +1326,8 @@ export default function Calculator() {
     });
   };
   
-  const grandTotal = quoteItems
+  // Subtotal (Price before Tax)
+  const subtotal = quoteItems
     .filter(item => item.selected !== false)
     .reduce((sum, item) => {
       // Use negotiated price if available, otherwise fall back to totalCostPerBox or derive from totalValue
@@ -1308,6 +1335,11 @@ export default function Calculator() {
       const qty = item.quantity || 0;
       return sum + (perBoxPrice * qty);
     }, 0);
+  
+  // Tax calculation (applied to total when quote is made)
+  const taxRateValue = parseFloat(taxRate) || 0;
+  const taxAmount = subtotal * (taxRateValue / 100);
+  const grandTotal = subtotal + taxAmount;
   
   return (
     <TooltipProvider>
@@ -2777,7 +2809,7 @@ export default function Calculator() {
                       variant="outline"
                       onClick={() => {
                         const selectedParty = allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId) || null;
-                        const message = generateWhatsAppMessage(quoteItems, selectedParty, companyProfile);
+                        const message = generateWhatsAppMessage(quoteItems, selectedParty, companyProfile, taxRateValue);
                         setEditableWhatsAppMessage(message);
                         setShowMessageDialog("whatsapp");
                       }}
@@ -2792,7 +2824,7 @@ export default function Calculator() {
                       variant="outline"
                       onClick={() => {
                         const selectedParty = allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId) || null;
-                        const { subject, body } = generateEmailContent(quoteItems, selectedParty, companyProfile);
+                        const { subject, body } = generateEmailContent(quoteItems, selectedParty, companyProfile, taxRateValue);
                         setEditableEmailSubject(subject);
                         setEditableEmailBody(body);
                         setShowMessageDialog("email");
@@ -2821,7 +2853,7 @@ export default function Calculator() {
                         variant="outline"
                         onClick={() => {
                           const selectedParty = allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId) || null;
-                          const message = generateWhatsAppMessage(quoteItems, selectedParty, companyProfile);
+                          const message = generateWhatsAppMessage(quoteItems, selectedParty, companyProfile, taxRateValue);
                           const encodedMessage = encodeURIComponent(message);
                           const whatsappUrl = `https://wa.me/${customerMobile.replace(/\D/g, '')}?text=${encodedMessage}`;
                           window.open(whatsappUrl, '_blank');
@@ -2836,7 +2868,7 @@ export default function Calculator() {
                     <Button 
                       size="sm" 
                       variant="outline"
-                      onClick={() => downloadQuotePDF(quoteItems, partyName, customerCompany, companyProfile, paymentTerms, deliveryDays, transportCharge, transportRemark)}
+                      onClick={() => downloadQuotePDF(quoteItems, partyName, customerCompany, companyProfile, paymentTerms, deliveryDays, transportCharge, transportRemark, taxRateValue)}
                       data-testid="button-download-pdf"
                     >
                       <Download className="w-4 h-4 mr-2" />
@@ -2927,6 +2959,9 @@ export default function Calculator() {
                         { key: 'varnish', label: 'Varnish' },
                         { key: 'die', label: 'Die' },
                         { key: 'punching', label: 'Punching' },
+                        { key: 'bs', label: 'BS' },
+                        { key: 'cs', label: 'CS (BCT)' },
+                        { key: 'weight', label: 'Weight' },
                       ].map(col => (
                         <label key={col.key} className="flex items-center gap-1.5 cursor-pointer">
                           <Checkbox
@@ -2959,6 +2994,9 @@ export default function Calculator() {
                             {visibleCostColumns.varnish && <TableHead className="text-right">Varnish (₹)</TableHead>}
                             {visibleCostColumns.die && <TableHead className="text-right">Die (₹)</TableHead>}
                             {visibleCostColumns.punching && <TableHead className="text-right">Punching (₹)</TableHead>}
+                            {visibleCostColumns.bs && <TableHead className="text-right">BS</TableHead>}
+                            {visibleCostColumns.cs && <TableHead className="text-right">CS (BCT)</TableHead>}
+                            {visibleCostColumns.weight && <TableHead className="text-right">Weight (Kg)</TableHead>}
                             <TableHead className="text-right">Cost/Pc (₹)</TableHead>
                             <TableHead className="text-right">Total (₹)</TableHead>
                             <TableHead className="w-10"></TableHead>
@@ -2999,6 +3037,9 @@ export default function Calculator() {
                               {visibleCostColumns.varnish && <TableCell className="text-right" data-testid={`text-item-varnish-${index}`}>{((item.varnishCost || 0) * item.quantity).toFixed(2)}</TableCell>}
                               {visibleCostColumns.die && <TableCell className="text-right" data-testid={`text-item-die-${index}`}>{((item.dieCost || 0) * item.quantity).toFixed(2)}</TableCell>}
                               {visibleCostColumns.punching && <TableCell className="text-right" data-testid={`text-item-punching-${index}`}>{((item.punchingCost || 0) * item.quantity).toFixed(2)}</TableCell>}
+                              {visibleCostColumns.bs && <TableCell className="text-right" data-testid={`text-item-bs-${index}`}>{(item.bs || 0).toFixed(1)}</TableCell>}
+                              {visibleCostColumns.cs && <TableCell className="text-right" data-testid={`text-item-cs-${index}`}>{(item.bct || 0).toFixed(1)}</TableCell>}
+                              {visibleCostColumns.weight && <TableCell className="text-right" data-testid={`text-item-weight-${index}`}>{(item.sheetWeight || 0).toFixed(3)}</TableCell>}
                               <TableCell className="text-right font-medium" data-testid={`text-item-costperpc-${index}`}>
                                 {item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice ? (
                                   <div className="flex flex-col items-end">
@@ -3017,6 +3058,38 @@ export default function Calculator() {
                                 )}
                               </TableCell>
                               <TableCell className="flex gap-1">
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      data-testid={`button-visibility-item-${index}`}
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-56 p-3" align="end">
+                                    <div className="space-y-2">
+                                      <p className="text-sm font-medium mb-2">Show in Quote:</p>
+                                      {[
+                                        { key: 'showPaperSpec', label: 'Paper Specs' },
+                                        { key: 'showPrinting', label: 'Printing' },
+                                        { key: 'showBS', label: 'BS (Burst)' },
+                                        { key: 'showCS', label: 'CS (BCT)' },
+                                        { key: 'showWeight', label: 'Weight' },
+                                      ].map(opt => (
+                                        <label key={opt.key} className="flex items-center gap-2 cursor-pointer text-sm">
+                                          <Checkbox
+                                            checked={item[opt.key as keyof typeof item] !== false}
+                                            onCheckedChange={(checked) => handleUpdateItemVisibility(index, opt.key as any, !!checked)}
+                                            data-testid={`checkbox-visibility-${opt.key}-${index}`}
+                                          />
+                                          <span>{opt.label}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button
@@ -3061,11 +3134,35 @@ export default function Calculator() {
                       </Table>
                     </div>
                     <Separator />
-                    <div className="flex justify-between items-center pt-2">
-                      <span className="font-semibold">Grand Total (Selected):</span>
-                      <span className="font-bold text-xl text-primary" data-testid="text-grand-total">
-                        ₹{grandTotal.toFixed(2)}
-                      </span>
+                    <div className="space-y-3 pt-2">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold">Subtotal (Before Tax):</span>
+                        <span className="font-medium text-lg" data-testid="text-subtotal">
+                          ₹{subtotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Tax Rate (GST %):</span>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={taxRate}
+                            onChange={(e) => setTaxRate(e.target.value)}
+                            className="w-20 h-8 text-center"
+                            data-testid="input-tax-rate"
+                          />
+                        </div>
+                        <span className="text-muted-foreground" data-testid="text-tax-amount">
+                          + ₹{taxAmount.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t">
+                        <span className="font-semibold">Grand Total (Incl. Tax):</span>
+                        <span className="font-bold text-xl text-primary" data-testid="text-grand-total">
+                          ₹{grandTotal.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}

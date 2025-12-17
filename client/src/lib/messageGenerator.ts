@@ -3,7 +3,8 @@ import type { QuoteItem, CompanyProfile, PartyProfile } from "@shared/schema";
 export function generateWhatsAppMessage(
   items: QuoteItem[],
   partyProfile: PartyProfile | null,
-  companyProfile: CompanyProfile | null
+  companyProfile: CompanyProfile | null,
+  taxRate: number = 18 // GST percentage, default 18%
 ): string {
   const partyName = partyProfile?.personName || "Valued Customer";
   const companyName = companyProfile?.companyName || "Ventura Packagers Private Limited";
@@ -21,58 +22,83 @@ export function generateWhatsAppMessage(
   selectedItems.forEach((item, index) => {
     const fluteType = item.ply === '3' ? 'B' : item.ply === '5' ? 'BC' : item.ply === '7' ? 'BCE' : 'B';
     
-    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
-    const originalPrice = item.originalPrice || item.totalCostPerBox || effectivePrice;
+    // Price before tax (negotiated price is already the price before tax)
+    const priceBeforeTax = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    const originalPrice = item.originalPrice || item.totalCostPerBox || priceBeforeTax;
     const hasNegotiation = item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice;
-    
-    const rateExclGst = effectivePrice / 1.05;
-    const originalRateExclGst = originalPrice / 1.05;
     
     lines.push(`*Item ${index + 1}*`);
     lines.push(`*Box Size :* (${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit})`);
     lines.push(`*Item Name:* ${item.boxName} *Board:* ${item.ply} Ply`);
     lines.push(`*Flute:* ${fluteType}`);
     
-    // Show printing info based on whether printing is enabled
-    const printingInfo = item.printingEnabled 
-      ? `${item.printType || 'Flexo'} - ${item.printColours || 1} colour${(item.printColours || 1) > 1 ? 's' : ''}${item.boxDescription ? ` (${item.boxDescription})` : ''}`
-      : 'Plain';
-    lines.push(`*Printing:* ${printingInfo}`);
-    lines.push(``);
-    lines.push(`*Paper Spec:*`);
+    // Show printing info based on visibility setting
+    if (item.showPrinting !== false) {
+      const printingInfo = item.printingEnabled 
+        ? `${item.printType || 'Flexo'} - ${item.printColours || 1} colour${(item.printColours || 1) > 1 ? 's' : ''}${item.boxDescription ? ` (${item.boxDescription})` : ''}`
+        : 'Plain';
+      lines.push(`*Printing:* ${printingInfo}`);
+    }
     
-    item.layerSpecs.forEach((spec, idx) => {
-      let layerLabel = 'Flute';
-      if (idx === 0) layerLabel = 'Outer';
-      else if (idx === item.layerSpecs.length - 1) layerLabel = 'Inner';
-      else if (spec.layerType === 'flute') layerLabel = `Flute (F${Math.floor(idx / 2)})`;
-      else layerLabel = `Liner (L${idx + 1})`;
+    // Show paper specs based on visibility setting
+    if (item.showPaperSpec !== false) {
+      lines.push(``);
+      lines.push(`*Paper Spec:*`);
       
-      lines.push(`  - ${layerLabel} (L${idx + 1}): ${spec.gsm} GSM / ${spec.bf} BF (${spec.shade})`);
-    });
+      item.layerSpecs.forEach((spec, idx) => {
+        let layerLabel = 'Flute';
+        if (idx === 0) layerLabel = 'Outer';
+        else if (idx === item.layerSpecs.length - 1) layerLabel = 'Inner';
+        else if (spec.layerType === 'flute') layerLabel = `Flute (F${Math.floor(idx / 2)})`;
+        else layerLabel = `Liner (L${idx + 1})`;
+        
+        lines.push(`  - ${layerLabel} (L${idx + 1}): ${spec.gsm} GSM / ${spec.bf} BF (${spec.shade})`);
+      });
+    }
+    
+    // Show BS (Burst Strength) based on visibility setting
+    if (item.showBS !== false && item.bs) {
+      lines.push(`*BS (Burst Strength):* ${item.bs.toFixed(1)}`);
+    }
+    
+    // Show CS (BCT - Box Compression Test) based on visibility setting
+    if (item.showCS !== false && item.bct) {
+      lines.push(`*CS (BCT):* ${item.bct.toFixed(1)}`);
+    }
+    
+    // Show Weight based on visibility setting
+    if (item.showWeight !== false && item.sheetWeight) {
+      lines.push(`*Weight:* ${item.sheetWeight.toFixed(3)} Kg`);
+    }
     
     lines.push(``);
     lines.push(`*Quantity:* ${item.quantity.toLocaleString()} Pcs`);
     
+    // Show price before tax
     if (hasNegotiation) {
       const discountNote = item.negotiationMode === 'percentage' 
         ? ` (${item.negotiationValue}% off)` 
         : '';
-      lines.push(`*Rate (Excl. GST):* ~Rs.${originalRateExclGst.toFixed(2)}~ → *Rs.${rateExclGst.toFixed(2)}* /pc${discountNote}`);
-      lines.push(`*Rate (Incl. GST 5%):* ~Rs.${originalPrice.toFixed(2)}~ → *Rs.${effectivePrice.toFixed(2)}* /pc`);
+      lines.push(`*Rate (Before Tax):* ~Rs.${originalPrice.toFixed(2)}~ → *Rs.${priceBeforeTax.toFixed(2)}* /pc${discountNote}`);
     } else {
-      lines.push(`*Total Rate (Excl. GST):* Rs.${rateExclGst.toFixed(2)} /pc`);
-      lines.push(`*Total Rate (Incl. GST 5%):* Rs.${effectivePrice.toFixed(2)} /pc`);
+      lines.push(`*Rate (Before Tax):* Rs.${priceBeforeTax.toFixed(2)} /pc`);
     }
     lines.push(``);
   });
 
-  const grandTotal = selectedItems.reduce((sum, item) => {
-    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
-    return sum + (effectivePrice * (item.quantity || 0));
+  // Calculate subtotal (before tax)
+  const subtotal = selectedItems.reduce((sum, item) => {
+    const priceBeforeTax = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    return sum + (priceBeforeTax * (item.quantity || 0));
   }, 0);
   
-  lines.push(`*Grand Total Value (Incl. GST): Rs.${grandTotal.toFixed(2)}*`);
+  // Calculate tax
+  const taxAmount = subtotal * (taxRate / 100);
+  const grandTotal = subtotal + taxAmount;
+  
+  lines.push(`*Subtotal (Before Tax): Rs.${subtotal.toFixed(2)}*`);
+  lines.push(`*GST (${taxRate}%): Rs.${taxAmount.toFixed(2)}*`);
+  lines.push(`*Grand Total (Incl. GST): Rs.${grandTotal.toFixed(2)}*`);
   lines.push(``);
   
   if (companyProfile) {
@@ -101,7 +127,8 @@ export function generateWhatsAppMessage(
 export function generateEmailContent(
   items: QuoteItem[],
   partyProfile: PartyProfile | null,
-  companyProfile: CompanyProfile | null
+  companyProfile: CompanyProfile | null,
+  taxRate: number = 18 // GST percentage, default 18%
 ): { subject: string; body: string } {
   const partyName = partyProfile?.personName || "Valued Customer";
   const companyName = companyProfile?.companyName || "Ventura Packagers Private Limited";
@@ -113,46 +140,56 @@ export function generateEmailContent(
 
   const itemRows = selectedItems.map((item, index) => {
     const fluteType = item.ply === '3' ? 'B' : item.ply === '5' ? 'BC' : item.ply === '7' ? 'BCE' : 'B';
-    const paperSpecs = item.layerSpecs.map(s => `${s.gsm}/${s.bf}`).join(', ');
     
-    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
-    const originalPrice = item.originalPrice || item.totalCostPerBox || effectivePrice;
+    // Build paper specs only if visible
+    const paperSpecs = item.showPaperSpec !== false 
+      ? item.layerSpecs.map(s => `${s.gsm}/${s.bf}`).join(', ')
+      : '';
+    
+    // Price before tax (negotiated price is already price before tax)
+    const priceBeforeTax = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    const originalPrice = item.originalPrice || item.totalCostPerBox || priceBeforeTax;
     const hasNegotiation = item.negotiationMode && item.negotiationMode !== 'none' && item.negotiatedPrice;
     
-    const rateExclGst = effectivePrice / 1.05;
-    const originalRateExclGst = originalPrice / 1.05;
-    
-    let priceCell = `Rs.${rateExclGst.toFixed(2)}`;
+    let priceCell = `Rs.${priceBeforeTax.toFixed(2)}`;
     if (hasNegotiation) {
       const discountBadge = item.negotiationMode === 'percentage' 
         ? `<span style="background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${item.negotiationValue}% off</span>` 
         : '';
-      priceCell = `<span style="text-decoration: line-through; color: #999;">Rs.${originalRateExclGst.toFixed(2)}</span><br><span style="color: #16a34a; font-weight: bold;">Rs.${rateExclGst.toFixed(2)}</span>${discountBadge}`;
+      priceCell = `<span style="text-decoration: line-through; color: #999;">Rs.${originalPrice.toFixed(2)}</span><br><span style="color: #16a34a; font-weight: bold;">Rs.${priceBeforeTax.toFixed(2)}</span>${discountBadge}`;
     }
     
-    const lineTotal = rateExclGst * (item.quantity || 0);
+    const lineTotal = priceBeforeTax * (item.quantity || 0);
     
-    // Build printing remarks for email
-    const emailPrintingInfo = item.printingEnabled 
-      ? `${item.printType || 'Flexo'} - ${item.printColours || 1} colour${(item.printColours || 1) > 1 ? 's' : ''}${item.boxDescription ? ` (${item.boxDescription})` : ''}`
-      : 'Plain';
+    // Build printing remarks for email (only if visible)
+    const emailPrintingInfo = item.showPrinting !== false
+      ? (item.printingEnabled 
+        ? `${item.printType || 'Flexo'} - ${item.printColours || 1} colour${(item.printColours || 1) > 1 ? 's' : ''}${item.boxDescription ? ` (${item.boxDescription})` : ''}`
+        : 'Plain')
+      : '';
+    
+    // Build additional info based on visibility settings
+    const additionalInfo: string[] = [];
+    if (item.showBS !== false && item.bs) additionalInfo.push(`BS: ${item.bs.toFixed(1)}`);
+    if (item.showCS !== false && item.bct) additionalInfo.push(`CS: ${item.bct.toFixed(1)}`);
+    if (item.showWeight !== false && item.sheetWeight) additionalInfo.push(`Wt: ${item.sheetWeight.toFixed(3)}kg`);
     
     return `            <tr>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.boxName}<br><small>${emailPrintingInfo}</small></td>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit}<br><small>${item.ply}-Ply (${fluteType})</small><br><small>Paper: ${paperSpecs}</small></td>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">RSC</td>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: center;">${item.bs.toFixed(1)}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.boxName}${emailPrintingInfo ? `<br><small>${emailPrintingInfo}</small>` : ''}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit}<br><small>${item.ply}-Ply (${fluteType})</small>${paperSpecs ? `<br><small>Paper: ${paperSpecs}</small>` : ''}</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">RSC${additionalInfo.length > 0 ? `<br><small>${additionalInfo.join(', ')}</small>` : ''}</td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">${priceCell}</td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">${(item.quantity || 0).toLocaleString()}</td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${lineTotal.toFixed(2)}</td>
             </tr>`;
   }).join('\n');
 
+  // Calculate subtotal (before tax)
   const subtotal = selectedItems.reduce((sum, item) => {
-    const effectivePrice = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
-    return sum + (effectivePrice / 1.05) * (item.quantity || 0);
+    const priceBeforeTax = item.negotiatedPrice || item.totalCostPerBox || (item.totalValue && item.quantity ? item.totalValue / item.quantity : 0);
+    return sum + (priceBeforeTax * (item.quantity || 0));
   }, 0);
-  const gstAmount = subtotal * 0.05;
+  const gstAmount = subtotal * (taxRate / 100);
   const grandTotal = subtotal + gstAmount;
   const totalQuantity = selectedItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
   
@@ -193,8 +230,7 @@ export function generateEmailContent(
             <tr style="background-color: #1e40af; color: white;">
                 <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Description</th>
                 <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Specifications</th>
-                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Box Style</th>
-                <th style="border: 1px solid #ccc; padding: 10px; text-align: center;">BS (kg/cm)</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Details</th>
                 <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Unit Price (Rs.)</th>
                 <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Quantity</th>
                 <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Total Price (Rs.)</th>
@@ -205,15 +241,15 @@ ${itemRows}
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>Subtotal</strong></td>
+                <td colspan="5" style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>Subtotal (Before Tax)</strong></td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>Rs.${subtotal.toFixed(2)}</strong></td>
             </tr>
             <tr>
-                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;">Goods and Services Tax (GST) 5% on Subtotal</td>
+                <td colspan="5" style="border: 1px solid #ccc; padding: 10px; text-align: right;">Goods and Services Tax (GST) ${taxRate}%</td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">Rs.${gstAmount.toFixed(2)}</td>
             </tr>
             <tr style="background-color: #f0f9ff;">
-                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>Grand Total</strong></td>
+                <td colspan="5" style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>Grand Total (Incl. GST)</strong></td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>Rs.${grandTotal.toFixed(2)}</strong></td>
             </tr>
         </tfoot>
