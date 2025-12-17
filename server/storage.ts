@@ -39,6 +39,8 @@ import {
   type InsertBoxSpecification,
   type BoxSpecVersion,
   type InsertBoxSpecVersion,
+  type UserProfile,
+  type InsertUserProfile,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -59,20 +61,25 @@ import {
   paperPricingRules,
   userQuoteTerms,
   boxSpecifications,
-  boxSpecVersions
+  boxSpecVersions,
+  userProfiles
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 export interface IStorage {
-  // User operations (required for Replit Auth)
+  // User operations (for Supabase Auth)
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserBySupabaseId(supabaseUserId: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<UpsertUser>): Promise<User | undefined>;
-  getUserByVerificationToken(token: string): Promise<User | undefined>;
-  getUserByResetToken(token: string): Promise<User | undefined>;
+  
+  // User Profiles (onboarding/setup tracking)
+  getUserProfile(userId: string): Promise<UserProfile | undefined>;
+  createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+  updateUserProfile(userId: string, updates: Partial<InsertUserProfile>): Promise<UserProfile | undefined>;
   
   // Company Profiles
   getCompanyProfile(id: string): Promise<CompanyProfile | undefined>;
@@ -205,21 +212,33 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // User operations (required for Replit Auth)
+  // User operations (for Supabase Auth)
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
 
+  async getUserBySupabaseId(supabaseUserId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.supabaseUserId, supabaseUserId));
+    return user;
+  }
+
   async upsertUser(userData: UpsertUser): Promise<User> {
-    if (!userData.id) {
-      throw new Error("User ID is required");
+    // For Supabase Auth - check by supabaseUserId first, then by email
+    let existingUser: User | undefined;
+    
+    if (userData.supabaseUserId) {
+      existingUser = await this.getUserBySupabaseId(userData.supabaseUserId);
+    }
+    if (!existingUser && userData.email) {
+      existingUser = await this.getUserByEmail(userData.email);
+    }
+    if (!existingUser && userData.id) {
+      existingUser = await this.getUser(userData.id);
     }
     
-    // Check if user already exists
-    const existingUser = await this.getUser(userData.id);
     if (existingUser) {
-      // User exists, just update non-role fields (preserve existing role)
+      // User exists, update non-role fields (preserve existing role)
       const [user] = await db
         .update(users)
         .set({
@@ -227,57 +246,58 @@ export class DatabaseStorage implements IStorage {
           firstName: userData.firstName,
           lastName: userData.lastName,
           profileImageUrl: userData.profileImageUrl,
+          supabaseUserId: userData.supabaseUserId || existingUser.supabaseUserId,
           updatedAt: new Date(),
         })
-        .where(eq(users.id, userData.id))
+        .where(eq(users.id, existingUser.id))
         .returning();
       return user;
     }
     
-    // New user - insert first with role='user', then atomically promote to owner if no owners exist
+    // New user - insert with role='user', then atomically promote to owner if none exists
     const now = new Date();
     
     try {
-      // Insert new user with default role='user'
       const [insertedUser] = await db
         .insert(users)
         .values({
-          id: userData.id,
+          id: userData.id || undefined,
+          supabaseUserId: userData.supabaseUserId,
           email: userData.email,
           firstName: userData.firstName,
           lastName: userData.lastName,
           profileImageUrl: userData.profileImageUrl,
           role: 'user',
+          authProvider: userData.authProvider || 'supabase',
           createdAt: now,
           updatedAt: now,
         })
         .returning();
       
       // Atomically promote to owner if no owner exists yet
-      // A partial unique index (users_single_owner_idx) ensures only one user can have role='owner'
-      // This makes the promotion race-condition safe at the database level
       try {
         await db.execute(sql`
           UPDATE users 
           SET role = 'owner', updated_at = NOW()
-          WHERE id = ${userData.id}
+          WHERE id = ${insertedUser.id}
           AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner')
         `);
       } catch (promoteError: any) {
-        // Unique constraint violation means another user already became owner - that's fine
         if (!promoteError.message?.includes('unique')) {
           console.log('Owner promotion note:', promoteError.message);
         }
       }
       
-      // Return the final user state (may have been promoted to owner)
-      const finalUser = await this.getUser(userData.id);
+      // Create user profile for onboarding tracking
+      await this.createUserProfile({ userId: insertedUser.id });
+      
+      // Return the final user state
+      const finalUser = await this.getUser(insertedUser.id);
       return finalUser || insertedUser;
     } catch (error: any) {
-      // Handle potential race condition - if insert fails due to duplicate key
-      const existingAfterRace = await this.getUser(userData.id);
-      if (existingAfterRace) {
-        return existingAfterRace;
+      if (userData.supabaseUserId) {
+        const existingAfterRace = await this.getUserBySupabaseId(userData.supabaseUserId);
+        if (existingAfterRace) return existingAfterRace;
       }
       throw error;
     }
@@ -297,14 +317,24 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async getUserByVerificationToken(token: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.verificationToken, token));
-    return user;
+  // User Profiles (onboarding/setup tracking)
+  async getUserProfile(userId: string): Promise<UserProfile | undefined> {
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
+    return profile;
   }
 
-  async getUserByResetToken(token: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.resetPasswordToken, token));
-    return user;
+  async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
+    const [created] = await db.insert(userProfiles).values(profile).returning();
+    return created;
+  }
+
+  async updateUserProfile(userId: string, updates: Partial<InsertUserProfile>): Promise<UserProfile | undefined> {
+    const [updated] = await db
+      .update(userProfiles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+    return updated;
   }
 
   // Company Profiles

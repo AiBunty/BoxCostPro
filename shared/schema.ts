@@ -14,9 +14,10 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User storage table for Replit Auth + Email Signup
+// User storage table for Supabase Auth
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supabaseUserId: varchar("supabase_user_id").unique(), // Supabase Auth user ID
   email: varchar("email").unique(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
@@ -26,17 +27,27 @@ export const users = pgTable("users", {
   trialEndsAt: timestamp("trial_ends_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-  // Email signup fields
-  passwordHash: varchar("password_hash"), // For email signup (null for Google/Replit auth)
   mobileNo: varchar("mobile_no"), // User's mobile number
   companyName: varchar("company_name"), // User's company name
-  authProvider: varchar("auth_provider").default("replit"), // 'replit', 'email', 'google'
-  emailVerified: boolean("email_verified").default(false), // Email verification status
-  verificationToken: varchar("verification_token"), // Token for email verification
-  verificationTokenExpiry: timestamp("verification_token_expiry"), // Token expiry
-  resetPasswordToken: varchar("reset_password_token"), // Password reset token
-  resetPasswordExpiry: timestamp("reset_password_expiry"), // Reset token expiry
+  authProvider: varchar("auth_provider").default("supabase"), // 'supabase', 'google'
 });
+
+// User Profile for tracking onboarding/setup progress
+export const userProfiles = pgTable("user_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  paperSetupDone: boolean("paper_setup_done").default(false), // Paper pricing setup completed
+  termsSetupDone: boolean("terms_setup_done").default(false), // Quote terms setup completed
+  onboardingCompleted: boolean("onboarding_completed").default(false), // Full onboarding finished
+  preferredCurrency: varchar("preferred_currency").default("INR"),
+  timezone: varchar("timezone").default("Asia/Kolkata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+export type UserProfile = typeof userProfiles.$inferSelect;
 
 // Subscription Plans (managed by owner)
 export const subscriptionPlans = pgTable("subscription_plans", {
