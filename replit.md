@@ -180,3 +180,35 @@ The frontend is built with React and TypeScript, utilizing Vite for development.
 3. **Schema Alignment**
    - Consistent 'percentage' enum value across quoteItemSchema and extendedQuoteItemSchema
    - QuoteItem type includes: negotiationMode, negotiationValue, originalPrice, negotiatedPrice, negotiationNote
+
+4. **Message Generator Updates**
+   - WhatsApp messages show ~strikethrough~ for original prices with negotiated prices
+   - Email messages use inline CSS for strikethrough styling with green highlighted negotiated prices
+   - Both formats include "Special negotiated pricing applied" notice when negotiations exist
+
+5. **Version History for Box Specifications**
+   - History button in Quote Items section to view saved box specification versions
+   - Dropdown to select from all saved box specifications
+   - Timeline display showing version number, date, and change notes
+   - Restore button for each version with tooltip - creates new version from restored data
+   - API endpoints: GET /api/box-specifications/:id/versions, POST /api/box-specifications/:id/restore/:versionNumber
+
+6. **Paper Price Setup Page** (`/paper-setup` route)
+   - First-login redirect: Users must complete paper setup before accessing calculator
+   - GSM Rules configuration: Low/High GSM limits with price adjustments
+   - Market adjustment field for global price modifier
+   - Paper Prices table: Manage base prices by GSM, BF, Shade combination
+   - Auto-fill integration: Calculator layers auto-populate rates from paper setup
+   - Manual override option for per-layer rate adjustments
+
+### New Database Tables (Session Dec 17)
+- `paper_prices` (userId, gsm, bf, shade, basePrice)
+- `paper_pricing_rules` (userId, lowGsmLimit, highGsmLimit, lowGsmAdjustment, highGsmAdjustment, marketAdjustment)
+- `box_specification_versions` (boxSpecificationId, versionNumber, data, changeNote, createdAt)
+
+### New/Updated API Routes (Session Dec 17)
+- GET/POST `/api/paper-prices` - Manage paper base prices
+- GET/PUT `/api/paper-pricing-rules` - Configure GSM rules and market adjustments
+- PUT `/api/users/:id/paper-setup-complete` - Mark paper setup as completed
+- GET `/api/box-specifications/:id/versions` - Fetch version history
+- POST `/api/box-specifications/:id/restore/:versionNumber` - Restore previous version
