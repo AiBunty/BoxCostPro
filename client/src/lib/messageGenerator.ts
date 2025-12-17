@@ -32,7 +32,12 @@ export function generateWhatsAppMessage(
     lines.push(`*Box Size :* (${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit})`);
     lines.push(`*Item Name:* ${item.boxName} *Board:* ${item.ply} Ply`);
     lines.push(`*Flute:* ${fluteType}`);
-    lines.push(`*Printing:* ${item.boxDescription || 'Plain Box'}`);
+    
+    // Show printing info based on whether printing is enabled
+    const printingInfo = item.printingEnabled 
+      ? `${item.printType || 'Flexo'} - ${item.printColours || 1} colour${(item.printColours || 1) > 1 ? 's' : ''}${item.boxDescription ? ` (${item.boxDescription})` : ''}`
+      : 'Plain';
+    lines.push(`*Printing:* ${printingInfo}`);
     lines.push(``);
     lines.push(`*Paper Spec:*`);
     
@@ -127,8 +132,13 @@ export function generateEmailContent(
     
     const lineTotal = rateExclGst * (item.quantity || 0);
     
+    // Build printing remarks for email
+    const emailPrintingInfo = item.printingEnabled 
+      ? `${item.printType || 'Flexo'} - ${item.printColours || 1} colour${(item.printColours || 1) > 1 ? 's' : ''}${item.boxDescription ? ` (${item.boxDescription})` : ''}`
+      : 'Plain';
+    
     return `            <tr>
-                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.boxName}<br><small>${item.boxDescription || 'Plain Box'}</small></td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.boxName}<br><small>${emailPrintingInfo}</small></td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">${item.length.toFixed(0)}x${item.width.toFixed(0)}${item.height ? `x${item.height.toFixed(0)}` : ''} ${item.measuredOn} ${item.inputUnit}<br><small>${item.ply}-Ply (${fluteType})</small><br><small>Paper: ${paperSpecs}</small></td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: left;">RSC</td>
                 <td style="border: 1px solid #ccc; padding: 10px; text-align: center;">${item.bs.toFixed(1)}</td>

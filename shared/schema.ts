@@ -324,6 +324,11 @@ export const quoteItemSchema = z.object({
   quantity: z.number(),
   totalValue: z.number(),
   
+  // Printing details (for quote display and messages)
+  printingEnabled: z.boolean().optional().default(false),
+  printType: z.string().optional(), // 'Flexo', 'Offset', 'Screen', etc.
+  printColours: z.number().optional(), // Number of colours
+  
   // Negotiation fields
   negotiationMode: z.enum(['none', 'percentage', 'fixed']).optional().default('none'),
   negotiationValue: z.number().optional(), // Discount percentage or fixed price

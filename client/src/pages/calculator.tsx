@@ -8,7 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw, Menu, Palette } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -211,6 +215,17 @@ export default function Calculator() {
     setLayers(createLayersForPly(plyNum));
   };
   
+  // Manufacturing cost toggles (checkbox-controlled)
+  const [printingEnabled, setPrintingEnabled] = useState(false);
+  const [laminationEnabled, setLaminationEnabled] = useState(false);
+  const [dieEnabled, setDieEnabled] = useState(false);
+  const [punchingEnabled, setPunchingEnabled] = useState(false);
+  
+  // Print Type and Colours
+  const [printType, setPrintType] = useState<string>("Flexo");
+  const [printColours, setPrintColours] = useState<string>("1");
+  const DEFAULT_PRINT_TYPES = ["Flexo", "Offset", "Screen"];
+  
   // Printing Cost Details
   const [costPerPrint, setCostPerPrint] = useState<string>("0");
   const [plateCost, setPlateCost] = useState<string>("0");
@@ -228,6 +243,10 @@ export default function Calculator() {
   // Varnish and Punching costs
   const [varnishCost, setVarnishCost] = useState<string>("0");
   const [punchingCost, setPunchingCost] = useState<string>("0");
+  
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isMobile = useIsMobile();
   
   // Conversion Cost
   const [conversionCost, setConversionCost] = useState<string>("15"); // INR/Kg - Default Rs.15
@@ -937,38 +956,50 @@ export default function Calculator() {
   
   const result = activeTab === "rsc" ? calculateRSC() : calculateSheet();
   
-  // Calculate detailed manufacturing costs
+  // Calculate detailed manufacturing costs (only if enabled)
   const calculateManufacturingCosts = () => {
     if (!result) return { printing: 0, lamination: 0, varnish: 0, die: 0, punching: 0 };
     
     const qty = parseFloat(quantity) || 1;
     
-    // Printing Cost: costPerPrint + (plateCost / qty) + MOQ adjustment
+    // Printing Cost: only if enabled
     let printingTotal = 0;
-    const costPer = parseFloat(costPerPrint) || 0;
-    const plateCharge = parseFloat(plateCost) || 0;
-    const moq = parseFloat(printMoq) || 0;
-    printingTotal = costPer + (plateCharge / qty);
-    if (moq > qty) {
-      printingTotal += (costPer * (moq - qty)) / qty;
+    if (printingEnabled) {
+      const costPer = parseFloat(costPerPrint) || 0;
+      const plateCharge = parseFloat(plateCost) || 0;
+      const moq = parseFloat(printMoq) || 0;
+      printingTotal = costPer + (plateCharge / qty);
+      if (moq > qty) {
+        printingTotal += (costPer * (moq - qty)) / qty;
+      }
     }
     
-    // Lamination Cost: (L inches * W inches * Rate per sq inch) / 100
+    // Lamination Cost: only if enabled
     let laminationTotal = 0;
-    const laminationRateValue = parseFloat(laminationRate) || 0;
-    if (laminationRateValue > 0) {
-      const useCustom = showLaminationCustomize && customLaminationL && customLaminationW;
-      const L = useCustom ? parseFloat(customLaminationL) : mmToInches(result.sheetLength);
-      const W = useCustom ? parseFloat(customLaminationW) : mmToInches(result.sheetWidth);
-      laminationTotal = (L * W * laminationRateValue) / 100;
+    if (laminationEnabled) {
+      const laminationRateValue = parseFloat(laminationRate) || 0;
+      if (laminationRateValue > 0) {
+        const useCustom = showLaminationCustomize && customLaminationL && customLaminationW;
+        const L = useCustom ? parseFloat(customLaminationL) : mmToInches(result.sheetLength);
+        const W = useCustom ? parseFloat(customLaminationW) : mmToInches(result.sheetWidth);
+        laminationTotal = (L * W * laminationRateValue) / 100;
+      }
     }
     
-    // Die Cost: dieDevelopmentCharge / qty
-    const dieCharge = parseFloat(dieDevelopmentCharge) || 0;
-    const dieTotal = dieCharge / qty;
+    // Die Cost: only if enabled
+    let dieTotal = 0;
+    if (dieEnabled) {
+      const dieCharge = parseFloat(dieDevelopmentCharge) || 0;
+      dieTotal = dieCharge / qty;
+    }
+    
+    // Punching cost: only if enabled
+    let punchingTotal = 0;
+    if (punchingEnabled) {
+      punchingTotal = parseFloat(punchingCost) || 0;
+    }
     
     const varnishTotal = parseFloat(varnishCost) || 0;
-    const punchingTotal = parseFloat(punchingCost) || 0;
     
     return { printing: printingTotal, lamination: laminationTotal, varnish: varnishTotal, die: dieTotal, punching: punchingTotal };
   };
@@ -1065,6 +1096,11 @@ export default function Calculator() {
       quantity: qty,
       totalValue: totalValue,
       
+      // Printing details (for quote display and messages)
+      printingEnabled,
+      printType: printingEnabled ? printType : undefined,
+      printColours: printingEnabled ? parseInt(printColours) || 1 : undefined,
+      
       // Negotiation fields (default values)
       negotiationMode: 'none' as const,
       originalPrice: totalCostPerBox,
@@ -1086,7 +1122,13 @@ export default function Calculator() {
       setSheetWidth("");
     }
     setQuantity("1000");
-    // Reset manufacturing costs
+    // Reset manufacturing costs and toggles
+    setPrintingEnabled(false);
+    setLaminationEnabled(false);
+    setDieEnabled(false);
+    setPunchingEnabled(false);
+    setPrintType("Flexo");
+    setPrintColours("1");
     setCostPerPrint("0");
     setPlateCost("0");
     setPrintMoq("0");
@@ -2438,167 +2480,243 @@ export default function Calculator() {
             </Dialog>
             
             <Card>
-              <CardHeader>
-                <CardTitle>Fixed & Manufacturing Costs</CardTitle>
-                <CardDescription>Detailed cost breakdown per unit (₹)</CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle>Manufacturing Costs</CardTitle>
+                <CardDescription>Toggle options to enable cost sections</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <Label className="font-semibold mb-3 block">Printing Cost</Label>
-                  <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
-                    <div className="space-y-2">
-                      <Label htmlFor="cost-per-print" className="text-sm">Cost Per Print (₹)</Label>
-                      <Input
-                        id="cost-per-print"
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={costPerPrint}
-                        onChange={(e) => setCostPerPrint(e.target.value)}
-                        data-testid="input-cost-per-print"
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="printing-toggle"
+                        checked={printingEnabled}
+                        onCheckedChange={(checked) => setPrintingEnabled(checked === true)}
+                        data-testid="checkbox-printing-enabled"
                       />
+                      <Label htmlFor="printing-toggle" className="font-medium cursor-pointer">
+                        Printing {printingEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.printing.toFixed(2)}</Badge>}
+                      </Label>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="plate-cost" className="text-sm">Plates Development Charge (₹)</Label>
-                      <Input
-                        id="plate-cost"
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={plateCost}
-                        onChange={(e) => setPlateCost(e.target.value)}
-                        data-testid="input-plate-cost"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="print-moq" className="text-sm">MOQ (Minimum Order Qty)</Label>
-                      <Input
-                        id="print-moq"
-                        type="number"
-                        placeholder="0"
-                        value={printMoq}
-                        onChange={(e) => setPrintMoq(e.target.value)}
-                        data-testid="input-print-moq"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground">Total Cost Per Print</Label>
-                      <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
-                        ₹{mfgCosts.printing.toFixed(2)}
-                      </div>
-                    </div>
+                    {!printingEnabled && <Badge variant="outline">Plain</Badge>}
                   </div>
-                </div>
-
-                <div>
-                  <Label className="font-semibold mb-3 block">Lamination Cost</Label>
-                  <div className="space-y-4 pl-4 border-l-2 border-muted">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="lamination-rate" className="text-sm">Rate per Sq Inch (₹)</Label>
+                  {printingEnabled && (
+                    <div className="pl-6 space-y-4 border-l-2 border-primary/30 ml-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-sm">Print Type</Label>
+                          <Select value={printType} onValueChange={setPrintType}>
+                            <SelectTrigger data-testid="select-print-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {DEFAULT_PRINT_TYPES.map(type => (
+                                <SelectItem key={type} value={type}>{type}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-sm">No. of Colours</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={printColours}
+                            onChange={(e) => setPrintColours(e.target.value)}
+                            data-testid="input-print-colours"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-sm">Cost Per Print (₹)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={costPerPrint}
+                            onChange={(e) => setCostPerPrint(e.target.value)}
+                            data-testid="input-cost-per-print"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-sm">Plate Charge (₹)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={plateCost}
+                            onChange={(e) => setPlateCost(e.target.value)}
+                            data-testid="input-plate-cost"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-sm">MOQ (Min Order Qty)</Label>
                         <Input
-                          id="lamination-rate"
                           type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={laminationRate}
-                          onChange={(e) => setLaminationRate(e.target.value)}
-                          data-testid="input-lamination-rate"
+                          placeholder="0"
+                          value={printMoq}
+                          onChange={(e) => setPrintMoq(e.target.value)}
+                          data-testid="input-print-moq"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm text-muted-foreground">Calculated Cost</Label>
-                        <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
-                          ₹{mfgCosts.lamination.toFixed(2)}
-                        </div>
-                      </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowLaminationCustomize(!showLaminationCustomize)}
-                      data-testid="button-customize-lamination"
-                    >
-                      {showLaminationCustomize ? "Use Auto Dimensions" : "Customize Dimensions"}
-                    </Button>
-                    {showLaminationCustomize && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="custom-lam-l" className="text-sm">Custom Length (inches)</Label>
-                          <Input
-                            id="custom-lam-l"
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={customLaminationL}
-                            onChange={(e) => setCustomLaminationL(e.target.value)}
-                            data-testid="input-custom-lamination-l"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="custom-lam-w" className="text-sm">Custom Width (inches)</Label>
-                          <Input
-                            id="custom-lam-w"
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={customLaminationW}
-                            onChange={(e) => setCustomLaminationW(e.target.value)}
-                            data-testid="input-custom-lamination-w"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
 
-                <div>
-                  <Label className="font-semibold mb-3 block">Die Cost</Label>
-                  <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
-                    <div className="space-y-2">
-                      <Label htmlFor="die-charge" className="text-sm">Die Development Charge (₹)</Label>
-                      <Input
-                        id="die-charge"
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={dieDevelopmentCharge}
-                        onChange={(e) => setDieDevelopmentCharge(e.target.value)}
-                        data-testid="input-die-charge"
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="lamination-toggle"
+                        checked={laminationEnabled}
+                        onCheckedChange={(checked) => setLaminationEnabled(checked === true)}
+                        data-testid="checkbox-lamination-enabled"
                       />
+                      <Label htmlFor="lamination-toggle" className="font-medium cursor-pointer">
+                        Lamination {laminationEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.lamination.toFixed(2)}</Badge>}
+                      </Label>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground">Cost Per Box</Label>
-                      <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
-                        ₹{mfgCosts.die.toFixed(2)}
+                  </div>
+                  {laminationEnabled && (
+                    <div className="pl-6 space-y-3 border-l-2 border-primary/30 ml-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-sm">Rate per Sq Inch (₹)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={laminationRate}
+                            onChange={(e) => setLaminationRate(e.target.value)}
+                            data-testid="input-lamination-rate"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-sm text-muted-foreground">Calculated</Label>
+                          <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
+                            ₹{mfgCosts.lamination.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowLaminationCustomize(!showLaminationCustomize)}
+                        data-testid="button-customize-lamination"
+                      >
+                        {showLaminationCustomize ? "Use Auto Dimensions" : "Custom Dimensions"}
+                      </Button>
+                      {showLaminationCustomize && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-sm">Length (inches)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={customLaminationL}
+                              onChange={(e) => setCustomLaminationL(e.target.value)}
+                              data-testid="input-custom-lamination-l"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-sm">Width (inches)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={customLaminationW}
+                              onChange={(e) => setCustomLaminationW(e.target.value)}
+                              data-testid="input-custom-lamination-w"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="die-toggle"
+                        checked={dieEnabled}
+                        onCheckedChange={(checked) => setDieEnabled(checked === true)}
+                        data-testid="checkbox-die-enabled"
+                      />
+                      <Label htmlFor="die-toggle" className="font-medium cursor-pointer">
+                        Die Cost {dieEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.die.toFixed(2)}</Badge>}
+                      </Label>
+                    </div>
+                  </div>
+                  {dieEnabled && (
+                    <div className="pl-6 space-y-3 border-l-2 border-primary/30 ml-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-sm">Die Development (₹)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={dieDevelopmentCharge}
+                            onChange={(e) => setDieDevelopmentCharge(e.target.value)}
+                            data-testid="input-die-charge"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-sm text-muted-foreground">Per Box</Label>
+                          <div className="px-3 py-2 bg-muted rounded text-sm font-medium">
+                            ₹{mfgCosts.die.toFixed(2)}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="punching-toggle"
+                        checked={punchingEnabled}
+                        onCheckedChange={(checked) => setPunchingEnabled(checked === true)}
+                        data-testid="checkbox-punching-enabled"
+                      />
+                      <Label htmlFor="punching-toggle" className="font-medium cursor-pointer">
+                        Punching {punchingEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.punching.toFixed(2)}</Badge>}
+                      </Label>
+                    </div>
+                  </div>
+                  {punchingEnabled && (
+                    <div className="pl-6 space-y-3 border-l-2 border-primary/30 ml-2">
+                      <div className="space-y-1">
+                        <Label className="text-sm">Punching Cost (₹/unit)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={punchingCost}
+                          onChange={(e) => setPunchingCost(e.target.value)}
+                          data-testid="input-punching-cost"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
                 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="varnish-cost">Varnish Cost (₹/unit)</Label>
-                    <Input
-                      id="varnish-cost"
-                      type="number"
-                      step="0.01"
-                      value={varnishCost}
-                      onChange={(e) => setVarnishCost(e.target.value)}
-                      data-testid="input-varnish-cost"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="punching-cost">Punching Cost (₹/unit)</Label>
-                    <Input
-                      id="punching-cost"
-                      type="number"
-                      step="0.01"
-                      value={punchingCost}
-                      onChange={(e) => setPunchingCost(e.target.value)}
-                      data-testid="input-punching-cost"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <Label htmlFor="varnish-cost">Varnish Cost (₹/unit)</Label>
+                  <Input
+                    id="varnish-cost"
+                    type="number"
+                    step="0.01"
+                    value={varnishCost}
+                    onChange={(e) => setVarnishCost(e.target.value)}
+                    data-testid="input-varnish-cost"
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -3139,9 +3257,11 @@ export default function Calculator() {
                               </TableCell>
                               <TableCell className="font-medium" data-testid={`text-item-name-${index}`}>
                                 {item.boxName}
-                                {item.boxDescription && (
-                                  <span className="block text-xs text-muted-foreground">{item.boxDescription}</span>
-                                )}
+                                <span className="block text-xs text-muted-foreground">
+                                  {item.printingEnabled 
+                                    ? `${item.printType || 'Flexo'} - ${item.printColours || 1}C${item.boxDescription ? ` (${item.boxDescription})` : ''}`
+                                    : 'Plain'}
+                                </span>
                               </TableCell>
                               <TableCell className="text-sm" data-testid={`text-item-size-${index}`}>
                                 {item.type === 'rsc' 
