@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign } from "lucide-react";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -306,6 +306,10 @@ export default function Calculator() {
   const [negotiationMode, setNegotiationMode] = useState<'none' | 'percentage' | 'fixed'>('none');
   const [negotiationValue, setNegotiationValue] = useState<string>('');
   
+  // Version history dialog state
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null);
+  
   // Message editing state
   const [editableWhatsAppMessage, setEditableWhatsAppMessage] = useState("");
   const [editableEmailBody, setEditableEmailBody] = useState("");
@@ -370,6 +374,39 @@ export default function Calculator() {
   
   const { data: pricingRulesData } = useQuery<any>({
     queryKey: ["/api/paper-pricing-rules"],
+  });
+
+  // Fetch box specifications for history
+  const { data: boxSpecifications = [] } = useQuery<any[]>({
+    queryKey: ["/api/box-specifications"],
+  });
+  
+  // Fetch versions for selected spec
+  const { data: specVersions = [] } = useQuery<any[]>({
+    queryKey: ["/api/box-specifications", selectedSpecId, "versions"],
+    enabled: !!selectedSpecId,
+  });
+
+  // Restore version mutation
+  const restoreVersionMutation = useMutation({
+    mutationFn: async ({ specId, versionNumber }: { specId: string; versionNumber: number }) => {
+      return await apiRequest("POST", `/api/box-specifications/${specId}/restore/${versionNumber}`, {});
+    },
+    onSuccess: (_, { specId }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/box-specifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/box-specifications", specId, "versions"] });
+      toast({
+        title: "Version restored",
+        description: "The box specification has been restored to the selected version.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to restore version.",
+        variant: "destructive",
+      });
+    }
   });
 
   // Lookup paper price with GSM/BF/Shade and apply adjustments
@@ -2869,6 +2906,16 @@ export default function Calculator() {
                     <Button 
                       size="sm" 
                       variant="outline"
+                      onClick={() => setShowVersionHistory(true)}
+                      data-testid="button-version-history"
+                    >
+                      <History className="w-4 h-4 mr-2" />
+                      History
+                    </Button>
+                    
+                    <Button 
+                      size="sm" 
+                      variant="outline"
                       onClick={() => {
                         const selectedParty = allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId) || null;
                         const message = generateWhatsAppMessage(quoteItems, selectedParty, companyProfile);
@@ -3433,6 +3480,104 @@ export default function Calculator() {
                 Apply
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Version History Dialog */}
+      <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Box Specification History
+            </DialogTitle>
+            <DialogDescription>
+              View and restore previous versions of your box specifications
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {boxSpecifications.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No saved specifications yet. Add items to your quote to create specifications.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Select Box Specification</Label>
+                  <Select 
+                    value={selectedSpecId || ""} 
+                    onValueChange={setSelectedSpecId}
+                  >
+                    <SelectTrigger data-testid="select-box-spec">
+                      <SelectValue placeholder="Choose a box specification..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {boxSpecifications.map((spec: any) => (
+                        <SelectItem key={spec.id} value={spec.id}>
+                          {spec.boxType.toUpperCase()} - {spec.length}x{spec.breadth}
+                          {spec.height ? `x${spec.height}` : ''} ({spec.ply}-Ply)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {selectedSpecId && (
+                  <div className="space-y-2">
+                    <Label>Version History</Label>
+                    {specVersions.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No versions found</p>
+                    ) : (
+                      <div className="border rounded-md divide-y">
+                        {specVersions.map((version: any) => (
+                          <div key={version.id} className="p-3 flex items-center justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary">v{version.versionNumber}</Badge>
+                                <span className="text-sm text-muted-foreground">
+                                  {new Date(version.editedAt).toLocaleDateString('en-IN', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                              </div>
+                              {version.changeNote && (
+                                <p className="text-sm text-muted-foreground mt-1">{version.changeNote}</p>
+                              )}
+                            </div>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => restoreVersionMutation.mutate({ 
+                                    specId: selectedSpecId, 
+                                    versionNumber: version.versionNumber 
+                                  })}
+                                  disabled={restoreVersionMutation.isPending}
+                                  data-testid={`button-restore-v${version.versionNumber}`}
+                                >
+                                  <RotateCcw className="w-4 h-4 mr-1" />
+                                  Restore
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Restore to this version</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
