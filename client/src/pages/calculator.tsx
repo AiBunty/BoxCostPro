@@ -367,9 +367,13 @@ export default function Calculator() {
     queryKey: ["/api/rate-memory"],
   });
 
-  // Fetch paper prices and pricing rules for auto-fill
-  const { data: paperPricesData = [] } = useQuery<any[]>({
-    queryKey: ["/api/paper-prices"],
+  // Fetch BF prices, shade premiums, and pricing rules for auto-fill (new BF-based system)
+  const { data: bfPricesData = [] } = useQuery<any[]>({
+    queryKey: ["/api/paper-bf-prices"],
+  });
+  
+  const { data: shadePremiumsData = [] } = useQuery<any[]>({
+    queryKey: ["/api/shade-premiums"],
   });
   
   const { data: pricingRulesData } = useQuery<any>({
@@ -409,27 +413,39 @@ export default function Calculator() {
     }
   });
 
-  // Lookup paper price with GSM/BF/Shade and apply adjustments
+  // Lookup paper price using BF-based pricing system
+  // Formula: BF Base Price + GSM Adjustment + Shade Premium + Market Adjustment
   const lookupPaperPrice = (gsm: number, bf: number, shade: string): number | null => {
-    if (!paperPricesData || paperPricesData.length === 0) return null;
+    if (!bfPricesData || bfPricesData.length === 0) return null;
     
-    const match = paperPricesData.find(
-      (p: any) => p.gsm === gsm && p.bf === bf && p.shade === shade
-    );
+    // Find BF base price
+    const bfMatch = bfPricesData.find((p: any) => p.bf === bf);
+    if (!bfMatch) return null;
     
-    if (!match) return null;
-    
+    const bfBasePrice = Number(bfMatch.basePrice) || 0;
     const rules = pricingRulesData || {};
-    let gsmAdjustment = 0;
     
-    if (gsm <= (rules.lowGsmLimit || 100)) {
-      gsmAdjustment = rules.lowGsmAdjustment || 0;
-    } else if (gsm >= (rules.highGsmLimit || 201)) {
-      gsmAdjustment = rules.highGsmAdjustment || 0;
+    // Apply GSM adjustments
+    let gsmAdjustment = 0;
+    const lowLimit = rules.lowGsmLimit || 100;
+    const highLimit = rules.highGsmLimit || 201;
+    
+    if (gsm < lowLimit) {
+      gsmAdjustment = Number(rules.lowGsmAdjustment) || 0;
+    } else if (gsm >= highLimit) {
+      gsmAdjustment = Number(rules.highGsmAdjustment) || 0;
     }
     
-    const marketAdjustment = rules.marketAdjustment || 0;
-    return match.basePrice + gsmAdjustment + marketAdjustment;
+    // Find shade premium (case-insensitive match)
+    const shadeMatch = shadePremiumsData.find(
+      (s: any) => s.shade.toLowerCase() === shade.toLowerCase()
+    );
+    const shadePremium = shadeMatch ? Number(shadeMatch.premium) || 0 : 0;
+    
+    // Market adjustment
+    const marketAdjustment = Number(rules.marketAdjustment) || 0;
+    
+    return bfBasePrice + gsmAdjustment + shadePremium + marketAdjustment;
   };
 
   // Mutation to save rate memory
