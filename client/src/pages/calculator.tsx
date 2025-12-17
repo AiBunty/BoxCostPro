@@ -1829,6 +1829,29 @@ export default function Calculator() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
+                        <Label htmlFor="box-name">Box Name</Label>
+                        <Input
+                          id="box-name"
+                          placeholder="e.g., 10kg Apple Box"
+                          value={boxName}
+                          onChange={(e) => setBoxName(e.target.value)}
+                          data-testid="input-box-name"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="box-description">Description (Optional)</Label>
+                        <Input
+                          id="box-description"
+                          placeholder="e.g., Heavy duty"
+                          value={boxDescription}
+                          onChange={(e) => setBoxDescription(e.target.value)}
+                          data-testid="input-box-description"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
                         <Label htmlFor="input-unit">Input Unit</Label>
                         <Select value={inputUnit} onValueChange={(v: "mm" | "inches") => setInputUnit(v)}>
                           <SelectTrigger id="input-unit" data-testid="select-input-unit">
@@ -1923,8 +1946,8 @@ export default function Calculator() {
                       </div>
                     </div>
                     
-                    <div className="mt-4">
-                      <div className="space-y-2 max-w-xs">
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div className="space-y-2">
                         <Label htmlFor="conversion-cost">Conversion Cost (₹/Kg)</Label>
                         <Input
                           id="conversion-cost"
@@ -1938,6 +1961,16 @@ export default function Calculator() {
                         <p className="text-xs text-muted-foreground">
                           Cost/Box: ₹{conversionCostPerBox.toFixed(2)}
                         </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="quantity">Quantity (pcs)</Label>
+                        <Input
+                          id="quantity"
+                          type="number"
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                          data-testid="input-quantity"
+                        />
                       </div>
                     </div>
                   </CardContent>
@@ -2721,67 +2754,6 @@ export default function Calculator() {
               </CardContent>
             )}
             </Card>
-            
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle>Quote Item Details</CardTitle>
-                <CardDescription>Enter item information before adding to quote</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="quote-box-name">Box Name</Label>
-                    <Input
-                      id="quote-box-name"
-                      placeholder="e.g., 10kg Apple Box"
-                      value={boxName}
-                      onChange={(e) => setBoxName(e.target.value)}
-                      data-testid="input-quote-box-name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="quote-box-desc">Description (Optional)</Label>
-                    <Input
-                      id="quote-box-desc"
-                      placeholder="e.g., Heavy duty"
-                      value={boxDescription}
-                      onChange={(e) => setBoxDescription(e.target.value)}
-                      data-testid="input-quote-box-desc"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="quote-quantity">Quantity (pcs)</Label>
-                    <Input
-                      id="quote-quantity"
-                      type="number"
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      data-testid="input-quote-quantity"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-muted-foreground">Cost Summary</Label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">₹{totalCostPerBox.toFixed(2)}/pc</span>
-                      <span className="text-muted-foreground">×</span>
-                      <span className="text-sm font-bold text-primary">₹{totalValue.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-                <Button 
-                  className="w-full" 
-                  size="lg" 
-                  onClick={handleAddToQuote}
-                  disabled={!result}
-                  data-testid="button-add-to-quote"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add to Quote
-                </Button>
-              </CardContent>
-            </Card>
           </div>
 
           <div className="space-y-6">
@@ -3058,21 +3030,33 @@ export default function Calculator() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {result ? (
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Cost/unit:</span>
-                      <span className="font-bold text-lg" data-testid="text-cost-per-unit">
-                        ₹{totalCostPerBox.toFixed(2)}
-                      </span>
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">Cost/unit:</span>
+                        <span className="font-bold text-lg" data-testid="text-cost-per-unit">
+                          ₹{totalCostPerBox.toFixed(2)}
+                        </span>
+                      </div>
+                      
+                      <div className="flex justify-between pt-2 border-t">
+                        <span className="font-semibold">Total:</span>
+                        <span className="font-bold text-xl text-primary" data-testid="text-total-value">
+                          ₹{totalValue.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                     
-                    <div className="flex justify-between pt-2 border-t">
-                      <span className="font-semibold">Total:</span>
-                      <span className="font-bold text-xl text-primary" data-testid="text-total-value">
-                        ₹{totalValue.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
+                    <Button 
+                      className="w-full" 
+                      size="lg" 
+                      onClick={handleAddToQuote}
+                      data-testid="button-add-to-quote"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add to Quote
+                    </Button>
+                  </>
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     Enter dimensions to calculate
@@ -3080,12 +3064,11 @@ export default function Calculator() {
                 )}
               </CardContent>
             </Card>
-            
-            <Card>
-              <CardHeader>
-                <div className="flex justify-between items-center gap-4">
-                  <div>
-                    <CardTitle>Quote Items</CardTitle>
+          </div>
+        </div>
+      </main>
+      
+      {/* Edit Quote Item Dialog */}
                     <CardDescription>{quoteItems.length} items</CardDescription>
                   </div>
                   {quoteItems.length > 0 && <div className="flex gap-2 flex-wrap">
