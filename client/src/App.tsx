@@ -9,6 +9,7 @@ import Landing from "@/pages/landing";
 import AdminPanel from "@/pages/admin";
 import Reports from "@/pages/reports";
 import PaperSetup from "@/pages/paper-setup";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 interface PaperSetupStatus {
@@ -46,8 +47,9 @@ function Router() {
   const isPaperSetupComplete = paperSetupStatus?.completed ?? false;
   const isOnPaperSetup = location === "/paper-setup";
   const isOnAdmin = location === "/admin";
+  const isOnSettings = location === "/settings";
 
-  if (!isPaperSetupComplete && !isOnPaperSetup && !isOnAdmin) {
+  if (!isPaperSetupComplete && !isOnPaperSetup && !isOnAdmin && !isOnSettings) {
     return <Redirect to="/paper-setup" />;
   }
 
@@ -57,6 +59,7 @@ function Router() {
       <Route path="/paper-setup" component={PaperSetup} />
       <Route path="/admin" component={AdminPanel} />
       <Route path="/reports" component={Reports} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

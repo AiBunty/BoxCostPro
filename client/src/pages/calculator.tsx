@@ -702,6 +702,85 @@ export default function Calculator() {
       setRateMemory(memoryMap);
     }
   }, [rateMemoryData]);
+
+  // Auto-sync layer rates from Paper Price Settings when pricing data loads
+  // This ensures layers use the correct rates from settings instead of hardcoded defaults
+  useEffect(() => {
+    // Only run when we have pricing data
+    if (!bfPricesData || bfPricesData.length === 0) return;
+    
+    let hasUpdates = false;
+    const updatedLayers = layers.map(layer => {
+      // Skip layers with manual override enabled
+      if (layer.priceOverride) return layer;
+      
+      const gsm = parseInt(layer.gsm) || 0;
+      const bf = parseInt(layer.bf) || 0;
+      const shade = layer.shade || '';
+      
+      // Lookup price from Paper Price Settings
+      const breakdown = lookupPaperPriceWithBreakdown(gsm, bf, shade);
+      
+      if (breakdown) {
+        // Only update if the rate is different (avoid unnecessary re-renders)
+        const newRate = breakdown.finalRate.toFixed(2);
+        if (layer.rate !== newRate || !layer.calculatedRate) {
+          hasUpdates = true;
+          return {
+            ...layer,
+            rate: newRate,
+            calculatedRate: newRate,
+            priceBreakdown: {
+              bfBasePrice: breakdown.bfBasePrice,
+              gsmAdjustment: breakdown.gsmAdjustment,
+              shadePremium: breakdown.shadePremium,
+              marketAdjustment: breakdown.marketAdjustment,
+            },
+          };
+        }
+      }
+      return layer;
+    });
+    
+    if (hasUpdates) {
+      setLayers(updatedLayers);
+    }
+  }, [bfPricesData, shadePremiumsData, pricingRulesData]);
+
+  // Also update layers when ply changes to use Paper Price Settings
+  const updateLayersForPlyWithPricing = (newPly: string) => {
+    const plyNum = parseInt(newPly);
+    const newLayers = createLayersForPly(plyNum);
+    
+    // Apply pricing data if available
+    if (bfPricesData && bfPricesData.length > 0) {
+      const pricedLayers = newLayers.map(layer => {
+        const gsm = parseInt(layer.gsm) || 0;
+        const bf = parseInt(layer.bf) || 0;
+        const shade = layer.shade || '';
+        
+        const breakdown = lookupPaperPriceWithBreakdown(gsm, bf, shade);
+        
+        if (breakdown) {
+          return {
+            ...layer,
+            rate: breakdown.finalRate.toFixed(2),
+            calculatedRate: breakdown.finalRate.toFixed(2),
+            priceBreakdown: {
+              bfBasePrice: breakdown.bfBasePrice,
+              gsmAdjustment: breakdown.gsmAdjustment,
+              shadePremium: breakdown.shadePremium,
+              marketAdjustment: breakdown.marketAdjustment,
+            },
+          };
+        }
+        return layer;
+      });
+      setLayers(pricedLayers);
+    } else {
+      setLayers(newLayers);
+    }
+  };
   
   // Download sample bulk upload Excel
   const handleDownloadSampleTemplate = () => {
@@ -1498,6 +1577,13 @@ export default function Calculator() {
                 </Select>
               )}
               
+              <Link href="/settings">
+                <Button variant="outline" size="sm" data-testid="button-settings">
+                  <User className="w-4 h-4 mr-2" />
+                  My Account
+                </Button>
+              </Link>
+              
               <Dialog open={showBusinessProfile} onOpenChange={setShowBusinessProfile}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" data-testid="button-business-profile">
@@ -2166,7 +2252,7 @@ export default function Calculator() {
                       setPly(v);
                       setGlueFlap(GLUE_FLAP_DEFAULTS[v].toString());
                       setDeckleAllowance(DECKLE_ALLOWANCE_DEFAULTS[v].toString());
-                      updateLayersForPly(v);
+                      updateLayersForPlyWithPricing(v);
                       const combos = FLUTE_COMBINATIONS[v] || [];
                       if (combos.length > 0 && !combos.includes(fluteCombination)) {
                         setFluteCombination(combos[0]);

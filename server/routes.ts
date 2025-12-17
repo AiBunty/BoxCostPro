@@ -2,6 +2,9 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
+import { z } from "zod";
 import { 
   insertCompanyProfileSchema, 
   insertPartyProfileSchema, 
@@ -21,6 +24,20 @@ import {
   insertBoxSpecificationSchema,
   insertBoxSpecVersionSchema
 } from "@shared/schema";
+
+// Email signup validation schema
+const emailSignupSchema = z.object({
+  firstName: z.string().min(1, "Name is required"),
+  companyName: z.string().min(1, "Company name is required"),
+  mobileNo: z.string().min(10, "Valid mobile number is required"),
+  email: z.string().email("Valid email is required"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+const emailLoginSchema = z.object({
+  email: z.string().email("Valid email is required"),
+  password: z.string().min(1, "Password is required"),
+});
 
 // Owner authorization middleware
 const isOwner = async (req: any, res: Response, next: NextFunction) => {
@@ -48,6 +65,155 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Email Signup Route
+  app.post('/api/auth/signup', async (req: Request, res: Response) => {
+    try {
+      const validatedData = emailSignupSchema.parse(req.body);
+      
+      // Check if email already exists
+      const existingUser = await storage.getUserByEmail(validatedData.email);
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+      
+      // Hash password
+      const passwordHash = await bcrypt.hash(validatedData.password, 10);
+      
+      // Generate verification token
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Create user
+      const userId = crypto.randomUUID();
+      const user = await storage.upsertUser({
+        id: userId,
+        email: validatedData.email,
+        firstName: validatedData.firstName,
+        companyName: validatedData.companyName,
+        mobileNo: validatedData.mobileNo,
+        passwordHash,
+        authProvider: 'email',
+        emailVerified: false,
+        verificationToken,
+        verificationTokenExpiry: tokenExpiry,
+      });
+      
+      // TODO: In production, send verification email with token link
+      // For development, we'll auto-verify but in production this should be removed
+      // Verification link would be: /api/auth/verify-email/{verificationToken}
+      
+      // Auto-verify for development (remove in production)
+      if (process.env.NODE_ENV === 'development') {
+        await storage.updateUser(userId, { 
+          emailVerified: true,
+          verificationToken: null,
+          verificationTokenExpiry: null
+        });
+      }
+      
+      res.status(201).json({ 
+        message: process.env.NODE_ENV === 'development' 
+          ? "Account created successfully. You can now log in." 
+          : "Account created. Please check your email to verify your account.",
+        userId: user.id,
+        requiresVerification: process.env.NODE_ENV !== 'development'
+      });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("Signup error:", error);
+      res.status(500).json({ message: "Failed to create account" });
+    }
+  });
+
+  // Email Login Route
+  app.post('/api/auth/login', async (req: Request, res: Response) => {
+    try {
+      const validatedData = emailLoginSchema.parse(req.body);
+      
+      const user = await storage.getUserByEmail(validatedData.email);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      
+      if (!user.passwordHash) {
+        return res.status(401).json({ message: "Please use Google login for this account" });
+      }
+      
+      const passwordValid = await bcrypt.compare(validatedData.password, user.passwordHash);
+      if (!passwordValid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      
+      if (!user.emailVerified) {
+        return res.status(401).json({ message: "Please verify your email first" });
+      }
+      
+      // Create a user session object compatible with Passport/Replit Auth
+      const sessionUser = {
+        claims: { 
+          sub: user.id, 
+          email: user.email,
+          first_name: user.firstName,
+          last_name: user.lastName,
+        },
+        expires_at: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 1 week from now
+      };
+      
+      // Use Passport's login function to establish the session
+      await new Promise<void>((resolve, reject) => {
+        (req as any).login(sessionUser, (err: any) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      
+      res.json({ 
+        message: "Login successful",
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          companyName: user.companyName,
+        }
+      });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  // Email Verification Route
+  app.get('/api/auth/verify-email/:token', async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+      
+      const user = await storage.getUserByVerificationToken(token);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired verification token" });
+      }
+      
+      if (user.verificationTokenExpiry && new Date() > user.verificationTokenExpiry) {
+        return res.status(400).json({ message: "Verification token has expired" });
+      }
+      
+      await storage.updateUser(user.id, {
+        emailVerified: true,
+        verificationToken: null,
+        verificationTokenExpiry: null,
+      });
+      
+      res.json({ message: "Email verified successfully" });
+    } catch (error) {
+      console.error("Verification error:", error);
+      res.status(500).json({ message: "Verification failed" });
     }
   });
 

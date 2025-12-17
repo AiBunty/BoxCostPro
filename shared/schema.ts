@@ -14,7 +14,7 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User storage table for Replit Auth
+// User storage table for Replit Auth + Email Signup
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique(),
@@ -26,6 +26,16 @@ export const users = pgTable("users", {
   trialEndsAt: timestamp("trial_ends_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Email signup fields
+  passwordHash: varchar("password_hash"), // For email signup (null for Google/Replit auth)
+  mobileNo: varchar("mobile_no"), // User's mobile number
+  companyName: varchar("company_name"), // User's company name
+  authProvider: varchar("auth_provider").default("replit"), // 'replit', 'email', 'google'
+  emailVerified: boolean("email_verified").default(false), // Email verification status
+  verificationToken: varchar("verification_token"), // Token for email verification
+  verificationTokenExpiry: timestamp("verification_token_expiry"), // Token expiry
+  resetPasswordToken: varchar("reset_password_token"), // Password reset token
+  resetPasswordExpiry: timestamp("reset_password_expiry"), // Reset token expiry
 });
 
 // Subscription Plans (managed by owner)
@@ -178,6 +188,7 @@ export const companyProfiles = pgTable("company_profiles", {
   paymentTerms: text("payment_terms").default("100% Advance"),
   deliveryTime: text("delivery_time").default("10 days after receipt of PO"),
   isDefault: boolean("is_default").default(false),
+  logoUrl: text("logo_url"), // Company logo for quote signatures
 });
 
 export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).omit({ id: true });
