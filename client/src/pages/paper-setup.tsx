@@ -13,12 +13,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { AlertCircle, Plus, Pencil, Trash2, ArrowRight, Package, Calculator, Sparkles, TrendingUp } from "lucide-react";
 import type { PaperBfPrice, ShadePremium, PaperPricingRules } from "@shared/schema";
 
-const SHADE_OPTIONS = ["Kraft", "White", "Semi-Kraft", "Golden", "Duplex", "Grey Back"];
 const BF_OPTIONS = [14, 16, 18, 20, 22, 24, 25, 28, 30, 32, 35, 40];
 
 export default function PaperSetup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [defaultsInitialized, setDefaultsInitialized] = useState(false);
   
   // BF Price dialog state
   const [isBfDialogOpen, setIsBfDialogOpen] = useState(false);
@@ -28,7 +28,7 @@ export default function PaperSetup() {
   // Shade Premium dialog state
   const [isShadeDialogOpen, setIsShadeDialogOpen] = useState(false);
   const [editingShade, setEditingShade] = useState<ShadePremium | null>(null);
-  const [newShade, setNewShade] = useState({ shade: "", premium: "" });
+  const [newShade, setNewShade] = useState({ shade: "", premium: "0" });
 
   // Rules state
   const [rules, setRules] = useState({
@@ -42,10 +42,10 @@ export default function PaperSetup() {
   // Preview calculator state
   const [previewBf, setPreviewBf] = useState<number | null>(null);
   const [previewGsm, setPreviewGsm] = useState<number>(120);
-  const [previewShade, setPreviewShade] = useState<string>("Kraft");
+  const [previewShade, setPreviewShade] = useState<string>("");
 
   // Queries
-  const { data: bfPrices = [], isLoading: bfLoading } = useQuery<PaperBfPrice[]>({
+  const { data: bfPrices = [], isLoading: bfLoading, isFetched: bfFetched } = useQuery<PaperBfPrice[]>({
     queryKey: ["/api/paper-bf-prices"]
   });
 
@@ -56,6 +56,24 @@ export default function PaperSetup() {
   const { data: pricingRules, isLoading: rulesLoading } = useQuery<PaperPricingRules>({
     queryKey: ["/api/paper-pricing-rules"]
   });
+
+  // Mutation to initialize default BF prices
+  const initDefaultsMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/paper-bf-prices/init-defaults", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/paper-bf-prices"] });
+      setDefaultsInitialized(true);
+    }
+  });
+
+  // Initialize default BF prices if user has none
+  useEffect(() => {
+    if (bfFetched && bfPrices.length === 0 && !defaultsInitialized && !initDefaultsMutation.isPending) {
+      initDefaultsMutation.mutate();
+    }
+  }, [bfFetched, bfPrices.length, defaultsInitialized, initDefaultsMutation.isPending]);
 
   useEffect(() => {
     if (pricingRules) {
@@ -69,12 +87,20 @@ export default function PaperSetup() {
     }
   }, [pricingRules]);
 
-  // Set default preview BF when prices load
+  // Set default preview BF and shade when data loads
   useEffect(() => {
     if (bfPrices.length > 0 && previewBf === null) {
       setPreviewBf(bfPrices[0].bf);
     }
   }, [bfPrices, previewBf]);
+  
+  useEffect(() => {
+    if (shadePremiums.length > 0 && !previewShade) {
+      setPreviewShade(shadePremiums[0].shade);
+    } else if (shadePremiums.length === 0 && !previewShade) {
+      setPreviewShade("Kraft");
+    }
+  }, [shadePremiums, previewShade]);
 
   // Mutations for BF Prices
   const createBfPriceMutation = useMutation({
@@ -522,14 +548,18 @@ export default function PaperSetup() {
                       onValueChange={setPreviewShade}
                     >
                       <SelectTrigger data-testid="select-preview-shade">
-                        <SelectValue />
+                        <SelectValue placeholder="Select shade" />
                       </SelectTrigger>
                       <SelectContent>
-                        {SHADE_OPTIONS.map(shade => (
-                          <SelectItem key={shade} value={shade}>
-                            {shade}
-                          </SelectItem>
-                        ))}
+                        {shadePremiums.length > 0 ? (
+                          shadePremiums.map(sp => (
+                            <SelectItem key={sp.shade} value={sp.shade}>
+                              {sp.shade}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="Kraft">Kraft (default)</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -682,26 +712,20 @@ export default function PaperSetup() {
       <Dialog open={isShadeDialogOpen} onOpenChange={setIsShadeDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Shade Premium</DialogTitle>
+            <DialogTitle>Add Paper Shade</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Paper Shade</Label>
-              <Select
+              <Label>Shade Name</Label>
+              <Input
                 value={newShade.shade}
-                onValueChange={(v) => setNewShade({ ...newShade, shade: v })}
-              >
-                <SelectTrigger data-testid="select-new-shade">
-                  <SelectValue placeholder="Select shade" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SHADE_OPTIONS.filter(s => !shadePremiums.some(p => p.shade === s)).map(shade => (
-                    <SelectItem key={shade} value={shade}>
-                      {shade}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={(e) => setNewShade({ ...newShade, shade: e.target.value })}
+                placeholder="e.g., Golden, Kraft, White, Custom"
+                data-testid="input-new-shade-name"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter any shade name (e.g., Golden, Kraft, White, Semi-Kraft, Duplex, or custom)
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Premium Amount (₹/Kg)</Label>
@@ -710,9 +734,12 @@ export default function PaperSetup() {
                 step="0.01"
                 value={newShade.premium}
                 onChange={(e) => setNewShade({ ...newShade, premium: e.target.value })}
-                placeholder="e.g., 2.00"
+                placeholder="e.g., 2.00 (use 0 for no premium)"
                 data-testid="input-new-shade-premium"
               />
+              <p className="text-xs text-muted-foreground">
+                Set to 0 if this shade has no additional cost
+              </p>
             </div>
           </div>
           <DialogFooter>

@@ -515,6 +515,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== BF-BASED PAPER PRICES (per user) ==========
+  
+  // Default BF prices for new users
+  const DEFAULT_BF_PRICES = [
+    { bf: 14, basePrice: 32.00 },
+    { bf: 16, basePrice: 33.00 },
+    { bf: 18, basePrice: 34.00 },
+    { bf: 20, basePrice: 35.00 },
+    { bf: 22, basePrice: 36.50 },
+    { bf: 24, basePrice: 38.50 },
+    { bf: 28, basePrice: 44.50 },
+    { bf: 35, basePrice: 50.00 }
+  ];
+  
   app.get("/api/paper-bf-prices", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -522,6 +535,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(prices);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch BF paper prices" });
+    }
+  });
+  
+  // Initialize default BF prices for new users
+  app.post("/api/paper-bf-prices/init-defaults", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Ensure user exists
+      const existingUser = await storage.getUser(userId);
+      if (!existingUser) {
+        await storage.upsertUser({
+          id: userId,
+          email: req.user.claims.email,
+          firstName: req.user.claims.first_name,
+          lastName: req.user.claims.last_name,
+          profileImageUrl: req.user.claims.profile_image_url,
+        });
+      }
+      
+      // Check if user already has BF prices
+      const existingPrices = await storage.getPaperBfPrices(userId);
+      if (existingPrices.length > 0) {
+        return res.json({ message: "User already has BF prices configured", prices: existingPrices });
+      }
+      
+      // Create default prices
+      const createdPrices = [];
+      for (const price of DEFAULT_BF_PRICES) {
+        const created = await storage.createPaperBfPrice({ userId, ...price });
+        createdPrices.push(created);
+      }
+      
+      res.status(201).json({ message: "Default prices initialized", prices: createdPrices });
+    } catch (error: any) {
+      console.error("Init defaults error:", error);
+      res.status(400).json({ error: "Failed to initialize default prices", details: error?.message });
     }
   });
 
