@@ -9,9 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { AlertCircle, Plus, Pencil, Trash2, ArrowRight, Package } from "lucide-react";
-import type { PaperPrice, PaperPricingRules } from "@shared/schema";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { AlertCircle, Plus, Pencil, Trash2, ArrowRight, Package, Calculator, Sparkles, TrendingUp } from "lucide-react";
+import type { PaperBfPrice, ShadePremium, PaperPricingRules } from "@shared/schema";
 
 const SHADE_OPTIONS = ["Kraft", "White", "Semi-Kraft", "Golden", "Duplex", "Grey Back"];
 const BF_OPTIONS = [14, 16, 18, 20, 22, 24, 25, 28, 30, 32, 35, 40];
@@ -19,16 +19,18 @@ const BF_OPTIONS = [14, 16, 18, 20, 22, 24, 25, 28, 30, 32, 35, 40];
 export default function PaperSetup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [editingPrice, setEditingPrice] = useState<PaperPrice | null>(null);
   
-  const [newPrice, setNewPrice] = useState({
-    gsm: "",
-    bf: "",
-    shade: "",
-    basePrice: ""
-  });
+  // BF Price dialog state
+  const [isBfDialogOpen, setIsBfDialogOpen] = useState(false);
+  const [editingBfPrice, setEditingBfPrice] = useState<PaperBfPrice | null>(null);
+  const [newBfPrice, setNewBfPrice] = useState({ bf: "", basePrice: "" });
+  
+  // Shade Premium dialog state
+  const [isShadeDialogOpen, setIsShadeDialogOpen] = useState(false);
+  const [editingShade, setEditingShade] = useState<ShadePremium | null>(null);
+  const [newShade, setNewShade] = useState({ shade: "", premium: "" });
 
+  // Rules state
   const [rules, setRules] = useState({
     lowGsmLimit: 100,
     lowGsmAdjustment: 1,
@@ -37,8 +39,18 @@ export default function PaperSetup() {
     marketAdjustment: 0
   });
 
-  const { data: paperPrices = [], isLoading: pricesLoading } = useQuery<PaperPrice[]>({
-    queryKey: ["/api/paper-prices"]
+  // Preview calculator state
+  const [previewBf, setPreviewBf] = useState<number | null>(null);
+  const [previewGsm, setPreviewGsm] = useState<number>(120);
+  const [previewShade, setPreviewShade] = useState<string>("Kraft");
+
+  // Queries
+  const { data: bfPrices = [], isLoading: bfLoading } = useQuery<PaperBfPrice[]>({
+    queryKey: ["/api/paper-bf-prices"]
+  });
+
+  const { data: shadePremiums = [], isLoading: shadesLoading } = useQuery<ShadePremium[]>({
+    queryKey: ["/api/shade-premiums"]
   });
 
   const { data: pricingRules, isLoading: rulesLoading } = useQuery<PaperPricingRules>({
@@ -57,47 +69,96 @@ export default function PaperSetup() {
     }
   }, [pricingRules]);
 
-  const createPriceMutation = useMutation({
-    mutationFn: async (data: { gsm: number; bf: number; shade: string; basePrice: number }) => {
-      return await apiRequest("POST", "/api/paper-prices", data);
+  // Set default preview BF when prices load
+  useEffect(() => {
+    if (bfPrices.length > 0 && previewBf === null) {
+      setPreviewBf(bfPrices[0].bf);
+    }
+  }, [bfPrices, previewBf]);
+
+  // Mutations for BF Prices
+  const createBfPriceMutation = useMutation({
+    mutationFn: async (data: { bf: number; basePrice: number }) => {
+      return await apiRequest("POST", "/api/paper-bf-prices", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/paper-prices"] });
-      setIsAddDialogOpen(false);
-      setNewPrice({ gsm: "", bf: "", shade: "", basePrice: "" });
-      toast({ title: "Paper price added successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/paper-bf-prices"] });
+      setIsBfDialogOpen(false);
+      setNewBfPrice({ bf: "", basePrice: "" });
+      toast({ title: "BF price added successfully" });
     },
     onError: (error: any) => {
-      console.error("Paper price creation failed:", error);
       toast({ 
-        title: "Failed to add paper price", 
+        title: "Failed to add BF price", 
         description: error?.message || "Please try again",
         variant: "destructive" 
       });
     }
   });
 
-  const updatePriceMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<PaperPrice> }) => {
-      return await apiRequest("PATCH", `/api/paper-prices/${id}`, data);
+  const updateBfPriceMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<PaperBfPrice> }) => {
+      return await apiRequest("PATCH", `/api/paper-bf-prices/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/paper-prices"] });
-      setEditingPrice(null);
-      toast({ title: "Paper price updated successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/paper-bf-prices"] });
+      setEditingBfPrice(null);
+      toast({ title: "BF price updated successfully" });
     }
   });
 
-  const deletePriceMutation = useMutation({
+  const deleteBfPriceMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest("DELETE", `/api/paper-prices/${id}`);
+      return await apiRequest("DELETE", `/api/paper-bf-prices/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/paper-prices"] });
-      toast({ title: "Paper price deleted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/paper-bf-prices"] });
+      toast({ title: "BF price deleted" });
     }
   });
 
+  // Mutations for Shade Premiums
+  const createShadePremiumMutation = useMutation({
+    mutationFn: async (data: { shade: string; premium: number }) => {
+      return await apiRequest("POST", "/api/shade-premiums", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/shade-premiums"] });
+      setIsShadeDialogOpen(false);
+      setNewShade({ shade: "", premium: "" });
+      toast({ title: "Shade premium added successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to add shade premium", 
+        description: error?.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const updateShadePremiumMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<ShadePremium> }) => {
+      return await apiRequest("PATCH", `/api/shade-premiums/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/shade-premiums"] });
+      setEditingShade(null);
+      toast({ title: "Shade premium updated successfully" });
+    }
+  });
+
+  const deleteShadePremiumMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/shade-premiums/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/shade-premiums"] });
+      toast({ title: "Shade premium deleted" });
+    }
+  });
+
+  // Save rules mutation
   const saveRulesMutation = useMutation({
     mutationFn: async (data: typeof rules & { paperSetupCompleted: boolean }) => {
       return await apiRequest("POST", "/api/paper-pricing-rules", data);
@@ -113,50 +174,62 @@ export default function PaperSetup() {
     }
   });
 
-  const calculateFinalPrice = (basePrice: number, gsm: number) => {
+  // Calculate preview price
+  const previewCalculation = useMemo(() => {
+    if (!previewBf) return null;
+    
+    const bfPrice = bfPrices.find(p => p.bf === previewBf);
+    if (!bfPrice) return null;
+
+    const basePrice = bfPrice.basePrice;
+    
     let gsmAdjustment = 0;
-    if (gsm <= rules.lowGsmLimit) {
+    if (previewGsm <= rules.lowGsmLimit) {
       gsmAdjustment = rules.lowGsmAdjustment;
-    } else if (gsm >= rules.highGsmLimit) {
+    } else if (previewGsm >= rules.highGsmLimit) {
       gsmAdjustment = rules.highGsmAdjustment;
     }
-    return basePrice + gsmAdjustment + rules.marketAdjustment;
-  };
+    
+    const shadePremium = shadePremiums.find(s => s.shade === previewShade)?.premium || 0;
+    const marketAdjustment = rules.marketAdjustment;
+    
+    const finalRate = basePrice + gsmAdjustment + shadePremium + marketAdjustment;
+    
+    return { basePrice, gsmAdjustment, shadePremium, marketAdjustment, finalRate };
+  }, [previewBf, previewGsm, previewShade, bfPrices, shadePremiums, rules]);
 
-  const pricesWithCalculations = useMemo(() => {
-    return paperPrices.map(price => ({
-      ...price,
-      gsmAdjustment: price.gsm <= rules.lowGsmLimit 
-        ? rules.lowGsmAdjustment 
-        : price.gsm >= rules.highGsmLimit 
-          ? rules.highGsmAdjustment 
-          : 0,
-      finalPrice: calculateFinalPrice(price.basePrice, price.gsm)
-    }));
-  }, [paperPrices, rules]);
+  const handleAddBfPrice = () => {
+    const bf = parseInt(newBfPrice.bf);
+    const basePrice = parseFloat(newBfPrice.basePrice);
 
-  const handleAddPrice = () => {
-    const gsm = parseInt(newPrice.gsm);
-    const bf = parseInt(newPrice.bf);
-    const basePrice = parseFloat(newPrice.basePrice);
-
-    if (!gsm || !bf || !newPrice.shade || !basePrice) {
+    if (!bf || !basePrice) {
       toast({ title: "Please fill all fields", variant: "destructive" });
       return;
     }
 
-    createPriceMutation.mutate({ gsm, bf, shade: newPrice.shade, basePrice });
+    createBfPriceMutation.mutate({ bf, basePrice });
+  };
+
+  const handleAddShadePremium = () => {
+    const premium = parseFloat(newShade.premium);
+
+    if (!newShade.shade || isNaN(premium)) {
+      toast({ title: "Please fill all fields", variant: "destructive" });
+      return;
+    }
+
+    createShadePremiumMutation.mutate({ shade: newShade.shade, premium });
   };
 
   const handleSaveAndContinue = () => {
-    if (paperPrices.length === 0) {
-      toast({ title: "Please add at least one paper price", variant: "destructive" });
+    if (bfPrices.length === 0) {
+      toast({ title: "Please add at least one BF price", variant: "destructive" });
       return;
     }
     saveRulesMutation.mutate({ ...rules, paperSetupCompleted: true });
   };
 
-  if (pricesLoading || rulesLoading) {
+  if (bfLoading || shadesLoading || rulesLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -166,29 +239,99 @@ export default function PaperSetup() {
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-2 text-primary">
             <Package className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-bold" data-testid="text-page-title">Paper Price Setup</h1>
+          <h1 className="text-3xl font-bold" data-testid="text-page-title">Paper Price Settings</h1>
           <p className="text-muted-foreground">
-            Configure your paper prices and pricing rules before using the calculator
+            Configure your BF-based pricing, GSM adjustments, and shade premiums
           </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-amber-500" />
-              GSM Adjustment Rules
-            </CardTitle>
-            <CardDescription>
-              Define automatic price adjustments based on GSM ranges. These rules apply to all paper prices.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Section 1: BF Base Prices */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-500" />
+                BF Base Prices
+              </CardTitle>
+              <CardDescription>
+                Define base paper price for each Bursting Factor (BF). This is the foundation of all pricing.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-end">
+                <Button 
+                  size="sm" 
+                  onClick={() => setIsBfDialogOpen(true)}
+                  data-testid="button-add-bf-price"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add BF Price
+                </Button>
+              </div>
+              
+              {bfPrices.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No BF prices configured yet.</p>
+                  <p className="text-sm">Add your first BF price to get started.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>BF</TableHead>
+                      <TableHead>Base Price (₹/Kg)</TableHead>
+                      <TableHead className="w-24">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bfPrices.sort((a, b) => a.bf - b.bf).map(price => (
+                      <TableRow key={price.id} data-testid={`row-bf-price-${price.bf}`}>
+                        <TableCell className="font-medium">BF {price.bf}</TableCell>
+                        <TableCell>₹{price.basePrice.toFixed(2)}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => setEditingBfPrice(price)}
+                              data-testid={`button-edit-bf-${price.bf}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => deleteBfPriceMutation.mutate(price.id)}
+                              data-testid={`button-delete-bf-${price.bf}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Section 2: GSM Adjustment Rules */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-500" />
+                GSM Adjustment Rules
+              </CardTitle>
+              <CardDescription>
+                Define automatic price adjustments based on GSM ranges. Middle range has zero adjustment.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
                 <h4 className="font-medium">Low GSM Rule</h4>
                 <div className="grid grid-cols-2 gap-4">
@@ -202,7 +345,7 @@ export default function PaperSetup() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Add ₹</Label>
+                    <Label>Add ₹/Kg</Label>
                     <Input
                       type="number"
                       step="0.01"
@@ -227,7 +370,7 @@ export default function PaperSetup() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Add ₹</Label>
+                    <Label>Add ₹/Kg</Label>
                     <Input
                       type="number"
                       step="0.01"
@@ -238,179 +381,69 @@ export default function PaperSetup() {
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="space-y-4 p-4 border rounded-lg">
-              <h4 className="font-medium">Market Adjustment (Global)</h4>
-              <p className="text-sm text-muted-foreground">
-                This adjustment applies to ALL paper prices. Use positive values to increase prices, negative to decrease.
-              </p>
-              <div className="flex items-center gap-2 max-w-xs">
-                <Label className="whitespace-nowrap">Adjustment:</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={rules.marketAdjustment}
-                  onChange={(e) => setRules({ ...rules, marketAdjustment: parseFloat(e.target.value) || 0 })}
-                  data-testid="input-market-adjustment"
-                />
-                <span className="text-muted-foreground whitespace-nowrap">₹/kg</span>
+              <div className="text-sm text-muted-foreground text-center p-2 bg-muted/30 rounded">
+                GSM between {rules.lowGsmLimit + 1} and {rules.highGsmLimit - 1} has no adjustment
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Paper Prices</CardTitle>
+          {/* Section 3: Shade Premiums */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-yellow-500" />
+                Shade Premiums
+              </CardTitle>
               <CardDescription>
-                Add your paper inventory with base prices. Final prices are calculated automatically.
+                Add premium amounts for special paper shades (e.g., Golden paper costs more).
               </CardDescription>
-            </div>
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button data-testid="button-add-paper">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Paper
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-end">
+                <Button 
+                  size="sm" 
+                  onClick={() => setIsShadeDialogOpen(true)}
+                  data-testid="button-add-shade-premium"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add Shade Premium
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Paper Price</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>GSM</Label>
-                      <Input
-                        type="number"
-                        placeholder="e.g. 120"
-                        value={newPrice.gsm}
-                        onChange={(e) => setNewPrice({ ...newPrice, gsm: e.target.value })}
-                        data-testid="input-new-gsm"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>BF (Bursting Factor)</Label>
-                      <Select value={newPrice.bf} onValueChange={(v) => setNewPrice({ ...newPrice, bf: v })}>
-                        <SelectTrigger data-testid="select-new-bf">
-                          <SelectValue placeholder="Select BF" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {BF_OPTIONS.map(bf => (
-                            <SelectItem key={bf} value={bf.toString()}>{bf}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Shade</Label>
-                      <Select value={newPrice.shade} onValueChange={(v) => setNewPrice({ ...newPrice, shade: v })}>
-                        <SelectTrigger data-testid="select-new-shade">
-                          <SelectValue placeholder="Select Shade" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SHADE_OPTIONS.map(shade => (
-                            <SelectItem key={shade} value={shade}>{shade}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Base Price (₹/kg)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="e.g. 42.50"
-                        value={newPrice.basePrice}
-                        onChange={(e) => setNewPrice({ ...newPrice, basePrice: e.target.value })}
-                        data-testid="input-new-base-price"
-                      />
-                    </div>
-                  </div>
-                  {newPrice.gsm && newPrice.basePrice && (
-                    <div className="p-3 bg-muted rounded-lg text-sm">
-                      <span className="text-muted-foreground">Calculated Final Price: </span>
-                      <span className="font-semibold">
-                        ₹{calculateFinalPrice(parseFloat(newPrice.basePrice) || 0, parseInt(newPrice.gsm) || 0).toFixed(2)}/kg
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <DialogClose asChild>
-                    <Button variant="outline">Cancel</Button>
-                  </DialogClose>
-                  <Button 
-                    onClick={handleAddPrice} 
-                    disabled={createPriceMutation.isPending}
-                    data-testid="button-save-paper"
-                  >
-                    Add Paper
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent>
-            {pricesWithCalculations.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>No paper prices added yet.</p>
-                <p className="text-sm">Click "Add Paper" to add your first paper price.</p>
               </div>
-            ) : (
-              <div className="rounded-md border overflow-x-auto">
+              
+              {shadePremiums.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No shade premiums configured.</p>
+                  <p className="text-sm">Most shades have zero premium by default.</p>
+                </div>
+              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>GSM</TableHead>
-                      <TableHead>BF</TableHead>
                       <TableHead>Shade</TableHead>
-                      <TableHead className="text-right">Base Price</TableHead>
-                      <TableHead className="text-right">GSM Adj</TableHead>
-                      <TableHead className="text-right">Market Adj</TableHead>
-                      <TableHead className="text-right font-semibold">Final Price</TableHead>
+                      <TableHead>Premium (₹/Kg)</TableHead>
                       <TableHead className="w-24">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pricesWithCalculations.map((price) => (
-                      <TableRow key={price.id} data-testid={`row-paper-${price.id}`}>
-                        <TableCell>{price.gsm}</TableCell>
-                        <TableCell>{price.bf}</TableCell>
-                        <TableCell>{price.shade}</TableCell>
-                        <TableCell className="text-right">₹{price.basePrice.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">
-                          {price.gsmAdjustment > 0 ? `+₹${price.gsmAdjustment.toFixed(2)}` : "₹0.00"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {rules.marketAdjustment >= 0 
-                            ? `+₹${rules.marketAdjustment.toFixed(2)}` 
-                            : `-₹${Math.abs(rules.marketAdjustment).toFixed(2)}`
-                          }
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-primary">
-                          ₹{price.finalPrice.toFixed(2)}
-                        </TableCell>
+                    {shadePremiums.map(premium => (
+                      <TableRow key={premium.id} data-testid={`row-shade-${premium.shade}`}>
+                        <TableCell className="font-medium">{premium.shade}</TableCell>
+                        <TableCell>+₹{premium.premium.toFixed(2)}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
+                          <div className="flex gap-1">
                             <Button
-                              variant="ghost"
                               size="icon"
-                              onClick={() => setEditingPrice(price)}
-                              data-testid={`button-edit-paper-${price.id}`}
+                              variant="ghost"
+                              onClick={() => setEditingShade(premium)}
+                              data-testid={`button-edit-shade-${premium.shade}`}
                             >
                               <Pencil className="w-4 h-4" />
                             </Button>
                             <Button
-                              variant="ghost"
                               size="icon"
-                              onClick={() => deletePriceMutation.mutate(price.id)}
-                              data-testid={`button-delete-paper-${price.id}`}
+                              variant="ghost"
+                              onClick={() => deleteShadePremiumMutation.mutate(premium.id)}
+                              data-testid={`button-delete-shade-${premium.shade}`}
                             >
                               <Trash2 className="w-4 h-4 text-destructive" />
                             </Button>
@@ -420,120 +453,326 @@ export default function PaperSetup() {
                     ))}
                   </TableBody>
                 </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Section 4: Market Adjustment */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-green-500" />
+                Market Adjustment
+              </CardTitle>
+              <CardDescription>
+                Global adjustment that applies to all paper prices (positive or negative).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label>Market Adjustment (₹/Kg)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={rules.marketAdjustment}
+                  onChange={(e) => setRules({ ...rules, marketAdjustment: parseFloat(e.target.value) || 0 })}
+                  placeholder="Enter positive or negative value"
+                  data-testid="input-market-adjustment"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Use positive values to increase all prices, negative to decrease.
+                </p>
               </div>
-            )}
-          </CardContent>
-        </Card>
 
-        <div className="flex justify-end">
-          <Button 
-            size="lg" 
-            onClick={handleSaveAndContinue}
-            disabled={saveRulesMutation.isPending || paperPrices.length === 0}
-            data-testid="button-save-continue"
-          >
-            {saveRulesMutation.isPending ? "Saving..." : "Save & Continue"}
-            <ArrowRight className="w-4 h-4 ml-2" />
-          </Button>
-        </div>
-
-        <Dialog open={!!editingPrice} onOpenChange={() => setEditingPrice(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit Paper Price</DialogTitle>
-            </DialogHeader>
-            {editingPrice && (
-              <div className="space-y-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>GSM</Label>
-                    <Input
-                      type="number"
-                      value={editingPrice.gsm}
-                      onChange={(e) => setEditingPrice({ ...editingPrice, gsm: parseInt(e.target.value) || 0 })}
-                      data-testid="input-edit-gsm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>BF</Label>
-                    <Select 
-                      value={editingPrice.bf.toString()} 
-                      onValueChange={(v) => setEditingPrice({ ...editingPrice, bf: parseInt(v) })}
+              {/* Price Preview Calculator */}
+              <div className="border-t pt-4">
+                <h4 className="font-medium mb-4">Price Preview</h4>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">BF</Label>
+                    <Select
+                      value={previewBf?.toString() || ""}
+                      onValueChange={(v) => setPreviewBf(parseInt(v))}
                     >
-                      <SelectTrigger data-testid="select-edit-bf">
-                        <SelectValue />
+                      <SelectTrigger data-testid="select-preview-bf">
+                        <SelectValue placeholder="Select BF" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BF_OPTIONS.map(bf => (
-                          <SelectItem key={bf} value={bf.toString()}>{bf}</SelectItem>
+                        {bfPrices.map(p => (
+                          <SelectItem key={p.bf} value={p.bf.toString()}>
+                            BF {p.bf}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Shade</Label>
-                    <Select 
-                      value={editingPrice.shade} 
-                      onValueChange={(v) => setEditingPrice({ ...editingPrice, shade: v })}
+                  <div className="space-y-1">
+                    <Label className="text-xs">GSM</Label>
+                    <Input
+                      type="number"
+                      value={previewGsm}
+                      onChange={(e) => setPreviewGsm(parseInt(e.target.value) || 100)}
+                      data-testid="input-preview-gsm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Shade</Label>
+                    <Select
+                      value={previewShade}
+                      onValueChange={setPreviewShade}
                     >
-                      <SelectTrigger data-testid="select-edit-shade">
+                      <SelectTrigger data-testid="select-preview-shade">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {SHADE_OPTIONS.map(shade => (
-                          <SelectItem key={shade} value={shade}>{shade}</SelectItem>
+                          <SelectItem key={shade} value={shade}>
+                            {shade}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Base Price (₹/kg)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={editingPrice.basePrice}
-                      onChange={(e) => setEditingPrice({ ...editingPrice, basePrice: parseFloat(e.target.value) || 0 })}
-                      data-testid="input-edit-base-price"
-                    />
+                </div>
+
+                {previewCalculation ? (
+                  <div className="bg-muted/50 p-3 rounded-lg space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>BF Base Price:</span>
+                      <span>₹{previewCalculation.basePrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>+ GSM Adjustment:</span>
+                      <span>₹{previewCalculation.gsmAdjustment.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>+ Shade Premium:</span>
+                      <span>₹{previewCalculation.shadePremium.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>+ Market Adjustment:</span>
+                      <span>₹{previewCalculation.marketAdjustment.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold border-t pt-1 mt-1">
+                      <span>Final Rate:</span>
+                      <span className="text-primary">₹{previewCalculation.finalRate.toFixed(2)}/Kg</span>
+                    </div>
                   </div>
-                </div>
-                <div className="p-3 bg-muted rounded-lg text-sm">
-                  <span className="text-muted-foreground">Calculated Final Price: </span>
-                  <span className="font-semibold">
-                    ₹{calculateFinalPrice(editingPrice.basePrice, editingPrice.gsm).toFixed(2)}/kg
-                  </span>
-                </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground text-sm">
+                    Select a BF to see price preview
+                  </div>
+                )}
               </div>
-            )}
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button
-                onClick={() => {
-                  if (editingPrice) {
-                    updatePriceMutation.mutate({
-                      id: editingPrice.id,
-                      data: {
-                        gsm: editingPrice.gsm,
-                        bf: editingPrice.bf,
-                        shade: editingPrice.shade,
-                        basePrice: editingPrice.basePrice
-                      }
-                    });
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Complete Setup Button */}
+        <div className="flex justify-center pt-4">
+          <Button 
+            size="lg" 
+            onClick={handleSaveAndContinue}
+            disabled={saveRulesMutation.isPending}
+            data-testid="button-complete-setup"
+          >
+            {saveRulesMutation.isPending ? "Saving..." : "Save Settings & Continue"}
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Add BF Price Dialog */}
+      <Dialog open={isBfDialogOpen} onOpenChange={setIsBfDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add BF Base Price</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Bursting Factor (BF)</Label>
+              <Select
+                value={newBfPrice.bf}
+                onValueChange={(v) => setNewBfPrice({ ...newBfPrice, bf: v })}
+              >
+                <SelectTrigger data-testid="select-new-bf">
+                  <SelectValue placeholder="Select BF" />
+                </SelectTrigger>
+                <SelectContent>
+                  {BF_OPTIONS.filter(bf => !bfPrices.some(p => p.bf === bf)).map(bf => (
+                    <SelectItem key={bf} value={bf.toString()}>
+                      BF {bf}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Base Price (₹/Kg)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newBfPrice.basePrice}
+                onChange={(e) => setNewBfPrice({ ...newBfPrice, basePrice: e.target.value })}
+                placeholder="e.g., 45.00"
+                data-testid="input-new-bf-price"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button 
+              onClick={handleAddBfPrice}
+              disabled={createBfPriceMutation.isPending}
+              data-testid="button-confirm-add-bf"
+            >
+              Add Price
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit BF Price Dialog */}
+      <Dialog open={!!editingBfPrice} onOpenChange={() => setEditingBfPrice(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit BF {editingBfPrice?.bf} Price</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Base Price (₹/Kg)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                defaultValue={editingBfPrice?.basePrice}
+                onChange={(e) => {
+                  if (editingBfPrice) {
+                    setEditingBfPrice({ ...editingBfPrice, basePrice: parseFloat(e.target.value) || 0 });
                   }
                 }}
-                disabled={updatePriceMutation.isPending}
-                data-testid="button-update-paper"
+                data-testid="input-edit-bf-price"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button 
+              onClick={() => {
+                if (editingBfPrice) {
+                  updateBfPriceMutation.mutate({
+                    id: editingBfPrice.id,
+                    data: { basePrice: editingBfPrice.basePrice }
+                  });
+                }
+              }}
+              disabled={updateBfPriceMutation.isPending}
+              data-testid="button-confirm-edit-bf"
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Shade Premium Dialog */}
+      <Dialog open={isShadeDialogOpen} onOpenChange={setIsShadeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Shade Premium</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Paper Shade</Label>
+              <Select
+                value={newShade.shade}
+                onValueChange={(v) => setNewShade({ ...newShade, shade: v })}
               >
-                Update
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+                <SelectTrigger data-testid="select-new-shade">
+                  <SelectValue placeholder="Select shade" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SHADE_OPTIONS.filter(s => !shadePremiums.some(p => p.shade === s)).map(shade => (
+                    <SelectItem key={shade} value={shade}>
+                      {shade}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Premium Amount (₹/Kg)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newShade.premium}
+                onChange={(e) => setNewShade({ ...newShade, premium: e.target.value })}
+                placeholder="e.g., 2.00"
+                data-testid="input-new-shade-premium"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button 
+              onClick={handleAddShadePremium}
+              disabled={createShadePremiumMutation.isPending}
+              data-testid="button-confirm-add-shade"
+            >
+              Add Premium
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Shade Premium Dialog */}
+      <Dialog open={!!editingShade} onOpenChange={() => setEditingShade(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit {editingShade?.shade} Premium</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Premium Amount (₹/Kg)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                defaultValue={editingShade?.premium}
+                onChange={(e) => {
+                  if (editingShade) {
+                    setEditingShade({ ...editingShade, premium: parseFloat(e.target.value) || 0 });
+                  }
+                }}
+                data-testid="input-edit-shade-premium"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button 
+              onClick={() => {
+                if (editingShade) {
+                  updateShadePremiumMutation.mutate({
+                    id: editingShade.id,
+                    data: { premium: editingShade.premium }
+                  });
+                }
+              }}
+              disabled={updateShadePremiumMutation.isPending}
+              data-testid="button-confirm-edit-shade"
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

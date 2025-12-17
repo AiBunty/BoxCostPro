@@ -1,0 +1,80 @@
+You are building a Corrugated Box Costing SaaS.
+
+Create a USER-LEVEL “Paper Price Settings” feature with:
+- Default BF pricing
+- GSM-based adjustment rules
+- Global market adjustment
+- Fully customizable paper shades with premiums
+
+Important Rules:
+- Base paper price is defined ONLY by BF
+- GSM and shade premiums are applied as adjustments
+- Users must be able to create their own paper shades
+- All pricing data is user-specific (multi-tenant)
+
+Core Requirements:
+
+1. Default BF Pricing
+On first setup, pre-fill the following editable BF prices:
+14 BF → 32.00
+16 BF → 33.00
+18 BF → 34.00
+20 BF → 35.00
+22 BF → 36.50
+24 BF → 38.50
+28 BF → 44.50
+35 BF → 50.00
+Allow user to edit, add, or remove BF rows.
+
+2. GSM Adjustment Rules
+Allow user to define:
+- Low GSM limit and adjustment
+- High GSM limit and adjustment
+Middle GSM range has zero adjustment.
+All values must be user-editable.
+
+3. Paper Shade Management
+- Create a “Paper Shades” section
+- Allow user to:
+  - View existing shades
+  - Add new shade using a “+ Add New Shade” button
+- Each shade must have:
+  - Shade name (text input)
+  - Premium amount (numeric input, can be 0)
+
+4. Shade Premium Logic
+- When a paper shade is selected during costing,
+  apply the premium amount defined by the user
+- Support unlimited shades per user
+
+5. Market Adjustment
+- Single numeric input for global market adjustment
+- Positive or negative
+- Applies to all paper prices
+
+6. Final Paper Price Formula
+Final Paper Price =
+  BF Base Price
+  + GSM Adjustment
+  + Shade Premium
+  + Market Adjustment
+
+7. Quote Integration
+- Apply pricing logic only at quote generation
+- Save final calculated paper price inside the quote snapshot
+- Do not recalculate old quotes
+
+8. UI Requirements
+- Clean settings page
+- Separate sections for:
+  - BF prices
+  - GSM rules
+  - Paper shades & premiums
+  - Market adjustment
+- Show read-only calculated preview
+
+Output Required:
+- Database schema
+- Pricing calculation logic
+- User settings UI
+- Clean, maintainable code
