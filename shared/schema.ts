@@ -277,7 +277,20 @@ export const layerSpecSchema = z.object({
   flutingFactor: z.number().optional(),
   rctValue: z.number().optional(),
   shade: z.string(),
-  rate: z.number(),
+  rate: z.number(), // The actual rate used in calculations (either calculated or manual)
+  
+  // Paper pricing linkage fields
+  calculatedRate: z.number().optional(), // Auto-calculated rate from Paper Price Settings
+  priceOverride: z.boolean().default(false), // If true, manual rate is used instead of calculated
+  manualRate: z.number().optional(), // User-entered manual rate (only used when priceOverride=true)
+  
+  // Price breakdown for transparency (snapshot from calculation)
+  priceBreakdown: z.object({
+    bfBasePrice: z.number(),
+    gsmAdjustment: z.number(),
+    shadePremium: z.number(),
+    marketAdjustment: z.number(),
+  }).optional(),
 });
 
 export const quoteItemSchema = z.object({

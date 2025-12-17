@@ -20,7 +20,7 @@ The frontend is built with React and TypeScript using Vite, featuring a modern U
 *   **Cost Breakdown**: Detailed per-layer weight and cost analysis, total sheet weight, total KGs for order, and grouped paper combination costs, including burst strength (BS) calculation.
 *   **Admin & Settings**: Subscription, pricing, coupon, trial, payment history, and general owner settings management. User-configurable machine-specific fluting factors, fluting combination selector, and a first-time user onboarding for fluting setup.
 *   **Reporting**: Party-wise quote history with filtering and search capabilities.
-*   **Paper Pricing System**: Customizable BF-based paper pricing, GSM adjustment rules, shade premiums, and global market adjustment, integrated into the calculator.
+*   **Paper Pricing System**: Customizable BF-based paper pricing, GSM adjustment rules, shade premiums, and global market adjustment, integrated into the calculator. Paper Price Settings serve as the single source of truth for layer pricing, with optional manual override capability per layer. When editing a layer, users see a detailed price breakdown (BF base price, GSM adjustment, shade premium, market adjustment) and can toggle to enter a manual rate. Manual overrides are preserved in quote snapshots for immutability. Visual indicators (*) show which layers use manual rates.
 
 ### System Design Choices
 *   **Modularity**: Clear separation of concerns between frontend and backend, with distinct modules for routing, storage, and business logic.

@@ -113,9 +113,32 @@ interface CalculationResult {
   layerSpecs: LayerSpec[];
 }
 
+// Price breakdown type for layer pricing transparency
+type LayerPriceBreakdown = {
+  bfBasePrice: number;
+  gsmAdjustment: number;
+  shadePremium: number;
+  marketAdjustment: number;
+};
+
+// Layer state type with price override support
+type LayerState = {
+  gsm: string;
+  bf: string;
+  flutingFactor: string;
+  rctValue: string;
+  rate: string; // The actual rate used in calculations (either calculated or manual)
+  layerType: "liner" | "flute";
+  shade: string;
+  priceOverride: boolean; // If true, manual rate is used instead of auto-calculated
+  calculatedRate?: string; // Auto-calculated rate from Paper Price Settings
+  manualRate?: string; // User-entered manual rate (only used when priceOverride=true)
+  priceBreakdown?: LayerPriceBreakdown; // Full breakdown for transparency and snapshot
+};
+
 // Helper function to create layers for a given ply count with specific defaults
-const createLayersForPly = (plyNum: number) => {
-  const defaultLayers = [];
+const createLayersForPly = (plyNum: number): LayerState[] => {
+  const defaultLayers: LayerState[] = [];
   for (let i = 0; i < plyNum; i++) {
     // Determine layer type (liner vs flute)
     let isFlute = false;
@@ -169,6 +192,8 @@ const createLayersForPly = (plyNum: number) => {
       rate: "55.00",
       layerType: isFlute ? "flute" as const : "liner" as const,
       shade,
+      priceOverride: false, // Default: use auto-calculated price
+      calculatedRate: undefined, // Will be set when pricing data is loaded
     });
   }
   return defaultLayers;
@@ -206,9 +231,7 @@ export default function Calculator() {
   const [maxLengthThreshold, setMaxLengthThreshold] = useState<string>("1500");
   
   // Paper specifications - Layer by layer (initialized with 5 layers for default ply=5)
-  const [layers, setLayers] = useState<Array<{ gsm: string; bf: string; flutingFactor: string; rctValue: string; rate: string; layerType: "liner" | "flute"; shade: string }>>(
-    createLayersForPly(5)
-  );
+  const [layers, setLayers] = useState<LayerState[]>(createLayersForPly(5));
   
   // Paper Mill and Board Thickness
   const [paperMill, setPaperMill] = useState<string>("");
@@ -446,9 +469,17 @@ export default function Calculator() {
     }
   });
 
-  // Lookup paper price using BF-based pricing system
+  // Lookup paper price using BF-based pricing system with detailed breakdown
   // Formula: BF Base Price + GSM Adjustment + Shade Premium + Market Adjustment
-  const lookupPaperPrice = (gsm: number, bf: number, shade: string): number | null => {
+  type PriceBreakdown = {
+    bfBasePrice: number;
+    gsmAdjustment: number;
+    shadePremium: number;
+    marketAdjustment: number;
+    finalRate: number;
+  };
+  
+  const lookupPaperPriceWithBreakdown = (gsm: number, bf: number, shade: string): PriceBreakdown | null => {
     if (!bfPricesData || bfPricesData.length === 0) return null;
     
     // Find BF base price
@@ -478,7 +509,21 @@ export default function Calculator() {
     // Market adjustment
     const marketAdjustment = Number(rules.marketAdjustment) || 0;
     
-    return bfBasePrice + gsmAdjustment + shadePremium + marketAdjustment;
+    const finalRate = bfBasePrice + gsmAdjustment + shadePremium + marketAdjustment;
+    
+    return {
+      bfBasePrice,
+      gsmAdjustment,
+      shadePremium,
+      marketAdjustment,
+      finalRate
+    };
+  };
+  
+  // Legacy function for backwards compatibility - returns just the price
+  const lookupPaperPrice = (gsm: number, bf: number, shade: string): number | null => {
+    const breakdown = lookupPaperPriceWithBreakdown(gsm, bf, shade);
+    return breakdown ? breakdown.finalRate : null;
   };
 
   // Mutation to save rate memory
@@ -679,7 +724,7 @@ export default function Calculator() {
     const newLayers = [...layers];
     
     for (let i = fromIdx + 1; i < newLayers.length; i++) {
-      // Copy: gsm, bf, rctValue, shade, rate
+      // Copy: gsm, bf, rctValue, shade, rate, and pricing fields
       newLayers[i] = {
         ...newLayers[i],
         gsm: sourceLayer.gsm,
@@ -687,6 +732,10 @@ export default function Calculator() {
         rctValue: sourceLayer.rctValue,
         shade: sourceLayer.shade,
         rate: sourceLayer.rate,
+        priceOverride: sourceLayer.priceOverride,
+        calculatedRate: sourceLayer.calculatedRate,
+        manualRate: sourceLayer.manualRate,
+        priceBreakdown: sourceLayer.priceBreakdown,
       };
       
       // Copy flutingFactor only to even layers (flute layers: index 1, 3, 5...)
@@ -873,17 +922,33 @@ export default function Calculator() {
       ply,
     });
     
-    // Create layer specs from all layers
-    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => ({
-      layerIndex: idx,
-      layerType: layer.layerType,
-      gsm: parseFloat(layer.gsm) || 180,
-      bf: parseFloat(layer.bf) || 12,
-      flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
-      rctValue: parseFloat(layer.rctValue) || 0,
-      shade: layer.shade,
-      rate: parseFloat(layer.rate) || 55,
-    }));
+    // Create layer specs from all layers (with pricing snapshot data)
+    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => {
+      const breakdown = lookupPaperPriceWithBreakdown(
+        parseFloat(layer.gsm) || 180,
+        parseFloat(layer.bf) || 12,
+        layer.shade
+      );
+      return {
+        layerIndex: idx,
+        layerType: layer.layerType,
+        gsm: parseFloat(layer.gsm) || 180,
+        bf: parseFloat(layer.bf) || 12,
+        flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
+        rctValue: parseFloat(layer.rctValue) || 0,
+        shade: layer.shade,
+        rate: parseFloat(layer.rate) || 55,
+        priceOverride: layer.priceOverride || false,
+        calculatedRate: breakdown?.finalRate,
+        manualRate: layer.priceOverride ? parseFloat(layer.rate) : undefined,
+        priceBreakdown: breakdown ? {
+          bfBasePrice: breakdown.bfBasePrice,
+          gsmAdjustment: breakdown.gsmAdjustment,
+          shadePremium: breakdown.shadePremium,
+          marketAdjustment: breakdown.marketAdjustment,
+        } : undefined,
+      };
+    });
     
     // Calculate weight, BS, and costs
     const weightResult = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
@@ -930,17 +995,33 @@ export default function Calculator() {
       allowance,
     });
     
-    // Create layer specs from all layers
-    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => ({
-      layerIndex: idx,
-      layerType: layer.layerType,
-      gsm: parseFloat(layer.gsm) || 180,
-      bf: parseFloat(layer.bf) || 12,
-      flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
-      rctValue: parseFloat(layer.rctValue) || 0,
-      shade: layer.shade,
-      rate: parseFloat(layer.rate) || 55,
-    }));
+    // Create layer specs from all layers (with pricing snapshot data)
+    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => {
+      const breakdown = lookupPaperPriceWithBreakdown(
+        parseFloat(layer.gsm) || 180,
+        parseFloat(layer.bf) || 12,
+        layer.shade
+      );
+      return {
+        layerIndex: idx,
+        layerType: layer.layerType,
+        gsm: parseFloat(layer.gsm) || 180,
+        bf: parseFloat(layer.bf) || 12,
+        flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
+        rctValue: parseFloat(layer.rctValue) || 0,
+        shade: layer.shade,
+        rate: parseFloat(layer.rate) || 55,
+        priceOverride: layer.priceOverride || false,
+        calculatedRate: breakdown?.finalRate,
+        manualRate: layer.priceOverride ? parseFloat(layer.rate) : undefined,
+        priceBreakdown: breakdown ? {
+          bfBasePrice: breakdown.bfBasePrice,
+          gsmAdjustment: breakdown.gsmAdjustment,
+          shadePremium: breakdown.shadePremium,
+          marketAdjustment: breakdown.marketAdjustment,
+        } : undefined,
+      };
+    });
     
     // Calculate weight, BS, and costs
     const weightResult = calculateSheetWeight({ sheetLength: sheetLen, sheetWidth: sheetWid, layerSpecs, ply });
@@ -1051,17 +1132,33 @@ export default function Calculator() {
       return;
     }
     
-    // Create layer specs from all layers
-    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => ({
-      layerIndex: idx,
-      layerType: layer.layerType,
-      gsm: parseFloat(layer.gsm) || 180,
-      bf: parseFloat(layer.bf) || 12,
-      flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
-      rctValue: parseFloat(layer.rctValue) || 0,
-      shade: layer.shade,
-      rate: parseFloat(layer.rate) || 55,
-    }));
+    // Create layer specs from all layers (with pricing snapshot for quote immutability)
+    const layerSpecs: LayerSpec[] = layers.map((layer, idx) => {
+      const breakdown = lookupPaperPriceWithBreakdown(
+        parseFloat(layer.gsm) || 180,
+        parseFloat(layer.bf) || 12,
+        layer.shade
+      );
+      return {
+        layerIndex: idx,
+        layerType: layer.layerType,
+        gsm: parseFloat(layer.gsm) || 180,
+        bf: parseFloat(layer.bf) || 12,
+        flutingFactor: parseFloat(layer.flutingFactor) || 1.5,
+        rctValue: parseFloat(layer.rctValue) || 0,
+        shade: layer.shade,
+        rate: parseFloat(layer.rate) || 55,
+        priceOverride: layer.priceOverride || false,
+        calculatedRate: breakdown?.finalRate,
+        manualRate: layer.priceOverride ? parseFloat(layer.rate) : undefined,
+        priceBreakdown: breakdown ? {
+          bfBasePrice: breakdown.bfBasePrice,
+          gsmAdjustment: breakdown.gsmAdjustment,
+          shadePremium: breakdown.shadePremium,
+          marketAdjustment: breakdown.marketAdjustment,
+        } : undefined,
+      };
+    });
     
     const item: QuoteItem = {
       type: activeTab,
@@ -2162,7 +2259,14 @@ export default function Calculator() {
                           <TableCell className="text-sm" data-testid={`text-bf-${idx}`}>{layer.bf}</TableCell>
                           <TableCell className="text-sm" data-testid={`text-rct-${idx}`}>{layer.rctValue}</TableCell>
                           <TableCell className="text-sm" data-testid={`text-shade-${idx}`}>{layer.shade}</TableCell>
-                          <TableCell className="text-sm" data-testid={`text-rate-${idx}`}>₹{parseFloat(layer.rate).toFixed(2)}</TableCell>
+                          <TableCell className="text-sm" data-testid={`text-rate-${idx}`}>
+                            <span className="flex items-center gap-1">
+                              ₹{parseFloat(layer.rate).toFixed(2)}
+                              {layer.priceOverride && (
+                                <span className="text-xs text-amber-500" title="Manual override">*</span>
+                              )}
+                            </span>
+                          </TableCell>
                           <TableCell className="flex gap-1">
                             <Button
                               size="sm"
@@ -2183,7 +2287,7 @@ export default function Calculator() {
                                 onClick={() => {
                                   const newLayers = [...layers];
                                   const sourceLayer = layers[idx - 1];
-                                  // Copy: gsm, bf, rctValue, shade, rate
+                                  // Copy: gsm, bf, rctValue, shade, rate, and pricing fields
                                   newLayers[idx] = {
                                     ...newLayers[idx],
                                     gsm: sourceLayer.gsm,
@@ -2191,6 +2295,10 @@ export default function Calculator() {
                                     rctValue: sourceLayer.rctValue,
                                     shade: sourceLayer.shade,
                                     rate: sourceLayer.rate,
+                                    priceOverride: sourceLayer.priceOverride,
+                                    calculatedRate: sourceLayer.calculatedRate,
+                                    manualRate: sourceLayer.manualRate,
+                                    priceBreakdown: sourceLayer.priceBreakdown,
                                   };
                                   // Copy flutingFactor only to even layers (flute layers: index 1, 3, 5...)
                                   if (idx % 2 === 1) {
@@ -2252,13 +2360,17 @@ export default function Calculator() {
                           onChange={(e) => {
                             const newGsm = e.target.value;
                             const updated = { ...editingLayerData, gsm: newGsm };
-                            const price = lookupPaperPrice(parseInt(newGsm), parseInt(editingLayerData.bf), editingLayerData.shade);
-                            if (price !== null) {
-                              updated.rate = price.toFixed(2);
-                            } else {
-                              const memoryKey = `${editingLayerData.bf}|${editingLayerData.shade}`;
-                              if (rateMemory[memoryKey]) {
-                                updated.rate = rateMemory[memoryKey];
+                            // Only auto-update rate if not in price override mode
+                            if (!updated.priceOverride) {
+                              const breakdown = lookupPaperPriceWithBreakdown(parseInt(newGsm), parseInt(editingLayerData.bf), editingLayerData.shade);
+                              if (breakdown) {
+                                updated.rate = breakdown.finalRate.toFixed(2);
+                                updated.calculatedRate = breakdown.finalRate.toFixed(2);
+                              } else {
+                                const memoryKey = `${editingLayerData.bf}|${editingLayerData.shade}`;
+                                if (rateMemory[memoryKey]) {
+                                  updated.rate = rateMemory[memoryKey];
+                                }
                               }
                             }
                             setEditingLayerData(updated);
@@ -2272,13 +2384,17 @@ export default function Calculator() {
                           value={editingLayerData.bf}
                           onValueChange={(value) => {
                             const updated = { ...editingLayerData, bf: value };
-                            const price = lookupPaperPrice(parseInt(editingLayerData.gsm), parseInt(value), editingLayerData.shade);
-                            if (price !== null) {
-                              updated.rate = price.toFixed(2);
-                            } else {
-                              const memoryKey = `${value}|${editingLayerData.shade}`;
-                              if (rateMemory[memoryKey]) {
-                                updated.rate = rateMemory[memoryKey];
+                            // Only auto-update rate if not in price override mode
+                            if (!updated.priceOverride) {
+                              const breakdown = lookupPaperPriceWithBreakdown(parseInt(editingLayerData.gsm), parseInt(value), editingLayerData.shade);
+                              if (breakdown) {
+                                updated.rate = breakdown.finalRate.toFixed(2);
+                                updated.calculatedRate = breakdown.finalRate.toFixed(2);
+                              } else {
+                                const memoryKey = `${value}|${editingLayerData.shade}`;
+                                if (rateMemory[memoryKey]) {
+                                  updated.rate = rateMemory[memoryKey];
+                                }
                               }
                             }
                             setEditingLayerData(updated);
@@ -2322,13 +2438,17 @@ export default function Calculator() {
                           value={editingLayerData.shade}
                           onValueChange={(value) => {
                             const updated = { ...editingLayerData, shade: value };
-                            const price = lookupPaperPrice(parseInt(editingLayerData.gsm), parseInt(editingLayerData.bf), value);
-                            if (price !== null) {
-                              updated.rate = price.toFixed(2);
-                            } else {
-                              const memoryKey = `${editingLayerData.bf}|${value}`;
-                              if (rateMemory[memoryKey]) {
-                                updated.rate = rateMemory[memoryKey];
+                            // Only auto-update rate if not in price override mode
+                            if (!updated.priceOverride) {
+                              const breakdown = lookupPaperPriceWithBreakdown(parseInt(editingLayerData.gsm), parseInt(editingLayerData.bf), value);
+                              if (breakdown) {
+                                updated.rate = breakdown.finalRate.toFixed(2);
+                                updated.calculatedRate = breakdown.finalRate.toFixed(2);
+                              } else {
+                                const memoryKey = `${editingLayerData.bf}|${value}`;
+                                if (rateMemory[memoryKey]) {
+                                  updated.rate = rateMemory[memoryKey];
+                                }
                               }
                             }
                             setEditingLayerData(updated);
@@ -2356,18 +2476,122 @@ export default function Calculator() {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-rate" className="text-sm">Rate (₹/kg)</Label>
-                      <Input
-                        id="edit-rate"
-                        type="number"
-                        step="0.01"
-                        value={editingLayerData.rate}
-                        onChange={(e) =>
-                          setEditingLayerData({ ...editingLayerData, rate: e.target.value })
+                    {/* Paper Rate Section with Auto-calculation and Override Toggle */}
+                    <div className="space-y-3 p-3 bg-muted/30 rounded-md border">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-medium">Paper Rate (₹/kg)</Label>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="price-override" className="text-xs text-muted-foreground">
+                            Override manually
+                          </Label>
+                          <Switch
+                            id="price-override"
+                            checked={editingLayerData.priceOverride || false}
+                            onCheckedChange={(checked) => {
+                              const updated = { ...editingLayerData, priceOverride: checked };
+                              const breakdown = lookupPaperPriceWithBreakdown(
+                                parseInt(editingLayerData.gsm),
+                                parseInt(editingLayerData.bf),
+                                editingLayerData.shade
+                              );
+                              
+                              if (checked) {
+                                // When turning on override, restore previous manual rate or use current rate
+                                updated.rate = editingLayerData.manualRate || editingLayerData.rate;
+                                // Keep calculatedRate for reference
+                                if (breakdown) {
+                                  updated.calculatedRate = breakdown.finalRate.toFixed(2);
+                                }
+                              } else {
+                                // When turning off override, save current manual rate and switch to calculated
+                                updated.manualRate = editingLayerData.rate; // Preserve manual value
+                                if (breakdown) {
+                                  updated.rate = breakdown.finalRate.toFixed(2);
+                                  updated.calculatedRate = breakdown.finalRate.toFixed(2);
+                                }
+                              }
+                              setEditingLayerData(updated);
+                            }}
+                            data-testid="switch-price-override"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Show calculated breakdown when not overriding */}
+                      {!editingLayerData.priceOverride && (() => {
+                        const breakdown = lookupPaperPriceWithBreakdown(
+                          parseInt(editingLayerData.gsm) || 0,
+                          parseInt(editingLayerData.bf) || 0,
+                          editingLayerData.shade || ''
+                        );
+                        
+                        if (breakdown) {
+                          return (
+                            <div className="space-y-2">
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                <div className="flex justify-between">
+                                  <span>BF {editingLayerData.bf} Base:</span>
+                                  <span>₹{breakdown.bfBasePrice.toFixed(2)}</span>
+                                </div>
+                                {breakdown.gsmAdjustment !== 0 && (
+                                  <div className="flex justify-between">
+                                    <span>GSM Adj:</span>
+                                    <span>{breakdown.gsmAdjustment >= 0 ? '+' : ''}₹{breakdown.gsmAdjustment.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                {breakdown.shadePremium !== 0 && (
+                                  <div className="flex justify-between">
+                                    <span>{editingLayerData.shade} Premium:</span>
+                                    <span>+₹{breakdown.shadePremium.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                {breakdown.marketAdjustment !== 0 && (
+                                  <div className="flex justify-between">
+                                    <span>Market Adj:</span>
+                                    <span>{breakdown.marketAdjustment >= 0 ? '+' : ''}₹{breakdown.marketAdjustment.toFixed(2)}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex justify-between items-center pt-2 border-t">
+                                <span className="text-sm font-medium">Calculated Rate:</span>
+                                <span className="text-lg font-bold text-primary">₹{breakdown.finalRate.toFixed(2)}/kg</span>
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="text-sm text-amber-600 dark:text-amber-400">
+                              <p>No pricing found for BF {editingLayerData.bf}.</p>
+                              <p className="text-xs">Set up Paper Price Settings or enable manual override.</p>
+                            </div>
+                          );
                         }
-                        data-testid="input-edit-rate"
-                      />
+                      })()}
+                      
+                      {/* Manual rate input when override is ON */}
+                      {editingLayerData.priceOverride && (
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-rate" className="text-xs text-muted-foreground">Manual Rate</Label>
+                          <Input
+                            id="edit-rate"
+                            type="number"
+                            step="0.01"
+                            value={editingLayerData.rate}
+                            onChange={(e) => {
+                              const manualValue = e.target.value;
+                              setEditingLayerData({ 
+                                ...editingLayerData, 
+                                rate: manualValue,
+                                manualRate: manualValue // Track manual rate separately
+                              });
+                            }}
+                            data-testid="input-edit-rate"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            This manual rate will be stored in the quote snapshot.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex gap-2 pt-4">
@@ -2382,22 +2606,52 @@ export default function Calculator() {
                         onClick={() => {
                           if (editingLayerIdx !== null) {
                             const newLayers = [...layers];
-                            newLayers[editingLayerIdx] = editingLayerData;
+                            // Calculate and capture full breakdown for snapshot
+                            const breakdown = lookupPaperPriceWithBreakdown(
+                              parseInt(editingLayerData.gsm),
+                              parseInt(editingLayerData.bf),
+                              editingLayerData.shade
+                            );
+                            
+                            const updatedLayerData: LayerState = {
+                              ...editingLayerData,
+                              calculatedRate: breakdown ? breakdown.finalRate.toFixed(2) : undefined,
+                              // Store price breakdown for quote snapshot immutability
+                              priceBreakdown: breakdown ? {
+                                bfBasePrice: breakdown.bfBasePrice,
+                                gsmAdjustment: breakdown.gsmAdjustment,
+                                shadePremium: breakdown.shadePremium,
+                                marketAdjustment: breakdown.marketAdjustment,
+                              } : undefined,
+                              // Track manual rate: preserve existing if toggling off, or use current rate when override is on
+                              manualRate: editingLayerData.priceOverride 
+                                ? editingLayerData.rate // Current rate is manual 
+                                : editingLayerData.manualRate, // Preserve previous manual rate
+                              // Set the actual rate used in calculations
+                              rate: !editingLayerData.priceOverride && breakdown 
+                                ? breakdown.finalRate.toFixed(2) 
+                                : editingLayerData.rate,
+                            };
+                            newLayers[editingLayerIdx] = updatedLayerData;
                             setLayers(newLayers);
                             
-                            // Save rate to memory by BF + Shade combination (both local and API)
-                            const memoryKey = `${editingLayerData.bf}|${editingLayerData.shade}`;
-                            setRateMemory({ ...rateMemory, [memoryKey]: editingLayerData.rate });
-                            
-                            // Persist to API
-                            saveRateMemoryMutation.mutate({
-                              bfValue: editingLayerData.bf,
-                              shade: editingLayerData.shade,
-                              rate: parseFloat(editingLayerData.rate)
-                            });
+                            // Only save rate to memory when using manual override
+                            // (auto-calculated rates shouldn't update the legacy memory system)
+                            if (editingLayerData.priceOverride) {
+                              const memoryKey = `${editingLayerData.bf}|${editingLayerData.shade}`;
+                              setRateMemory({ ...rateMemory, [memoryKey]: editingLayerData.rate });
+                              
+                              // Persist to API
+                              saveRateMemoryMutation.mutate({
+                                bfValue: editingLayerData.bf,
+                                shade: editingLayerData.shade,
+                                rate: parseFloat(editingLayerData.rate)
+                              });
+                            }
                             
                             setEditingLayerIdx(null);
-                            toast({ title: "Success", description: `L${editingLayerIdx + 1} updated successfully` });
+                            const priceSource = editingLayerData.priceOverride ? "(manual rate)" : "(auto-calculated)";
+                            toast({ title: "Success", description: `L${editingLayerIdx + 1} updated ${priceSource}` });
                           }
                         }}
                         data-testid="button-save-edit"
