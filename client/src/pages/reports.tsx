@@ -7,12 +7,38 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Download, Search, FileSpreadsheet, Filter, Calendar } from "lucide-react";
-import { Link } from "wouter";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  Download, 
+  Search, 
+  FileText, 
+  Filter, 
+  Calendar,
+  Users,
+  Package,
+  TrendingUp,
+  Calculator,
+  FileSpreadsheet,
+  Receipt,
+  Bookmark
+} from "lucide-react";
 import { downloadGenericExcel } from "@/lib/excelExport";
-import type { Quote, PartyProfile } from "@shared/schema";
+import type { PartyProfile } from "@shared/schema";
+
+// Extended quote type with items from active version
+interface QuoteWithItems {
+  id: string;
+  quoteNo: string;
+  partyName: string;
+  customerCompany: string | null;
+  status: string | null;
+  createdAt: Date | null;
+  items: any[];
+  activeVersion: any | null;
+}
 
 export default function Reports() {
+  const [activeTab, setActiveTab] = useState("quote-register");
   const [selectedPartyName, setSelectedPartyName] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -22,8 +48,14 @@ export default function Reports() {
     queryKey: ['/api/party-profiles'],
   });
 
-  const { data: allQuotes = [], isLoading: isLoadingQuotes } = useQuery<Quote[]>({
-    queryKey: ['/api/quotes'],
+  // Fetch quotes with items from active versions (for reports)
+  const { data: allQuotes = [], isLoading: isLoadingQuotes } = useQuery<QuoteWithItems[]>({
+    queryKey: ['/api/quotes', 'include=items'],
+    queryFn: async () => {
+      const res = await fetch('/api/quotes?include=items', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch quotes');
+      return res.json();
+    },
   });
 
   const filteredQuotes = useMemo(() => {
@@ -38,6 +70,7 @@ export default function Reports() {
       quotes = quotes.filter(q => 
         q.partyName?.toLowerCase().includes(term) ||
         q.customerCompany?.toLowerCase().includes(term) ||
+        q.quoteNo?.toLowerCase().includes(term) ||
         JSON.stringify(q.items).toLowerCase().includes(term)
       );
     }
@@ -75,13 +108,165 @@ export default function Reports() {
       const items = quote.items as any[];
       if (items && Array.isArray(items)) {
         items.forEach(item => {
-          stats[partyName].totalValue += parseFloat(item.totalCostPerBox || 0) * (item.quantity || 1);
+          const costPerBox = item.negotiatedPrice || item.totalCostPerBox || 0;
+          stats[partyName].totalValue += parseFloat(costPerBox) * (item.quantity || 1);
         });
       }
     });
     
-    return Object.entries(stats).map(([name, data]) => ({ id: name, ...data }));
+    return Object.entries(stats)
+      .map(([name, data]) => ({ id: name, ...data }))
+      .sort((a, b) => b.totalValue - a.totalValue);
   }, [allQuotes]);
+
+  const itemStats = useMemo(() => {
+    const stats: Record<string, { boxName: string; ply: string; count: number; avgPrice: number; totalQty: number }> = {};
+    
+    allQuotes.forEach(quote => {
+      const items = quote.items as any[];
+      if (items && Array.isArray(items)) {
+        items.forEach(item => {
+          const key = `${item.boxName || 'Unnamed'}-${item.ply || '5'}`;
+          if (!stats[key]) {
+            stats[key] = {
+              boxName: item.boxName || 'Unnamed',
+              ply: item.ply || '5',
+              count: 0,
+              avgPrice: 0,
+              totalQty: 0
+            };
+          }
+          stats[key].count++;
+          const costPerBox = item.negotiatedPrice || item.totalCostPerBox || 0;
+          stats[key].avgPrice = ((stats[key].avgPrice * (stats[key].count - 1)) + parseFloat(costPerBox)) / stats[key].count;
+          stats[key].totalQty += (item.quantity || 0);
+        });
+      }
+    });
+    
+    return Object.values(stats).sort((a, b) => b.count - a.count);
+  }, [allQuotes]);
+
+  const dateStats = useMemo(() => {
+    const stats: Record<string, { date: string; quoteCount: number; totalValue: number; itemCount: number }> = {};
+    
+    filteredQuotes.forEach(quote => {
+      const date = quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : 'Unknown';
+      if (!stats[date]) {
+        stats[date] = { date, quoteCount: 0, totalValue: 0, itemCount: 0 };
+      }
+      stats[date].quoteCount++;
+      const items = quote.items as any[];
+      if (items && Array.isArray(items)) {
+        stats[date].itemCount += items.length;
+        items.forEach(item => {
+          const costPerBox = item.negotiatedPrice || item.totalCostPerBox || 0;
+          stats[date].totalValue += parseFloat(costPerBox) * (item.quantity || 1);
+        });
+      }
+    });
+    
+    return Object.values(stats).sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [filteredQuotes]);
+
+  const costBreakdownData = useMemo(() => {
+    let totalPaperCost = 0;
+    let totalPrintingCost = 0;
+    let totalLaminationCost = 0;
+    let totalDieCost = 0;
+    let totalPunchingCost = 0;
+    let totalVarnishCost = 0;
+    let totalMfgCost = 0;
+    let grandTotal = 0;
+    
+    filteredQuotes.forEach(quote => {
+      const items = quote.items as any[];
+      if (items && Array.isArray(items)) {
+        items.forEach(item => {
+          const qty = item.quantity || 1;
+          totalPaperCost += parseFloat(item.paperCost || 0) * qty;
+          totalPrintingCost += parseFloat(item.printingCost || 0) * qty;
+          totalLaminationCost += parseFloat(item.laminationCost || 0) * qty;
+          totalDieCost += parseFloat(item.dieCost || 0) * qty;
+          totalPunchingCost += parseFloat(item.punchingCost || 0) * qty;
+          totalVarnishCost += parseFloat(item.varnishCost || 0) * qty;
+          totalMfgCost += parseFloat(item.totalMfgCost || 0) * qty;
+          const costPerBox = item.negotiatedPrice || item.totalCostPerBox || 0;
+          grandTotal += parseFloat(costPerBox) * qty;
+        });
+      }
+    });
+    
+    return [
+      { category: 'Paper Cost', value: totalPaperCost, percentage: grandTotal > 0 ? (totalPaperCost / grandTotal * 100) : 0 },
+      { category: 'Printing Cost', value: totalPrintingCost, percentage: grandTotal > 0 ? (totalPrintingCost / grandTotal * 100) : 0 },
+      { category: 'Lamination Cost', value: totalLaminationCost, percentage: grandTotal > 0 ? (totalLaminationCost / grandTotal * 100) : 0 },
+      { category: 'Die Cost', value: totalDieCost, percentage: grandTotal > 0 ? (totalDieCost / grandTotal * 100) : 0 },
+      { category: 'Punching Cost', value: totalPunchingCost, percentage: grandTotal > 0 ? (totalPunchingCost / grandTotal * 100) : 0 },
+      { category: 'Varnish Cost', value: totalVarnishCost, percentage: grandTotal > 0 ? (totalVarnishCost / grandTotal * 100) : 0 },
+      { category: 'Other Mfg Cost', value: totalMfgCost - (totalPrintingCost + totalLaminationCost + totalDieCost + totalPunchingCost + totalVarnishCost), percentage: 0 },
+    ].filter(item => item.value > 0);
+  }, [filteredQuotes]);
+
+  const paperConsumptionData = useMemo(() => {
+    const stats: Record<string, { bf: string; gsm: string; shade: string; totalKg: number; totalValue: number }> = {};
+    
+    filteredQuotes.forEach(quote => {
+      const items = quote.items as any[];
+      if (items && Array.isArray(items)) {
+        items.forEach(item => {
+          if (item.layers && Array.isArray(item.layers)) {
+            item.layers.forEach((layer: any) => {
+              const key = `${layer.bf || 'Unknown'}-${layer.gsm || 'Unknown'}-${layer.shade || 'Unknown'}`;
+              if (!stats[key]) {
+                stats[key] = {
+                  bf: layer.bf || 'Unknown',
+                  gsm: layer.gsm || 'Unknown',
+                  shade: layer.shade || 'Unknown',
+                  totalKg: 0,
+                  totalValue: 0
+                };
+              }
+              const layerWeight = parseFloat(layer.layerWeight || 0);
+              const qty = item.quantity || 1;
+              stats[key].totalKg += (layerWeight * qty) / 1000;
+              const rate = parseFloat(layer.rate || 0);
+              stats[key].totalValue += (layerWeight * rate * qty) / 1000;
+            });
+          }
+        });
+      }
+    });
+    
+    return Object.values(stats).sort((a, b) => b.totalKg - a.totalKg);
+  }, [filteredQuotes]);
+
+  const gstData = useMemo(() => {
+    let totalSubtotal = 0;
+    let totalGst = 0;
+    
+    filteredQuotes.forEach(quote => {
+      const items = quote.items as any[];
+      if (items && Array.isArray(items)) {
+        items.forEach(item => {
+          const qty = item.quantity || 1;
+          const costPerBox = item.negotiatedPrice || item.totalCostPerBox || 0;
+          const subtotal = parseFloat(costPerBox) * qty;
+          totalSubtotal += subtotal;
+        });
+      }
+    });
+    
+    totalGst = totalSubtotal * 0.18;
+    
+    return {
+      subtotal: totalSubtotal,
+      gst: totalGst,
+      total: totalSubtotal + totalGst
+    };
+  }, [filteredQuotes]);
 
   const uniquePartyNames = useMemo(() => {
     const names = new Set<string>();
@@ -94,51 +279,125 @@ export default function Reports() {
     return Array.from(names).sort();
   }, [allQuotes, partyProfiles]);
 
-  const exportQuotesToExcel = () => {
-    const exportData: any[] = [];
+  const exportCurrentReport = () => {
+    let exportData: any[] = [];
+    let filename = "";
     
-    filteredQuotes.forEach(quote => {
-      const items = quote.items as any[];
-      if (items && Array.isArray(items)) {
-        items.forEach(item => {
+    switch (activeTab) {
+      case "quote-register":
+        filteredQuotes.forEach(quote => {
+          const items = quote.items as any[];
+          const totalValue = items?.reduce((sum, item) => {
+            const costPerBox = item.negotiatedPrice || item.totalCostPerBox || 0;
+            return sum + (parseFloat(costPerBox) * (item.quantity || 1));
+          }, 0) || 0;
+          
           exportData.push({
-            "Quote Date": quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : "",
+            "Quote No": quote.quoteNo || "-",
+            "Date": quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : "",
             "Party Name": quote.partyName,
             "Company": quote.customerCompany,
-            "Box Name": item.boxName || "",
-            "Type": item.type || "RSC",
-            "Ply": item.ply || "",
-            "Length (mm)": item.length || 0,
-            "Width (mm)": item.width || 0,
-            "Height (mm)": item.height || 0,
-            "Quantity": item.quantity || 0,
-            "Paper Cost": parseFloat(item.paperCost || 0).toFixed(2),
-            "Printing Cost": parseFloat(item.printingCost || 0).toFixed(2),
-            "Lamination Cost": parseFloat(item.laminationCost || 0).toFixed(2),
-            "Varnish Cost": parseFloat(item.varnishCost || 0).toFixed(2),
-            "Die Cost": parseFloat(item.dieCost || 0).toFixed(2),
-            "Punching Cost": parseFloat(item.punchingCost || 0).toFixed(2),
-            "Total Per Box": parseFloat(item.totalCostPerBox || 0).toFixed(2),
-            "Total Value": (parseFloat(item.totalCostPerBox || 0) * (item.quantity || 1)).toFixed(2),
-            "Sheet Weight (g)": parseFloat(item.sheetWeight || 0).toFixed(2),
-            "ECT": item.ect || "",
-            "BCT": item.bct || "",
-            "BS": item.bs || "",
+            "Items": items?.length || 0,
+            "Status": quote.status || "Draft",
+            "Total Value": totalValue.toFixed(2)
           });
         });
-      }
-    });
+        filename = `quote_register_${new Date().toISOString().split('T')[0]}`;
+        break;
+        
+      case "party-summary":
+        partyStats.forEach(stat => {
+          exportData.push({
+            "Party Name": stat.name,
+            "Company": stat.company,
+            "Quote Count": stat.quoteCount,
+            "Total Value": stat.totalValue.toFixed(2)
+          });
+        });
+        filename = `party_summary_${new Date().toISOString().split('T')[0]}`;
+        break;
+        
+      case "item-price":
+        itemStats.forEach(stat => {
+          exportData.push({
+            "Box Name": stat.boxName,
+            "Ply": stat.ply,
+            "Quote Count": stat.count,
+            "Avg Price/Box": stat.avgPrice.toFixed(2),
+            "Total Quantity": stat.totalQty
+          });
+        });
+        filename = `item_price_report_${new Date().toISOString().split('T')[0]}`;
+        break;
+        
+      case "date-sales":
+        dateStats.forEach(stat => {
+          exportData.push({
+            "Date": stat.date,
+            "Quote Count": stat.quoteCount,
+            "Item Count": stat.itemCount,
+            "Total Value": stat.totalValue.toFixed(2)
+          });
+        });
+        filename = `date_wise_sales_${new Date().toISOString().split('T')[0]}`;
+        break;
+        
+      case "cost-breakdown":
+        costBreakdownData.forEach(item => {
+          exportData.push({
+            "Category": item.category,
+            "Value": item.value.toFixed(2),
+            "Percentage": item.percentage.toFixed(1) + "%"
+          });
+        });
+        filename = `cost_breakdown_${new Date().toISOString().split('T')[0]}`;
+        break;
+        
+      case "paper-consumption":
+        paperConsumptionData.forEach(item => {
+          exportData.push({
+            "BF": item.bf,
+            "GSM": item.gsm,
+            "Shade": item.shade,
+            "Total KG": item.totalKg.toFixed(2),
+            "Total Value": item.totalValue.toFixed(2)
+          });
+        });
+        filename = `paper_consumption_${new Date().toISOString().split('T')[0]}`;
+        break;
+        
+      case "gst-tax":
+        exportData.push({
+          "Description": "Subtotal",
+          "Amount": gstData.subtotal.toFixed(2)
+        });
+        exportData.push({
+          "Description": "GST (18%)",
+          "Amount": gstData.gst.toFixed(2)
+        });
+        exportData.push({
+          "Description": "Total with GST",
+          "Amount": gstData.total.toFixed(2)
+        });
+        filename = `gst_tax_report_${new Date().toISOString().split('T')[0]}`;
+        break;
+        
+      default:
+        return;
+    }
 
     if (exportData.length === 0) {
-      alert("No data to export");
       return;
     }
 
-    const filename = selectedPartyName && selectedPartyName !== "all"
-      ? `${selectedPartyName}_quotes_${new Date().toISOString().split('T')[0]}` 
-      : `all_quotes_${new Date().toISOString().split('T')[0]}`;
-
     downloadGenericExcel(exportData, filename);
+  };
+
+  const clearFilters = () => {
+    setSelectedPartyName("");
+    setSearchTerm("");
+    setStartDate("");
+    setEndDate("");
   };
 
   if (isLoadingParties || isLoadingQuotes) {
@@ -149,24 +408,28 @@ export default function Reports() {
     );
   }
 
+  const reportTabs = [
+    { id: "quote-register", label: "Quote Register", icon: FileText },
+    { id: "party-summary", label: "Party Summary", icon: Users },
+    { id: "item-price", label: "Item Prices", icon: Package },
+    { id: "date-sales", label: "Date-wise Sales", icon: TrendingUp },
+    { id: "cost-breakdown", label: "Cost Breakdown", icon: Calculator },
+    { id: "paper-consumption", label: "Paper Usage", icon: FileSpreadsheet },
+    { id: "gst-tax", label: "GST & Tax", icon: Receipt },
+    { id: "saved-reports", label: "Saved Reports", icon: Bookmark },
+  ];
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4">
-            <Link href="/">
-              <Button variant="ghost" size="icon" data-testid="button-back-to-calculator">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground" data-testid="text-reports-title">Reports</h1>
-              <p className="text-sm text-muted-foreground">View party-wise quote history and export data</p>
-            </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground" data-testid="text-reports-title">Reports</h1>
+            <p className="text-sm text-muted-foreground">Comprehensive business analytics and reporting</p>
           </div>
           <Button 
-            onClick={exportQuotesToExcel}
-            disabled={filteredQuotes.length === 0}
+            onClick={exportCurrentReport}
+            disabled={filteredQuotes.length === 0 && activeTab !== "saved-reports"}
             data-testid="button-export-excel"
           >
             <Download className="w-4 h-4 mr-2" />
@@ -174,8 +437,8 @@ export default function Reports() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="md:col-span-1">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <Card className="lg:col-span-1">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Filter className="w-4 h-4" />
@@ -184,7 +447,7 @@ export default function Reports() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="party-filter">Select Party</Label>
+                <Label htmlFor="party-filter">Party</Label>
                 <Select value={selectedPartyName} onValueChange={setSelectedPartyName}>
                   <SelectTrigger id="party-filter" data-testid="select-party-filter">
                     <SelectValue placeholder="All Parties" />
@@ -206,7 +469,7 @@ export default function Reports() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input 
                     id="search-filter"
-                    placeholder="Search quotes..."
+                    placeholder="Search..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-9"
@@ -237,12 +500,7 @@ export default function Reports() {
               <Button 
                 variant="outline" 
                 className="w-full"
-                onClick={() => {
-                  setSelectedPartyName("");
-                  setSearchTerm("");
-                  setStartDate("");
-                  setEndDate("");
-                }}
+                onClick={clearFilters}
                 data-testid="button-clear-filters"
               >
                 Clear Filters
@@ -250,153 +508,403 @@ export default function Reports() {
             </CardContent>
           </Card>
 
-          <div className="md:col-span-3 space-y-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4" />
-                  Party Summary
-                </CardTitle>
-                <CardDescription>
-                  {partyStats.length} parties with {allQuotes.length} total quotes
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {partyStats.slice(0, 8).map((stat) => (
-                    <div 
-                      key={stat.id} 
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedPartyName === stat.name ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
-                      }`}
-                      onClick={() => setSelectedPartyName(stat.name === selectedPartyName ? "" : stat.name)}
-                      data-testid={`party-stat-${stat.id}`}
+          <div className="lg:col-span-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid grid-cols-4 lg:grid-cols-8 gap-1 h-auto p-1 mb-4">
+                {reportTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <TabsTrigger 
+                      key={tab.id} 
+                      value={tab.id}
+                      className="flex flex-col items-center gap-1 py-2 px-1 text-xs"
+                      data-testid={`tab-${tab.id}`}
                     >
-                      <div className="font-medium text-sm truncate">{stat.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">{stat.company}</div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="secondary" className="text-xs">
-                          {stat.quoteCount} quotes
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                      <Icon className="w-4 h-4" />
+                      <span className="hidden sm:block truncate">{tab.label}</span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
 
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">
-                  Quote History
-                  {selectedPartyName && selectedPartyName !== "all" && (
-                    <span className="font-normal text-muted-foreground ml-2">
-                      - {selectedPartyName}
-                    </span>
-                  )}
-                </CardTitle>
-                <CardDescription>
-                  {filteredQuotes.length} quotes found
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[100px]">Date</TableHead>
-                        <TableHead>Party</TableHead>
-                        <TableHead>Company</TableHead>
-                        <TableHead className="text-center">Items</TableHead>
-                        <TableHead className="text-right">Total Value</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredQuotes.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                            No quotes found matching your criteria
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredQuotes.map((quote) => {
-                          const items = quote.items as any[] || [];
-                          const totalValue = items.reduce((sum, item) => 
-                            sum + (parseFloat(item.totalCostPerBox || 0) * (item.quantity || 1)), 0
-                          );
-                          return (
-                            <TableRow key={quote.id} data-testid={`quote-row-${quote.id}`}>
-                              <TableCell className="font-mono text-sm">
-                                {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : "-"}
-                              </TableCell>
-                              <TableCell className="font-medium">{quote.partyName}</TableCell>
-                              <TableCell className="text-muted-foreground">{quote.customerCompany}</TableCell>
-                              <TableCell className="text-center">
-                                <Badge variant="outline">{items.length}</Badge>
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                ₹{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              <TabsContent value="quote-register" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Quote Register</CardTitle>
+                    <CardDescription>
+                      Complete list of all quotes ({filteredQuotes.length} records)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Quote No</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Party</TableHead>
+                            <TableHead>Company</TableHead>
+                            <TableHead className="text-center">Items</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Value</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredQuotes.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                No quotes found
                               </TableCell>
                             </TableRow>
-                          );
-                        })
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+                          ) : (
+                            filteredQuotes.map((quote) => {
+                              const items = quote.items as any[] || [];
+                              const totalValue = items.reduce((sum, item) => {
+                                const costPerBox = item.negotiatedPrice || item.totalCostPerBox || 0;
+                                return sum + (parseFloat(costPerBox) * (item.quantity || 1));
+                              }, 0);
+                              return (
+                                <TableRow key={quote.id} data-testid={`quote-row-${quote.id}`}>
+                                  <TableCell className="font-mono text-sm">{quote.quoteNo || "-"}</TableCell>
+                                  <TableCell className="text-sm">
+                                    {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : "-"}
+                                  </TableCell>
+                                  <TableCell className="font-medium">{quote.partyName}</TableCell>
+                                  <TableCell className="text-muted-foreground">{quote.customerCompany}</TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline">{items.length}</Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant={quote.status === 'confirmed' ? 'default' : 'secondary'}>
+                                      {quote.status || 'Draft'}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono">
+                                    ₹{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-            {selectedPartyName && selectedPartyName !== "all" && filteredQuotes.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Box Details for {selectedPartyName}</CardTitle>
-                  <CardDescription>
-                    Detailed breakdown of all boxes ordered
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="rounded-md border overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Box Name</TableHead>
-                          <TableHead>Type/Ply</TableHead>
-                          <TableHead>Dimensions</TableHead>
-                          <TableHead className="text-right">Qty</TableHead>
-                          <TableHead className="text-right">Unit Cost</TableHead>
-                          <TableHead className="text-right">Total</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredQuotes.flatMap((quote) => {
-                          const items = quote.items as any[] || [];
-                          return items.map((item, idx) => (
-                            <TableRow key={`${quote.id}-${idx}`} data-testid={`box-row-${quote.id}-${idx}`}>
-                              <TableCell className="font-medium">{item.boxName || `Box ${idx + 1}`}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="mr-1">{item.type?.toUpperCase() || "RSC"}</Badge>
-                                <Badge variant="secondary">{item.ply}-Ply</Badge>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {item.length} x {item.width} {item.type !== 'sheet' && `x ${item.height}`} mm
-                              </TableCell>
-                              <TableCell className="text-right">{item.quantity || 0}</TableCell>
-                              <TableCell className="text-right font-mono">
-                                ₹{parseFloat(item.totalCostPerBox || 0).toFixed(2)}
+              <TabsContent value="party-summary" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Party-wise Summary</CardTitle>
+                    <CardDescription>
+                      Business volume by customer ({partyStats.length} parties)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Party Name</TableHead>
+                            <TableHead>Company</TableHead>
+                            <TableHead className="text-center">Quotes</TableHead>
+                            <TableHead className="text-right">Total Value</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {partyStats.map((stat, idx) => (
+                            <TableRow key={stat.id} data-testid={`party-row-${idx}`}>
+                              <TableCell className="font-medium">{stat.name}</TableCell>
+                              <TableCell className="text-muted-foreground">{stat.company}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="outline">{stat.quoteCount}</Badge>
                               </TableCell>
                               <TableCell className="text-right font-mono font-medium">
-                                ₹{(parseFloat(item.totalCostPerBox || 0) * (item.quantity || 1)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                ₹{stat.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                               </TableCell>
                             </TableRow>
-                          ));
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="item-price" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Item-wise Price Report</CardTitle>
+                    <CardDescription>
+                      Price trends by box specification ({itemStats.length} unique items)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Box Name</TableHead>
+                            <TableHead>Ply</TableHead>
+                            <TableHead className="text-center">Quoted Times</TableHead>
+                            <TableHead className="text-right">Avg Price/Box</TableHead>
+                            <TableHead className="text-right">Total Qty</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {itemStats.map((stat, idx) => (
+                            <TableRow key={idx} data-testid={`item-row-${idx}`}>
+                              <TableCell className="font-medium">{stat.boxName}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{stat.ply}-Ply</Badge>
+                              </TableCell>
+                              <TableCell className="text-center">{stat.count}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                ₹{stat.avgPrice.toFixed(2)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {stat.totalQty.toLocaleString()}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="date-sales" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Date-wise Sales Report</CardTitle>
+                    <CardDescription>
+                      Daily business volume ({dateStats.length} days with activity)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead className="text-center">Quotes</TableHead>
+                            <TableHead className="text-center">Items</TableHead>
+                            <TableHead className="text-right">Total Value</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {dateStats.map((stat, idx) => (
+                            <TableRow key={idx} data-testid={`date-row-${idx}`}>
+                              <TableCell className="font-medium">{stat.date}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="outline">{stat.quoteCount}</Badge>
+                              </TableCell>
+                              <TableCell className="text-center">{stat.itemCount}</TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                ₹{stat.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="cost-breakdown" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Cost Breakdown Analysis</CardTitle>
+                    <CardDescription>
+                      Cost distribution across categories
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                      {costBreakdownData.slice(0, 4).map((item, idx) => (
+                        <div key={idx} className="p-4 rounded-lg border bg-muted/50">
+                          <div className="text-sm text-muted-foreground">{item.category}</div>
+                          <div className="text-lg font-bold font-mono">
+                            ₹{item.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {item.percentage.toFixed(1)}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Category</TableHead>
+                            <TableHead className="text-right">Value</TableHead>
+                            <TableHead className="text-right">Percentage</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {costBreakdownData.map((item, idx) => (
+                            <TableRow key={idx} data-testid={`cost-row-${idx}`}>
+                              <TableCell className="font-medium">{item.category}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                ₹{item.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Badge variant="outline">{item.percentage.toFixed(1)}%</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="paper-consumption" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Paper Consumption Report</CardTitle>
+                    <CardDescription>
+                      Material usage by paper type ({paperConsumptionData.length} varieties)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>BF</TableHead>
+                            <TableHead>GSM</TableHead>
+                            <TableHead>Shade</TableHead>
+                            <TableHead className="text-right">Total KG</TableHead>
+                            <TableHead className="text-right">Total Value</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {paperConsumptionData.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                No paper consumption data available
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            paperConsumptionData.map((item, idx) => (
+                              <TableRow key={idx} data-testid={`paper-row-${idx}`}>
+                                <TableCell className="font-medium">{item.bf}</TableCell>
+                                <TableCell>{item.gsm}</TableCell>
+                                <TableCell>{item.shade}</TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {item.totalKg.toFixed(2)} kg
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  ₹{item.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="gst-tax" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">GST & Tax Summary</CardTitle>
+                    <CardDescription>
+                      Tax calculations for filtered quotes
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="p-4 rounded-lg border bg-muted/50">
+                        <div className="text-sm text-muted-foreground">Subtotal</div>
+                        <div className="text-2xl font-bold font-mono">
+                          ₹{gstData.subtotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </div>
+                      </div>
+                      <div className="p-4 rounded-lg border bg-muted/50">
+                        <div className="text-sm text-muted-foreground">GST (18%)</div>
+                        <div className="text-2xl font-bold font-mono text-amber-600">
+                          ₹{gstData.gst.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </div>
+                      </div>
+                      <div className="p-4 rounded-lg border bg-primary/10">
+                        <div className="text-sm text-muted-foreground">Total with GST</div>
+                        <div className="text-2xl font-bold font-mono text-primary">
+                          ₹{gstData.total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Description</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <TableRow>
+                            <TableCell className="font-medium">Subtotal (Before Tax)</TableCell>
+                            <TableCell className="text-right font-mono">
+                              ₹{gstData.subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">CGST (9%)</TableCell>
+                            <TableCell className="text-right font-mono">
+                              ₹{(gstData.gst / 2).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">SGST (9%)</TableCell>
+                            <TableCell className="text-right font-mono">
+                              ₹{(gstData.gst / 2).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow className="bg-muted/50">
+                            <TableCell className="font-bold">Grand Total</TableCell>
+                            <TableCell className="text-right font-mono font-bold text-primary">
+                              ₹{gstData.total.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="saved-reports" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Saved Reports</CardTitle>
+                    <CardDescription>
+                      Your saved report configurations
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <Bookmark className="w-12 h-12 text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Saved Reports Yet</h3>
+                      <p className="text-sm text-muted-foreground max-w-md">
+                        Configure your filters and export settings, then save them here for quick access to frequently used reports.
+                      </p>
+                      <Button variant="outline" className="mt-4" disabled>
+                        Save Current Report Configuration
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       </div>

@@ -200,7 +200,12 @@ const createLayersForPly = (plyNum: number): LayerState[] => {
   return defaultLayers;
 };
 
-export default function Calculator() {
+interface CalculatorProps {
+  initialShowBulkUpload?: boolean;
+  params?: Record<string, string>;
+}
+
+export default function Calculator({ initialShowBulkUpload = false }: CalculatorProps = {}) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"rsc" | "sheet">("rsc");
@@ -340,7 +345,7 @@ export default function Calculator() {
   // Multiple profiles support
   const [allCompanyProfiles, setAllCompanyProfiles] = useState<CompanyProfile[]>([]);
   const [selectedCompanyProfileId, setSelectedCompanyProfileId] = useState<string>("");
-  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(initialShowBulkUpload);
   const [allPartyProfiles, setAllPartyProfiles] = useState<any[]>([]);
   const [selectedPartyProfileId, setSelectedPartyProfileId] = useState<string>("");
   

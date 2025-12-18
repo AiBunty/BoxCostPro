@@ -8,7 +8,7 @@ import { useEffect } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { AppShell } from "@/components/layout/AppShell";
 import Dashboard from "@/pages/dashboard";
-import Calculator from "@/pages/calculator";
+import CalculatorComponent from "@/pages/calculator";
 import Quotes from "@/pages/quotes";
 import Reports from "@/pages/reports";
 import Masters from "@/pages/masters";
@@ -16,6 +16,15 @@ import Account from "@/pages/account";
 import Landing from "@/pages/landing";
 import AdminPanel from "@/pages/admin";
 import NotFound from "@/pages/not-found";
+
+// Wrapper components for routes
+function Calculator() {
+  return <CalculatorComponent />;
+}
+
+function BulkUpload() {
+  return <CalculatorComponent initialShowBulkUpload={true} />;
+}
 
 function AuthCallback() {
   const [, setLocation] = useLocation();
@@ -79,6 +88,7 @@ function AuthenticatedRouter() {
         <Route path="/" component={Dashboard} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/create-quote" component={Calculator} />
+        <Route path="/bulk-upload" component={BulkUpload} />
         <Route path="/quotes" component={Quotes} />
         <Route path="/reports" component={Reports} />
         <Route path="/masters" component={Masters} />

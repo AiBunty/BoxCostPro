@@ -112,6 +112,7 @@ export interface IStorage {
   // Quotes
   getQuote(id: string): Promise<Quote | undefined>;
   getAllQuotes(userId?: string): Promise<Quote[]>;
+  getAllQuotesWithItems(userId?: string): Promise<(Quote & { items: any[]; activeVersion: QuoteVersion | null })[]>;
   searchQuotes(userId: string, options: { partyName?: string; boxName?: string; boxSize?: string }): Promise<Quote[]>;
   createQuote(quote: InsertQuote): Promise<Quote>;
   updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined>;
@@ -463,6 +464,61 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(quotes).where(eq(quotes.userId, userId));
     }
     return await db.select().from(quotes);
+  }
+
+  async getAllQuotesWithItems(userId?: string): Promise<(Quote & { items: any[]; activeVersion: QuoteVersion | null })[]> {
+    // Get all quotes for user
+    const quotesData = userId 
+      ? await db.select().from(quotes).where(eq(quotes.userId, userId))
+      : await db.select().from(quotes);
+    
+    // For each quote, get its active version and items
+    const result = await Promise.all(
+      quotesData.map(async (quote) => {
+        let activeVersion: QuoteVersion | null = null;
+        let items: any[] = [];
+        
+        if (quote.activeVersionId) {
+          // Get the active version
+          const [version] = await db.select().from(quoteVersions)
+            .where(eq(quoteVersions.id, quote.activeVersionId));
+          activeVersion = version || null;
+          
+          // Get items for the active version
+          if (version) {
+            const itemVersions = await db.select().from(quoteItemVersions)
+              .where(eq(quoteItemVersions.quoteVersionId, version.id));
+            
+            // Extract item data from snapshots
+            items = itemVersions.map(iv => ({
+              ...(iv.itemDataSnapshot as any || {}),
+              boxName: iv.boxName,
+              ply: iv.ply,
+              length: iv.length,
+              width: iv.width,
+              height: iv.height,
+              quantity: iv.quantity,
+              sheetLength: iv.sheetLength,
+              sheetWidth: iv.sheetWidth,
+              sheetWeight: iv.sheetWeight,
+              originalCostPerBox: iv.originalCostPerBox,
+              negotiatedCostPerBox: iv.negotiatedCostPerBox,
+              finalCostPerBox: iv.finalCostPerBox,
+              totalCostPerBox: iv.finalCostPerBox,
+              negotiatedPrice: iv.negotiatedCostPerBox,
+            }));
+          }
+        }
+        
+        return {
+          ...quote,
+          items,
+          activeVersion,
+        };
+      })
+    );
+    
+    return result;
   }
 
   async searchQuotes(userId: string, options: { partyName?: string; boxName?: string; boxSize?: string }): Promise<Quote[]> {

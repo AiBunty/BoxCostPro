@@ -266,6 +266,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const partyName = req.query.partyName as string | undefined;
       const boxName = req.query.boxName as string | undefined;
       const boxSize = req.query.boxSize as string | undefined;
+      const includeItems = req.query.include === 'items';
+      
+      if (includeItems) {
+        // Return quotes with their active version items (for reports)
+        const quotes = await storage.getAllQuotesWithItems(userId);
+        return res.json(quotes);
+      }
       
       if (partyName || boxName || boxSize) {
         const quotes = await storage.searchQuotes(userId, { partyName, boxName, boxSize });

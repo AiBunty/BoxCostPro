@@ -13,6 +13,9 @@ import {
   LogOut,
   Package,
   Building2,
+  Upload,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -28,16 +31,37 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { useState } from "react";
+
+interface SubNavItem {
+  label: string;
+  path: string;
+}
+
 interface NavItem {
   label: string;
   path: string;
   icon: React.ElementType;
+  subItems?: SubNavItem[];
 }
 
 const navItems: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { label: "Create Quote", path: "/create-quote", icon: FilePlus },
-  { label: "Quotes", path: "/quotes", icon: FileText },
+  { 
+    label: "Quotes", 
+    path: "/quotes", 
+    icon: FileText,
+    subItems: [
+      { label: "All Quotes", path: "/quotes" },
+      { label: "Bulk Upload", path: "/bulk-upload" },
+    ]
+  },
   { label: "Reports", path: "/reports", icon: BarChart3 },
   { label: "Masters", path: "/masters", icon: Settings2 },
   { label: "Account", path: "/account", icon: User },
@@ -51,6 +75,10 @@ export function AppShell({ children }: AppShellProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const isMobile = useIsMobile();
+  const [quotesOpen, setQuotesOpen] = useState(() => {
+    // Open the Quotes section by default if we're on a quotes-related page
+    return location.startsWith("/quotes") || location.startsWith("/bulk-upload");
+  });
 
   const getInitials = () => {
     if (user?.firstName && user?.lastName) {
@@ -166,6 +194,61 @@ export function AppShell({ children }: AppShellProps) {
             const active = isActive(item.path);
             const href = item.path === "/dashboard" ? "/" : item.path;
 
+            // Handle items with sub-items (collapsible)
+            if (item.subItems && item.subItems.length > 0) {
+              const hasActiveSubItem = item.subItems.some(sub => isActive(sub.path));
+              return (
+                <Collapsible 
+                  key={item.path} 
+                  open={quotesOpen} 
+                  onOpenChange={setQuotesOpen}
+                >
+                  <CollapsibleTrigger asChild>
+                    <button
+                      className={cn(
+                        "flex items-center justify-between w-full h-10 px-3 rounded-lg transition-colors text-sm font-medium",
+                        hasActiveSubItem
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                      )}
+                      data-testid={`nav-${item.label.toLowerCase().replace(" ", "-")}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className="h-5 w-5 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </div>
+                      {quotesOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="ml-8 mt-1 space-y-1">
+                    {item.subItems.map((subItem) => {
+                      const subActive = location === subItem.path;
+                      return (
+                        <Link key={subItem.path} href={subItem.path}>
+                          <button
+                            className={cn(
+                              "flex items-center w-full h-9 px-3 rounded-lg transition-colors text-sm",
+                              subActive
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                            )}
+                            data-testid={`nav-${subItem.label.toLowerCase().replace(" ", "-")}`}
+                          >
+                            <span className="truncate">{subItem.label}</span>
+                          </button>
+                        </Link>
+                      );
+                    })}
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            }
+
+            // Regular navigation item
             return (
               <Link key={item.path} href={href}>
                 <button
