@@ -21,7 +21,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination } from "@/components/FlutingSettings";
+import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination, calculateBoardThicknessFromFlutes, DEFAULT_FLUTING_FACTORS } from "@/components/FlutingSettings";
+import type { FlutingSetting } from "@shared/schema";
 import brandLogo from "@assets/Untitled_(Invitation_(Square))_(2)_1765696414282.png";
 import { FlutingOnboarding } from "@/components/FlutingOnboarding";
 import { Link } from "wouter";
@@ -440,6 +441,43 @@ export default function Calculator() {
   const { data: boxSpecifications = [] } = useQuery<any[]>({
     queryKey: ["/api/box-specifications"],
   });
+
+  // Fetch flute settings from master data (includes factors and heights)
+  const { data: fluteSettingsData = [] } = useQuery<FlutingSetting[]>({
+    queryKey: ["/api/flute-settings"],
+  });
+
+  // State for flute heights (used for board thickness calculation)
+  const [fluteHeights, setFluteHeights] = useState<Record<string, number>>({
+    'A': 4.8, 'B': 2.5, 'C': 3.6, 'E': 1.2, 'F': 0.8
+  });
+
+  // Update flute settings and heights when data loads
+  useEffect(() => {
+    if (fluteSettingsData.length > 0) {
+      const newFactors: Record<string, number> = {};
+      const newHeights: Record<string, number> = {};
+      
+      fluteSettingsData.forEach((setting) => {
+        newFactors[setting.fluteType] = Number(setting.flutingFactor) || DEFAULT_FLUTING_FACTORS[setting.fluteType]?.factor || 1.35;
+        newHeights[setting.fluteType] = Number(setting.fluteHeight) || DEFAULT_FLUTING_FACTORS[setting.fluteType]?.height || 2.5;
+      });
+      
+      setFluteSettings(newFactors);
+      setFluteHeights(newHeights);
+    }
+  }, [fluteSettingsData]);
+
+  // Auto-calculate board thickness when flute combination or ply changes
+  useEffect(() => {
+    if (ply !== '1') {
+      const calculatedThickness = calculateBoardThicknessFromFlutes(fluteCombination, ply, fluteHeights);
+      setCustomBoardThickness(calculatedThickness.toFixed(2));
+    } else {
+      // Mono (1-ply) has no flutes - board thickness is just paper thickness
+      setCustomBoardThickness('0');
+    }
+  }, [fluteCombination, ply, fluteHeights]);
   
   // Fetch versions for selected spec
   const { data: specVersions = [] } = useQuery<any[]>({
@@ -789,12 +827,12 @@ export default function Calculator() {
   };
   
   // Filter quotes based on search criteria
+  // Note: With versioning, items are in quote_item_versions table - for now just filter by party/company
   const filteredQuotes = savedQuotes.filter(quote => {
     const dateMatch = !quoteSearchDate || new Date(quote.createdAt || "").toLocaleDateString().includes(quoteSearchDate);
     const companyMatch = !quoteSearchCompany || (quote.customerCompany || "").toLowerCase().includes(quoteSearchCompany.toLowerCase());
-    const quoteItems = Array.isArray(quote.items) ? quote.items : [];
-    const boxNameMatch = !quoteSearchBoxName || quoteItems.some((item: any) => item.boxName?.toLowerCase().includes(quoteSearchBoxName.toLowerCase()));
-    return dateMatch && companyMatch && boxNameMatch;
+    // Box name search will need full versioning implementation - skipping for now
+    return dateMatch && companyMatch;
   });
   
   // Copy layer specs (GSM, BF, RCT Value, Shade, Rate, and flutingFactor to even layers only)
@@ -1489,7 +1527,10 @@ export default function Calculator() {
   };
   
   const handleLoadQuote = (quote: Quote) => {
-    setQuoteItems(quote.items as QuoteItem[]);
+    // With versioning, items come from quote_item_versions - for now use empty array
+    // Full implementation will fetch items via activeVersionId
+    const quoteWithItems = quote as Quote & { items?: QuoteItem[] };
+    setQuoteItems(quoteWithItems.items || []);
     setPartyName(quote.partyName);
     setCustomerCompany(quote.customerCompany || "");
     setCustomerEmail(quote.customerEmail || "");
@@ -1972,7 +2013,7 @@ export default function Calculator() {
                                 </CardDescription>
                               </div>
                               <Badge variant="secondary">
-                                ₹{quote.totalValue.toFixed(2)}
+                                {quote.quoteNo || 'N/A'}
                               </Badge>
                             </div>
                           </CardHeader>
@@ -2307,16 +2348,29 @@ export default function Calculator() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="board-thickness">Board Thickness (mm)</Label>
-                    <Input
-                      id="board-thickness"
-                      type="number"
-                      step="0.01"
-                      placeholder="3.5"
-                      value={customBoardThickness}
-                      onChange={(e) => setCustomBoardThickness(e.target.value)}
-                      data-testid="input-board-thickness"
-                    />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          <Label htmlFor="board-thickness" className="flex items-center gap-1">
+                            Board Thickness (mm)
+                            <Info className="w-3 h-3 text-muted-foreground" />
+                          </Label>
+                          <Input
+                            id="board-thickness"
+                            type="text"
+                            value={customBoardThickness}
+                            readOnly
+                            className="bg-muted cursor-default"
+                            data-testid="input-board-thickness"
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        <p className="text-xs">
+                          Auto-calculated: sum of flute heights ({fluteCombination.split('').map(f => `${f}: ${fluteHeights[f]?.toFixed(1) || '?'}mm`).join(' + ')})
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
 

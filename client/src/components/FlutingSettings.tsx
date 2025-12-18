@@ -206,7 +206,28 @@ export function getFlutingFactorForCombination(
   return factors;
 }
 
+// Helper function to calculate board thickness based on flute combination
+// Board thickness = sum of flute heights only (as per domain specification)
+export function calculateBoardThicknessFromFlutes(
+  combination: string,
+  ply: string,
+  fluteHeights: Record<string, number>
+): number {
+  if (ply === '1') return 0; // Mono - no flutes
+  
+  // Sum up flute heights only
+  let totalFluteHeight = 0;
+  for (const char of combination) {
+    totalFluteHeight += fluteHeights[char] || DEFAULT_FLUTING_FACTORS[char]?.height || 2.5;
+  }
+  
+  return totalFluteHeight;
+}
+
 // Get flute combinations for a specific ply
 export function getFluteCombinationsForPly(ply: string): string[] {
   return FLUTE_COMBINATIONS[ply] || [];
 }
+
+// Export default fluting factors for external use
+export { DEFAULT_FLUTING_FACTORS };
