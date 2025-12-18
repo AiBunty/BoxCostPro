@@ -442,6 +442,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== FLUTE SETTINGS - NEW (per user, technical constants) ==========
+  app.get("/api/flute-settings", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const settings = await storage.getFluteSettings(userId);
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch flute settings" });
+    }
+  });
+
+  app.get("/api/flute-settings/status", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const settings = await storage.getFluteSettings(userId);
+      const requiredFluteTypes = ['A', 'B', 'C', 'E', 'F'];
+      const configuredTypes = settings.map(s => s.fluteType);
+      const isConfigured = requiredFluteTypes.every(type => configuredTypes.includes(type));
+      res.json({ 
+        configured: isConfigured, 
+        configuredCount: configuredTypes.length,
+        requiredCount: requiredFluteTypes.length,
+        missingTypes: requiredFluteTypes.filter(t => !configuredTypes.includes(t))
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check flute settings status" });
+    }
+  });
+
+  app.post("/api/flute-settings", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { settings } = req.body;
+      
+      if (!Array.isArray(settings)) {
+        return res.status(400).json({ error: "Settings must be an array" });
+      }
+      
+      const settingsWithUserId = settings.map((s: any) => ({
+        userId,
+        fluteType: s.fluteType,
+        flutingFactor: s.flutingFactor,
+        fluteHeightMm: s.fluteHeightMm
+      }));
+      
+      const saved = await storage.saveFluteSettings(settingsWithUserId);
+      res.status(201).json(saved);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to save flute settings" });
+    }
+  });
+
+  app.patch("/api/flute-settings/:id", combinedAuth, async (req: any, res) => {
+    try {
+      const updated = await storage.updateFluteSetting(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Flute setting not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update flute setting" });
+    }
+  });
+
+  // ========== BUSINESS DEFAULTS (per user) ==========
+  app.get("/api/business-defaults", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const defaults = await storage.getBusinessDefaults(userId);
+      if (!defaults) {
+        // Return default values if no settings exist
+        return res.json({
+          userId,
+          defaultGstPercent: 18,
+          gstRegistered: true,
+          gstNumber: null,
+          igstApplicable: false
+        });
+      }
+      res.json(defaults);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch business defaults" });
+    }
+  });
+
+  app.post("/api/business-defaults", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const data = { ...req.body, userId };
+      const saved = await storage.saveBusinessDefaults(data);
+      res.status(201).json(saved);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to save business defaults" });
+    }
+  });
+
   // ========== PAPER PRICES (per user) ==========
   app.get("/api/paper-prices", combinedAuth, async (req: any, res) => {
     try {

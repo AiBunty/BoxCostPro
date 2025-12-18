@@ -23,6 +23,8 @@ import {
   type InsertPaymentTransaction,
   type FlutingSetting,
   type InsertFlutingSetting,
+  type FluteSetting,
+  type InsertFluteSetting,
   type ChatbotWidget,
   type InsertChatbotWidget,
   type PaperPrice,
@@ -41,6 +43,8 @@ import {
   type InsertBoxSpecVersion,
   type UserProfile,
   type InsertUserProfile,
+  type BusinessDefaults,
+  type InsertBusinessDefaults,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -53,6 +57,7 @@ import {
   trialInvites,
   paymentTransactions,
   flutingSettings,
+  fluteSettings,
   chatbotWidgets,
   ownerSettings,
   paperPrices,
@@ -62,7 +67,8 @@ import {
   userQuoteTerms,
   boxSpecifications,
   boxSpecVersions,
-  userProfiles
+  userProfiles,
+  businessDefaults
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, sql } from "drizzle-orm";
@@ -153,6 +159,15 @@ export interface IStorage {
   saveFlutingSetting(setting: InsertFlutingSetting): Promise<FlutingSetting>;
   updateFlutingSetting(id: string, updates: Partial<InsertFlutingSetting>): Promise<FlutingSetting | undefined>;
   deleteFlutingSetting(id: string): Promise<boolean>;
+  
+  // Flute Settings - NEW (per user, technical constants)
+  getFluteSettings(userId: string): Promise<FluteSetting[]>;
+  saveFluteSettings(settings: InsertFluteSetting[]): Promise<FluteSetting[]>;
+  updateFluteSetting(id: string, updates: Partial<InsertFluteSetting>): Promise<FluteSetting | undefined>;
+  
+  // Business Defaults (per user)
+  getBusinessDefaults(userId: string): Promise<BusinessDefaults | undefined>;
+  saveBusinessDefaults(defaults: InsertBusinessDefaults): Promise<BusinessDefaults>;
   
   // Chatbot Widgets (per user)
   getChatbotWidgets(userId: string): Promise<ChatbotWidget[]>;
@@ -452,24 +467,9 @@ export class DatabaseStorage implements IStorage {
       results = results.filter(q => q.partyName.toLowerCase().includes(search));
     }
     
-    if (options.boxName) {
-      const search = options.boxName.toLowerCase();
-      results = results.filter(q => {
-        const items = q.items as any[];
-        return items.some(item => item.boxName?.toLowerCase().includes(search));
-      });
-    }
-    
-    if (options.boxSize) {
-      const search = options.boxSize.toLowerCase();
-      results = results.filter(q => {
-        const items = q.items as any[];
-        return items.some(item => {
-          const sizeStr = `${item.length}x${item.width}${item.height ? `x${item.height}` : ''}`;
-          return sizeStr.includes(search);
-        });
-      });
-    }
+    // Note: boxName and boxSize search requires joining with quote_item_versions
+    // This will be implemented with the full versioning system
+    // For now, filtering by partyName only
     
     return results;
   }
@@ -723,6 +723,70 @@ export class DatabaseStorage implements IStorage {
   async deleteFlutingSetting(id: string): Promise<boolean> {
     await db.delete(flutingSettings).where(eq(flutingSettings.id, id));
     return true;
+  }
+  
+  // Flute Settings - NEW (technical constants for board costing)
+  async getFluteSettings(userId: string): Promise<FluteSetting[]> {
+    return await db.select().from(fluteSettings).where(eq(fluteSettings.userId, userId));
+  }
+  
+  async saveFluteSettings(settings: InsertFluteSetting[]): Promise<FluteSetting[]> {
+    if (settings.length === 0) return [];
+    
+    const results: FluteSetting[] = [];
+    for (const setting of settings) {
+      // Check if setting exists for this user and flute type
+      const existing = await db.select().from(fluteSettings)
+        .where(and(
+          eq(fluteSettings.userId, setting.userId),
+          eq(fluteSettings.fluteType, setting.fluteType)
+        ));
+      
+      if (existing.length > 0) {
+        const [updated] = await db.update(fluteSettings)
+          .set({ 
+            flutingFactor: setting.flutingFactor, 
+            fluteHeightMm: setting.fluteHeightMm,
+            updatedAt: new Date()
+          })
+          .where(eq(fluteSettings.id, existing[0].id))
+          .returning();
+        results.push(updated);
+      } else {
+        const [created] = await db.insert(fluteSettings).values(setting).returning();
+        results.push(created);
+      }
+    }
+    return results;
+  }
+  
+  async updateFluteSetting(id: string, updates: Partial<InsertFluteSetting>): Promise<FluteSetting | undefined> {
+    const [updated] = await db.update(fluteSettings)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(fluteSettings.id, id))
+      .returning();
+    return updated;
+  }
+  
+  // Business Defaults
+  async getBusinessDefaults(userId: string): Promise<BusinessDefaults | undefined> {
+    const [defaults] = await db.select().from(businessDefaults).where(eq(businessDefaults.userId, userId));
+    return defaults;
+  }
+  
+  async saveBusinessDefaults(defaults: InsertBusinessDefaults): Promise<BusinessDefaults> {
+    const existing = await this.getBusinessDefaults(defaults.userId);
+    
+    if (existing) {
+      const [updated] = await db.update(businessDefaults)
+        .set({ ...defaults, updatedAt: new Date() })
+        .where(eq(businessDefaults.userId, defaults.userId))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db.insert(businessDefaults).values(defaults).returning();
+    return created;
   }
   
   // Chatbot Widgets

@@ -1,22 +1,18 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   FileText,
   Layers,
-  Settings2,
-  Calculator,
-  Percent,
   Receipt,
-  Gauge,
-  ChevronRight,
+  Building2,
 } from "lucide-react";
 
 import PaperSetup from "@/pages/paper-setup";
+import FluteSettings from "@/components/flute-settings";
+import BusinessDefaultsSettings from "@/components/business-defaults";
 
 interface MasterTab {
   id: string;
@@ -33,28 +29,10 @@ const masterTabs: MasterTab[] = [
     description: "Manage BF rates, GSM rules, and shade premiums",
   },
   {
-    id: "fluting",
-    label: "BF & Fluting",
+    id: "flute",
+    label: "Flute Settings",
     icon: Layers,
-    description: "Configure fluting factors and combinations",
-  },
-  {
-    id: "ply",
-    label: "Ply Presets",
-    icon: Layers,
-    description: "Define standard ply configurations",
-  },
-  {
-    id: "conversion",
-    label: "Conversion Costs",
-    icon: Calculator,
-    description: "Set manufacturing and conversion rates",
-  },
-  {
-    id: "margin",
-    label: "Margin Rules",
-    icon: Percent,
-    description: "Configure profit margin calculations",
+    description: "Configure fluting factors and flute heights",
   },
   {
     id: "tax",
@@ -63,27 +41,12 @@ const masterTabs: MasterTab[] = [
     description: "Manage tax rates and GST settings",
   },
   {
-    id: "machine",
-    label: "Machine Settings",
-    icon: Gauge,
-    description: "Configure machine thresholds and limits",
+    id: "business",
+    label: "Business Defaults",
+    icon: Building2,
+    description: "Default GST percentage and tax settings",
   },
 ];
-
-function ComingSoonPlaceholder({ tab }: { tab: MasterTab }) {
-  const Icon = tab.icon;
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
-        <Icon className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <h3 className="text-lg font-semibold mb-2">{tab.label}</h3>
-      <p className="text-muted-foreground max-w-md">
-        {tab.description}. Settings will be migrated here from the existing configuration pages.
-      </p>
-    </div>
-  );
-}
 
 export default function Masters() {
   const [activeTab, setActiveTab] = useState("paper");
@@ -131,52 +94,16 @@ export default function Masters() {
             <PaperSetup />
           </TabsContent>
 
-          <TabsContent value="fluting" className="m-0">
-            <Card className="shadow-sm">
-              <CardContent className="pt-6">
-                <ComingSoonPlaceholder tab={masterTabs[1]} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="ply" className="m-0">
-            <Card className="shadow-sm">
-              <CardContent className="pt-6">
-                <ComingSoonPlaceholder tab={masterTabs[2]} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="conversion" className="m-0">
-            <Card className="shadow-sm">
-              <CardContent className="pt-6">
-                <ComingSoonPlaceholder tab={masterTabs[3]} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="margin" className="m-0">
-            <Card className="shadow-sm">
-              <CardContent className="pt-6">
-                <ComingSoonPlaceholder tab={masterTabs[4]} />
-              </CardContent>
-            </Card>
+          <TabsContent value="flute" className="m-0">
+            <FluteSettings />
           </TabsContent>
 
           <TabsContent value="tax" className="m-0">
-            <Card className="shadow-sm">
-              <CardContent className="pt-6">
-                <ComingSoonPlaceholder tab={masterTabs[5]} />
-              </CardContent>
-            </Card>
+            <BusinessDefaultsSettings />
           </TabsContent>
 
-          <TabsContent value="machine" className="m-0">
-            <Card className="shadow-sm">
-              <CardContent className="pt-6">
-                <ComingSoonPlaceholder tab={masterTabs[6]} />
-              </CardContent>
-            </Card>
+          <TabsContent value="business" className="m-0">
+            <BusinessDefaultsSettings />
           </TabsContent>
         </Tabs>
       </div>
