@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,9 +20,14 @@ import {
   Calculator,
   FileSpreadsheet,
   Receipt,
-  Bookmark
+  Bookmark,
+  Printer,
+  ClipboardList,
+  Save
 } from "lucide-react";
 import { downloadGenericExcel } from "@/lib/excelExport";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { PartyProfile } from "@shared/schema";
 
 // Extended quote type with items from active version
@@ -43,6 +48,19 @@ export default function Reports() {
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  
+  // Party Price Audit state
+  const [auditPartyName, setAuditPartyName] = useState<string>("");
+  const [auditStartDate, setAuditStartDate] = useState("");
+  const [auditEndDate, setAuditEndDate] = useState("");
+  const [auditBoxNameFilter, setAuditBoxNameFilter] = useState("");
+  const [auditBoxDescFilter, setAuditBoxDescFilter] = useState("");
+  const [auditBoxSizeFilter, setAuditBoxSizeFilter] = useState("");
+  const [negotiatedInputs, setNegotiatedInputs] = useState<Record<string, string>>({});
+  
+  const printRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: partyProfiles = [], isLoading: isLoadingParties } = useQuery<PartyProfile[]>({
     queryKey: ['/api/party-profiles'],
@@ -279,6 +297,244 @@ export default function Reports() {
     return Array.from(names).sort();
   }, [allQuotes, partyProfiles]);
 
+  // Party Price Audit: filter for selected party with additional filters
+  const auditPartyProfile = useMemo(() => {
+    return partyProfiles.find(p => p.personName === auditPartyName);
+  }, [partyProfiles, auditPartyName]);
+
+  const auditQuotesData = useMemo(() => {
+    if (!auditPartyName) return [];
+    
+    let quotes = allQuotes.filter(q => q.partyName === auditPartyName);
+    
+    // Apply date range filter
+    if (auditStartDate) {
+      const start = new Date(auditStartDate);
+      quotes = quotes.filter(q => new Date(q.createdAt || "") >= start);
+    }
+    if (auditEndDate) {
+      const end = new Date(auditEndDate);
+      end.setHours(23, 59, 59, 999);
+      quotes = quotes.filter(q => new Date(q.createdAt || "") <= end);
+    }
+    
+    // Process quotes and apply item-level filters
+    // Keep track of original indices for bulk negotiation
+    return quotes.map(quote => {
+      const allItems = (quote.items || []) as any[];
+      
+      // Add originalIndex to each item before filtering
+      let items = allItems.map((item, idx) => ({ ...item, originalIndex: idx }));
+      
+      // Apply box name filter
+      if (auditBoxNameFilter) {
+        const term = auditBoxNameFilter.toLowerCase();
+        items = items.filter(item => 
+          (item.boxName || '').toLowerCase().includes(term)
+        );
+      }
+      
+      // Apply box description filter
+      if (auditBoxDescFilter) {
+        const term = auditBoxDescFilter.toLowerCase();
+        items = items.filter(item => 
+          (item.boxDescription || '').toLowerCase().includes(term)
+        );
+      }
+      
+      // Apply box size filter (L×W×H)
+      if (auditBoxSizeFilter) {
+        const term = auditBoxSizeFilter.toLowerCase();
+        items = items.filter(item => {
+          const sizeStr = `${item.length || 0}×${item.width || 0}×${item.height || 0}`.toLowerCase();
+          return sizeStr.includes(term);
+        });
+      }
+      
+      return { ...quote, filteredItems: items, allItems };
+    }).filter(q => q.filteredItems.length > 0);
+  }, [allQuotes, auditPartyName, auditStartDate, auditEndDate, auditBoxNameFilter, auditBoxDescFilter, auditBoxSizeFilter]);
+
+  // Helper to format paper specification as GSM/BF gist
+  const formatPaperSpec = (item: any): string => {
+    const layers = item.layerSpecs || item.layers || [];
+    if (!layers.length) return '-';
+    return layers.map((layer: any) => `${layer.gsm || '-'}/${layer.bf || '-'}`).join(' + ');
+  };
+
+  // Check if any negotiated inputs are filled
+  const hasNegotiatedInputs = useMemo(() => {
+    return Object.values(negotiatedInputs).some(v => v && v.trim() !== '');
+  }, [negotiatedInputs]);
+
+  // Save negotiated prices mutation
+  const saveNegotiatedMutation = useMutation({
+    mutationFn: async (data: { quoteId: string; itemIndex: number; negotiatedPrice: number }[]) => {
+      // Group by quote
+      const byQuote: Record<string, { itemIndex: number; negotiatedPrice: number }[]> = {};
+      data.forEach(d => {
+        if (!byQuote[d.quoteId]) byQuote[d.quoteId] = [];
+        byQuote[d.quoteId].push({ itemIndex: d.itemIndex, negotiatedPrice: d.negotiatedPrice });
+      });
+      
+      // Create new version for each affected quote
+      const promises = Object.entries(byQuote).map(async ([quoteId, items]) => {
+        return apiRequest('POST', `/api/quotes/${quoteId}/bulk-negotiate`, { negotiations: items });
+      });
+      
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      setNegotiatedInputs({});
+      queryClient.invalidateQueries({ queryKey: ['/api/quotes'] });
+      toast({
+        title: "Prices Updated",
+        description: "New quote versions created with negotiated prices.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save negotiated prices",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveNegotiatedPrices = () => {
+    const toSave: { quoteId: string; itemIndex: number; negotiatedPrice: number }[] = [];
+    
+    Object.entries(negotiatedInputs).forEach(([key, value]) => {
+      if (value && value.trim() !== '') {
+        // Key format: quoteId_originalIndex
+        const parts = key.split('_');
+        const quoteId = parts.slice(0, -1).join('_'); // Handle quoteIds that might contain underscores
+        const itemIndexStr = parts[parts.length - 1];
+        const price = parseFloat(value);
+        if (!isNaN(price) && price > 0) {
+          toSave.push({
+            quoteId,
+            itemIndex: parseInt(itemIndexStr, 10),
+            negotiatedPrice: price,
+          });
+        }
+      }
+    });
+    
+    if (toSave.length === 0) {
+      toast({
+        title: "No Prices to Save",
+        description: "Please enter negotiated prices for at least one item.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (confirm(`This will create new versions for ${new Set(toSave.map(t => t.quoteId)).size} affected quote(s). Continue?`)) {
+      saveNegotiatedMutation.mutate(toSave);
+    }
+  };
+
+  // Print function
+  const handlePrint = () => {
+    if (printRef.current) {
+      const printContent = printRef.current.innerHTML;
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Party Price Audit Report - ${auditPartyName}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .header { margin-bottom: 20px; }
+              .header h1 { margin: 0; font-size: 24px; }
+              .header p { margin: 5px 0; color: #666; }
+              .quote-group { margin-top: 20px; }
+              .quote-header { background: #f0f0f0; padding: 10px; font-weight: bold; }
+              @media print {
+                .no-print { display: none; }
+                body { margin: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            ${printContent}
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.print();
+      }
+    }
+  };
+
+  // Export to PDF (uses print dialog)
+  const handleExportPDF = () => {
+    handlePrint();
+  };
+
+  // Export Party Audit to Excel
+  const exportPartyAuditToExcel = () => {
+    if (!auditPartyName) return;
+    
+    const exportData: any[] = [];
+    const partyGst = auditPartyProfile?.gstNo || '-';
+    
+    auditQuotesData.forEach(quote => {
+      quote.filteredItems.forEach((item: any, idx: number) => {
+        const finalRate = item.negotiatedPrice || item.totalCostPerBox || 0;
+        const qty = item.quantity || 1;
+        const finalTotal = parseFloat(finalRate) * qty;
+        
+        exportData.push({
+          "Party Name": auditPartyName,
+          "Party GST": partyGst,
+          "Quote No": quote.quoteNo || '-',
+          "Quote Date": quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : '-',
+          "Box Name": item.boxName || '-',
+          "Box Description": item.boxDescription || '-',
+          "Remarks": item.remarks || '-',
+          "Paper Specification (GSM/BF)": formatPaperSpec(item),
+          "Ply": item.ply || '-',
+          "Box Size (L×W×H)": `${item.length || '-'}×${item.width || '-'}×${item.height || '-'}`,
+          "Printing Type": item.printingEnabled ? (item.printType || 'Printed') : 'Plain',
+          "Number of Colors": item.printColours || 0,
+          "Reel Size / Deckle": item.sheetWidth ? `${item.sheetWidth.toFixed(2)}` : '-',
+          "Sheet Cut Length": item.sheetLength ? `${item.sheetLength.toFixed(2)}` : '-',
+          "Final Rate per Box": parseFloat(finalRate).toFixed(2),
+          "Final Total Amount": finalTotal.toFixed(2),
+        });
+      });
+    });
+    
+    if (exportData.length === 0) {
+      toast({
+        title: "No Data",
+        description: "No data to export",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const sanitizedName = auditPartyName.replace(/[^a-zA-Z0-9]/g, '_');
+    const today = new Date().toISOString().split('T')[0];
+    downloadGenericExcel(exportData, `Party_Price_Audit_${sanitizedName}_${today}`);
+  };
+
+  const clearAuditFilters = () => {
+    setAuditStartDate("");
+    setAuditEndDate("");
+    setAuditBoxNameFilter("");
+    setAuditBoxDescFilter("");
+    setAuditBoxSizeFilter("");
+    setNegotiatedInputs({});
+  };
+
   const exportCurrentReport = () => {
     let exportData: any[] = [];
     let filename = "";
@@ -416,6 +672,7 @@ export default function Reports() {
     { id: "cost-breakdown", label: "Cost Breakdown", icon: Calculator },
     { id: "paper-consumption", label: "Paper Usage", icon: FileSpreadsheet },
     { id: "gst-tax", label: "GST & Tax", icon: Receipt },
+    { id: "party-audit", label: "Party Audit", icon: ClipboardList },
     { id: "saved-reports", label: "Saved Reports", icon: Bookmark },
   ];
 
@@ -510,7 +767,7 @@ export default function Reports() {
 
           <div className="lg:col-span-4">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid grid-cols-4 lg:grid-cols-8 gap-1 h-auto p-1 mb-4">
+              <TabsList className="grid grid-cols-5 lg:grid-cols-9 gap-1 h-auto p-1 mb-4">
                 {reportTabs.map((tab) => {
                   const Icon = tab.icon;
                   return (
@@ -878,6 +1135,242 @@ export default function Reports() {
                         </TableBody>
                       </Table>
                     </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="party-audit" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3 flex flex-row items-start justify-between gap-4 flex-wrap">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4" />
+                        Party Price Audit Report
+                      </CardTitle>
+                      <CardDescription>
+                        Internal price audit for a single party - all quotes and box items
+                      </CardDescription>
+                    </div>
+                    {auditPartyName && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button size="sm" variant="outline" onClick={handlePrint} data-testid="button-print-audit">
+                          <Printer className="w-4 h-4 mr-1" />
+                          Print
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={handleExportPDF} data-testid="button-pdf-audit">
+                          <Download className="w-4 h-4 mr-1" />
+                          PDF
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={exportPartyAuditToExcel} data-testid="button-excel-audit">
+                          <FileSpreadsheet className="w-4 h-4 mr-1" />
+                          Excel
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          onClick={handleSaveNegotiatedPrices}
+                          disabled={!hasNegotiatedInputs || saveNegotiatedMutation.isPending}
+                          data-testid="button-save-negotiated"
+                        >
+                          <Save className="w-4 h-4 mr-1" />
+                          {saveNegotiatedMutation.isPending ? "Saving..." : "Save Negotiated Prices"}
+                        </Button>
+                      </div>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {/* Party Selection - Always visible */}
+                    <div className="mb-6 p-4 rounded-lg border bg-muted/50">
+                      <div className="space-y-2 max-w-xs">
+                        <Label htmlFor="audit-party">Select Party (Required)</Label>
+                        <Select value={auditPartyName} onValueChange={setAuditPartyName}>
+                          <SelectTrigger id="audit-party" data-testid="select-audit-party">
+                            <SelectValue placeholder="Choose a party..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {partyProfiles.map((party) => (
+                              <SelectItem key={party.id} value={party.personName}>
+                                {party.personName} {party.companyName ? `(${party.companyName})` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    
+                    {/* Filters - Only visible after party selected */}
+                    {auditPartyName && (
+                      <div className="mb-6 p-4 rounded-lg border bg-muted/30">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                          <div className="space-y-2">
+                            <Label>Date From</Label>
+                            <Input 
+                              type="date"
+                              value={auditStartDate}
+                              onChange={(e) => setAuditStartDate(e.target.value)}
+                              data-testid="input-audit-start-date"
+                            />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label>Date To</Label>
+                            <Input 
+                              type="date"
+                              value={auditEndDate}
+                              onChange={(e) => setAuditEndDate(e.target.value)}
+                              data-testid="input-audit-end-date"
+                            />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label>Box Name</Label>
+                            <Input 
+                              placeholder="Filter..."
+                              value={auditBoxNameFilter}
+                              onChange={(e) => setAuditBoxNameFilter(e.target.value)}
+                              data-testid="input-audit-box-name"
+                            />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label>Box Size</Label>
+                            <Input 
+                              placeholder="e.g. 200×150"
+                              value={auditBoxSizeFilter}
+                              onChange={(e) => setAuditBoxSizeFilter(e.target.value)}
+                              data-testid="input-audit-box-size"
+                            />
+                          </div>
+                          
+                          <div className="flex items-end">
+                            <Button variant="outline" size="sm" onClick={clearAuditFilters} data-testid="button-clear-audit-filters">
+                              Clear Filters
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Report Content */}
+                    {!auditPartyName ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <ClipboardList className="w-12 h-12 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-medium mb-2">Select a Party</h3>
+                        <p className="text-sm text-muted-foreground max-w-md">
+                          Choose a party from the dropdown above to view their complete price audit report.
+                        </p>
+                      </div>
+                    ) : auditQuotesData.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Package className="w-12 h-12 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No Quotes Found</h3>
+                        <p className="text-sm text-muted-foreground max-w-md">
+                          No quotes found for {auditPartyName} with the current filters.
+                        </p>
+                      </div>
+                    ) : (
+                      <div ref={printRef}>
+                        {/* Print Header */}
+                        <div className="header mb-6 p-4 border rounded-lg bg-muted/30">
+                          <h1 className="text-xl font-bold">Party Price Audit Report</h1>
+                          <p className="text-sm mt-1"><strong>Party:</strong> {auditPartyName}</p>
+                          <p className="text-sm"><strong>GST No:</strong> {auditPartyProfile?.gstNo || 'N/A'}</p>
+                          <p className="text-sm"><strong>Generated:</strong> {new Date().toLocaleDateString()}</p>
+                        </div>
+                        
+                        {/* Grouped Data: Quote → Items */}
+                        {auditQuotesData.map((quote, qIdx) => (
+                          <div key={quote.id} className="quote-group mb-6">
+                            <div className="quote-header bg-muted px-4 py-2 rounded-t-lg border border-b-0">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div>
+                                  <span className="font-semibold">Quote: {quote.quoteNo || '-'}</span>
+                                  <span className="text-muted-foreground ml-4">
+                                    {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : ''}
+                                  </span>
+                                </div>
+                                <Badge variant="outline">{quote.filteredItems.length} items</Badge>
+                              </div>
+                            </div>
+                            <div className="rounded-b-lg border overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="min-w-[120px]">Box Name</TableHead>
+                                    <TableHead className="min-w-[100px]">Description</TableHead>
+                                    <TableHead>Remarks</TableHead>
+                                    <TableHead className="min-w-[150px]">Paper Spec</TableHead>
+                                    <TableHead>Ply</TableHead>
+                                    <TableHead className="min-w-[100px]">Size (L×W×H)</TableHead>
+                                    <TableHead>Print</TableHead>
+                                    <TableHead>Colors</TableHead>
+                                    <TableHead>Deckle</TableHead>
+                                    <TableHead>Cut Length</TableHead>
+                                    <TableHead className="text-right">Rate/Box</TableHead>
+                                    <TableHead className="text-right">Total</TableHead>
+                                    <TableHead className="min-w-[120px] no-print">Neg. Rate</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {quote.filteredItems.map((item: any, iIdx: number) => {
+                                    const finalRate = item.negotiatedPrice || item.totalCostPerBox || 0;
+                                    const qty = item.quantity || 1;
+                                    const finalTotal = parseFloat(finalRate) * qty;
+                                    // Use originalIndex for proper item identification in bulk negotiate
+                                    const inputKey = `${quote.id}_${item.originalIndex}`;
+                                    
+                                    return (
+                                      <TableRow key={iIdx} data-testid={`audit-item-${qIdx}-${iIdx}`}>
+                                        <TableCell className="font-medium">{item.boxName || '-'}</TableCell>
+                                        <TableCell className="text-muted-foreground text-sm">{item.boxDescription || '-'}</TableCell>
+                                        <TableCell className="text-muted-foreground text-sm">{item.remarks || '-'}</TableCell>
+                                        <TableCell className="font-mono text-xs">{formatPaperSpec(item)}</TableCell>
+                                        <TableCell>
+                                          <Badge variant="secondary">{item.ply || '-'}</Badge>
+                                        </TableCell>
+                                        <TableCell className="font-mono text-sm">
+                                          {item.length || '-'}×{item.width || '-'}×{item.height || '-'}
+                                        </TableCell>
+                                        <TableCell>
+                                          {item.printingEnabled ? (item.printType || 'Printed') : 'Plain'}
+                                        </TableCell>
+                                        <TableCell className="text-center">{item.printColours || 0}</TableCell>
+                                        <TableCell className="font-mono text-sm">
+                                          {item.sheetWidth ? item.sheetWidth.toFixed(1) : '-'}
+                                        </TableCell>
+                                        <TableCell className="font-mono text-sm">
+                                          {item.sheetLength ? item.sheetLength.toFixed(1) : '-'}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono font-medium">
+                                          ₹{parseFloat(finalRate).toFixed(2)}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono">
+                                          ₹{finalTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                        </TableCell>
+                                        <TableCell className="no-print">
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            placeholder="New rate"
+                                            value={negotiatedInputs[inputKey] || ''}
+                                            onChange={(e) => setNegotiatedInputs(prev => ({
+                                              ...prev,
+                                              [inputKey]: e.target.value
+                                            }))}
+                                            className="w-24 h-8 text-sm"
+                                            data-testid={`input-negotiate-${qIdx}-${iIdx}`}
+                                          />
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>

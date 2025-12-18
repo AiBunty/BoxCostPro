@@ -304,7 +304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { items, paymentTerms, deliveryDays, transportCharge, transportRemark, totalValue, boardThickness, ...quoteData } = req.body;
       
       // Get flute settings for snapshot
-      const fluteSettingsData = await storage.getAllFluteSettings(userId);
+      const fluteSettingsData = await storage.getFluteSettings(userId);
       const fluteFactors: Record<string, number> = {};
       const fluteHeights: Record<string, number> = {};
       fluteSettingsData.forEach((s: any) => {
@@ -463,7 +463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const versionNo = await storage.getNextVersionNumber(quoteId);
       
       // Get flute settings for snapshot (use actual user settings, not defaults)
-      const fluteSettingsData = await storage.getAllFluteSettings(userId);
+      const fluteSettingsData = await storage.getFluteSettings(userId);
       const fluteFactors: Record<string, number | null> = {};
       const fluteHeights: Record<string, number | null> = {};
       fluteSettingsData.forEach((s: any) => {
@@ -499,7 +499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         finalTotal,
         isNegotiated: isNegotiated || false,
         negotiationType: negotiationType || null,
-        negotiationValue: negotiationValue != null ? String(negotiationValue) : null,
+        negotiationValue: negotiationValue != null ? Number(negotiationValue) : null,
         isLocked: isNegotiated || false, // Lock negotiated versions
         // Snapshot board thickness
         boardThicknessMm: boardThickness || null,
@@ -593,6 +593,163 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch quote details" });
+    }
+  });
+
+  // Bulk negotiate: Update negotiated prices for multiple items across quotes
+  // Creates a new version for each affected quote with negotiated prices
+  app.post("/api/quotes/:id/bulk-negotiate", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const quoteId = req.params.id;
+      const { negotiations } = req.body; // Array of { itemIndex, negotiatedPrice }
+      
+      if (!negotiations || !Array.isArray(negotiations) || negotiations.length === 0) {
+        return res.status(400).json({ error: "No negotiations provided" });
+      }
+      
+      // Get existing quote
+      const quote = await storage.getQuote(quoteId);
+      if (!quote) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      
+      // Get current active version and items
+      const quoteData = await storage.getQuoteWithActiveVersion(quoteId);
+      if (!quoteData || !quoteData.version) {
+        return res.status(400).json({ error: "Quote has no active version" });
+      }
+      
+      const existingItems = quoteData.items || [];
+      
+      // Get next version number
+      const versionNo = await storage.getNextVersionNumber(quoteId);
+      
+      // Get flute settings for snapshot
+      const fluteSettingsData = await storage.getFluteSettings(userId);
+      const fluteFactors: Record<string, number | null> = {};
+      const fluteHeights: Record<string, number | null> = {};
+      fluteSettingsData.forEach((s: any) => {
+        fluteFactors[s.fluteType] = s.flutingFactor;
+        fluteHeights[s.fluteType] = s.fluteHeight;
+      });
+      
+      // Get business defaults for GST snapshot
+      const businessDefaults = await storage.getBusinessDefaults(userId);
+      const gstPercent = businessDefaults?.defaultGstPercent || 18;
+      
+      // Create negotiation map for quick lookup
+      const negotiationMap = new Map<number, number>();
+      negotiations.forEach((n: { itemIndex: number; negotiatedPrice: number }) => {
+        negotiationMap.set(n.itemIndex, n.negotiatedPrice);
+      });
+      
+      // Apply negotiated prices to items
+      const updatedItems = existingItems.map((item: any, idx: number) => {
+        const newNegotiatedPrice = negotiationMap.get(idx);
+        if (newNegotiatedPrice !== undefined) {
+          return {
+            ...item,
+            negotiatedPrice: newNegotiatedPrice,
+            negotiationMode: 'fixed',
+            negotiationValue: newNegotiatedPrice,
+            originalPrice: item.totalCostPerBox || item.originalPrice,
+          };
+        }
+        return item;
+      });
+      
+      // Calculate totals with new prices
+      const subtotal = updatedItems.reduce((sum: number, item: any) => {
+        const price = item.negotiatedPrice || item.totalCostPerBox || 0;
+        const qty = item.quantity || 0;
+        return sum + (price * qty);
+      }, 0);
+      const gstAmount = subtotal * (gstPercent / 100);
+      const finalTotal = subtotal + gstAmount;
+      
+      // Create new version (locked because it's negotiated)
+      const newVersion = await storage.createQuoteVersion({
+        quoteId,
+        versionNo,
+        paymentTerms: quoteData.version.paymentTerms || null,
+        deliveryDays: quoteData.version.deliveryDays || null,
+        transportCharge: quoteData.version.transportCharge || null,
+        transportRemark: quoteData.version.transportRemark || null,
+        subtotal,
+        gstPercent,
+        gstAmount,
+        finalTotal,
+        isNegotiated: true,
+        negotiationType: 'bulk',
+        negotiationValue: null,
+        isLocked: true, // Lock negotiated versions
+        boardThicknessMm: quoteData.version.boardThicknessMm || null,
+        fluteFactorA: fluteFactors['A'] ?? null,
+        fluteFactorB: fluteFactors['B'] ?? null,
+        fluteFactorC: fluteFactors['C'] ?? null,
+        fluteFactorE: fluteFactors['E'] ?? null,
+        fluteFactorF: fluteFactors['F'] ?? null,
+        fluteHeightA: fluteHeights['A'] ?? null,
+        fluteHeightB: fluteHeights['B'] ?? null,
+        fluteHeightC: fluteHeights['C'] ?? null,
+        fluteHeightE: fluteHeights['E'] ?? null,
+        fluteHeightF: fluteHeights['F'] ?? null,
+      });
+      
+      // Create item versions
+      if (updatedItems.length > 0) {
+        const itemVersions = updatedItems.map((item: any, index: number) => {
+          const originalCost = parseFloat(item.totalCostPerBox || item.originalPrice || 0);
+          const negotiatedCost = item.negotiatedPrice ? parseFloat(item.negotiatedPrice) : null;
+          const finalCost = negotiatedCost || originalCost;
+          const qty = item.quantity || 1;
+          
+          const itemSnapshot = {
+            ...item,
+            negotiationMode: item.negotiationMode || 'none',
+            negotiationValue: item.negotiationValue || null,
+            originalCostPerBox: originalCost,
+          };
+          
+          return {
+            quoteVersionId: newVersion.id,
+            itemIndex: index,
+            itemType: item.type || item.itemType || 'rsc',
+            boxName: item.boxName || 'Unnamed',
+            boxDescription: item.boxDescription || null,
+            ply: item.ply || '5',
+            length: item.length || 0,
+            width: item.width || 0,
+            height: item.height || null,
+            quantity: qty,
+            sheetLength: item.sheetLength || null,
+            sheetWidth: item.sheetWidth || null,
+            sheetWeight: item.sheetWeight || null,
+            originalCostPerBox: originalCost,
+            negotiatedCostPerBox: negotiatedCost,
+            finalCostPerBox: finalCost,
+            originalTotalCost: originalCost * qty,
+            negotiatedTotalCost: negotiatedCost ? negotiatedCost * qty : null,
+            finalTotalCost: finalCost * qty,
+            itemDataSnapshot: itemSnapshot,
+          };
+        });
+        await storage.createQuoteItemVersions(itemVersions);
+      }
+      
+      // Update quote with new active version ID
+      await storage.updateQuote(quoteId, { activeVersionId: newVersion.id });
+      
+      res.status(201).json({
+        success: true,
+        versionId: newVersion.id,
+        versionNo: newVersion.versionNo,
+        quoteNo: quote.quoteNo,
+      });
+    } catch (error) {
+      console.error("Failed to bulk negotiate:", error);
+      res.status(400).json({ error: "Failed to save negotiated prices" });
     }
   });
 
