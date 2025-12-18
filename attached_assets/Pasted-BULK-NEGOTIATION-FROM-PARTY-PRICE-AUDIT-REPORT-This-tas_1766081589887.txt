@@ -1,0 +1,78 @@
+BULK NEGOTIATION FROM PARTY PRICE AUDIT REPORT
+
+This task is REPORT + VERSIONING ONLY.
+Do NOT modify calculator formulas, costing logic, or BCT logic.
+
+================================================
+FILTERS (MANDATORY)
+================================================
+
+Add filters to Party Price Audit Report:
+- Date Range (From – To)
+- Box Name (text search)
+- Box Description (text search)
+- Box Size (L×W×H)
+
+Rules:
+- Filters must work together.
+- Filters must apply to:
+  - On-screen data
+  - Bulk negotiation scope
+  - Excel / PDF export
+- Filters must NOT modify stored data.
+
+================================================
+NEGOTIATED PRICE INPUT (PER ITEM)
+================================================
+
+Add a column:
+“Negotiated Rate per Box (Input)”
+
+Rules:
+- Input is optional per row.
+- Numeric input only.
+- If blank → no change.
+- If value entered → treat as FINAL negotiated rate per box.
+
+================================================
+SAVE NEGOTIATED PRICES
+================================================
+
+Add button:
+“Save Negotiated Prices”
+
+Behavior:
+- If no inputs entered, disable button.
+- On click:
+  - Show confirmation:
+    “This will create a new version for affected quotes.”
+
+Save Rules:
+- Create a NEW quote version for each affected quote.
+- Apply negotiated price ONLY to items with input.
+- Carry forward existing prices for other items.
+- Do NOT recalculate any costs.
+- Preserve old versions unchanged.
+- Set new version as active_version.
+
+================================================
+POST-SAVE BEHAVIOR
+================================================
+
+After save:
+- Clear all negotiated input fields.
+- Refresh report automatically.
+- Updated prices must appear immediately.
+- Old prices must no longer appear in report.
+
+================================================
+STRICT RULES
+================================================
+
+- Do NOT overwrite existing quote versions.
+- Do NOT modify calculator logic.
+- Do NOT infer or auto-calculate negotiated prices.
+- Do NOT allow inline editing of other fields.
+
+If ANY requirement is unclear:
+STOP and ASK.

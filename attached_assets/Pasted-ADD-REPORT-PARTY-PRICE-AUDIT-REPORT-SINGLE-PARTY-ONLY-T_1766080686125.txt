@@ -1,0 +1,148 @@
+ADD REPORT: PARTY PRICE AUDIT REPORT (SINGLE PARTY ONLY)
+
+This task is REPORT ONLY.
+Do NOT modify calculator logic, costing formulas, quote save logic, or thickness/BCT logic.
+
+================================================
+REPORT PURPOSE
+================================================
+
+Create a report named:
+“Party Price Audit Report”
+
+This report is for INTERNAL PRICE AUDIT and CROSS-CHECKING.
+
+It must show ALL quotes and ALL box items for ONE selected party,
+with full technical and pricing details.
+
+================================================
+PARTY SELECTION RULE
+================================================
+
+- User MUST select exactly ONE party.
+- Do NOT allow multiple party selection.
+- Report must NOT load until a party is selected.
+- Party selection must use existing party dropdown logic.
+- Deleted parties must not appear.
+
+================================================
+DATA SOURCE RULES (CRITICAL)
+================================================
+
+- Use ONLY the active version of each quote.
+- Use FINAL negotiated price if it exists.
+- Never recalculate costs.
+- Never read live master data.
+- Exclude soft-deleted records (deleted_at IS NULL).
+- Use stored snapshot values only.
+
+================================================
+REPORT GROUPING
+================================================
+
+Group data as:
+
+Party
+ └── Quote
+      └── Box Items
+
+================================================
+BOX ITEM DETAILS (MANDATORY FIELDS)
+================================================
+
+Each Box Item row must show:
+
+1. Box Name
+2. Box Description
+3. Remarks
+
+4. Paper Specification (GSM/BF in gist format)
+   Example:
+   180/18 + 120/18 + 120/18 + 120/18 + 120/18
+
+5. Ply
+6. Box Size (L × W × H)
+7. Printing Type (Plain / Printed)
+8. Number of Colors
+9. Reel Size / Deckle
+10. Sheet Cut Length
+
+11. Final Rate per Box
+12. Final Total Amount
+
+================================================
+REPORT HEADER (PRINT FRIENDLY)
+================================================
+
+At the top of the report show:
+
+- Report Title: Party Price Audit Report
+- Party Name
+- Party GST Number
+- Generated Date
+
+================================================
+UI & ACTIONS
+================================================
+
+- Report must be READ-ONLY.
+- No edit or delete actions inside this report.
+- Provide buttons:
+  - Print
+  - Export to PDF
+  - Export to Excel
+
+================================================
+EXPORT TO EXCEL (MANDATORY)
+================================================
+
+Add “Export to Excel” functionality.
+
+Rules:
+- Export ONLY the selected party.
+- Export ONLY data shown in the report.
+- Export ONLY active quote versions.
+- Export ONLY final negotiated prices.
+- Exclude deleted records.
+
+Excel File Rules:
+- File type: .xlsx
+- Sheet name: Party Price Audit
+- One row per Box Item
+- Flat structure (no grouping rows)
+
+Excel Columns (exact order):
+
+1. Party Name
+2. Party GST
+3. Quote No
+4. Quote Date
+5. Box Name
+6. Box Description
+7. Remarks
+8. Paper Specification (GSM/BF)
+9. Ply
+10. Box Size (L×W×H)
+11. Printing Type
+12. Number of Colors
+13. Reel Size / Deckle
+14. Sheet Cut Length
+15. Final Rate per Box
+16. Final Total Amount
+
+File Name Format:
+Party_Price_Audit_<PartyName>_<YYYY-MM-DD>.xlsx
+
+================================================
+STRICT RULES
+================================================
+
+- Do NOT infer missing values.
+- Do NOT recalculate any values.
+- Do NOT modify existing database schema.
+- Do NOT modify costing, negotiation, or other reports.
+- Excel output must EXACTLY match report data.
+
+If ANY requirement is unclear:
+STOP and ASK.
+Do NOT assume.
