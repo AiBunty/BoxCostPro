@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { supabase, onAuthStateChange } from "@/lib/supabase";
+import { supabase, onAuthStateChange, isSupabaseConfigured, signOut as supabaseSignOut } from "@/lib/supabase";
+import { apiRequest } from "@/lib/queryClient";
 
 export interface AuthUser {
   id: string;
@@ -18,23 +19,27 @@ export function useAuth() {
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    const { data: { subscription } } = onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      } else if (event === 'SIGNED_OUT') {
-        queryClient.setQueryData(["/api/auth/user"], null);
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      }
-      setIsInitialized(true);
-    });
+    if (isSupabaseConfigured && supabase) {
+      const { data: { subscription } } = onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        } else if (event === 'SIGNED_OUT') {
+          queryClient.setQueryData(["/api/auth/user"], null);
+          queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        }
+        setIsInitialized(true);
+      });
 
-    supabase.auth.getSession().then(() => {
-      setIsInitialized(true);
-    });
+      supabase.auth.getSession().then(() => {
+        setIsInitialized(true);
+      });
 
-    return () => {
-      subscription.unsubscribe();
-    };
+      return () => {
+        subscription.unsubscribe();
+      };
+    } else {
+      setIsInitialized(true);
+    }
   }, [queryClient]);
 
   const { data: user, isLoading: userLoading } = useQuery<AuthUser | null>({
@@ -51,6 +56,13 @@ export function useAuth() {
 }
 
 export async function signOut() {
-  await supabase.auth.signOut();
+  if (isSupabaseConfigured) {
+    await supabaseSignOut();
+  }
+  try {
+    await apiRequest("POST", "/api/auth/logout", {});
+  } catch (e) {
+    // Ignore logout errors
+  }
   window.location.href = '/';
 }

@@ -44,5 +44,3 @@ integrations = ["javascript_mem_db:1.0.0", "javascript_log_in_with_replit:1.0.0"
 [userenv]
 
 [userenv.shared]
-VITE_SUPABASE_URL = "${SUPABASE_URL}"
-VITE_SUPABASE_ANON_KEY = "${SUPABASE_ANON_KEY}"
