@@ -1,0 +1,256 @@
+You are working on an EXISTING production SaaS:
+“BoxCost Pro – Corrugated Box Costing & Quotation Software”.
+
+THIS IS A STRICT, CONTROLLED IMPLEMENTATION.
+YOU MUST FOLLOW ALL RULES EXACTLY.
+
+================================================
+GLOBAL NON-NEGOTIABLE RULES
+================================================
+
+1. This is a COSTING SYSTEM first.
+2. Negotiation is an OVERRIDE, not recalculation.
+3. No historical quote may EVER change.
+4. Reports must be audit-safe and read-only.
+5. No business logic may be invented or altered.
+
+DO NOT:
+- Recalculate old quotes
+- Pull live master data for saved quotes
+- Overwrite any quote or item
+- Simplify costing formulas
+- Add margin or markup logic
+
+================================================
+ARCHITECTURE OVERVIEW
+================================================
+
+Core Concepts:
+- Quotes are versioned
+- Every edit creates a new version
+- Negotiation creates a locked version
+- Reports always read FINAL values only
+
+================================================
+QUOTE VERSIONING (MANDATORY)
+================================================
+
+A quote must NEVER be overwritten.
+
+Rules:
+- quote_no remains constant
+- Every edit creates a new quote_version
+- Only ONE version is active at a time
+- quotes.active_version_id points to latest version
+
+Tables required:
+- quotes
+- quote_versions
+- quote_items_versions
+
+================================================
+FLUTE SETTINGS (MASTER – FINAL)
+================================================
+
+Rename:
+- “Machine Settings” → “Flute Settings”
+
+REMOVE:
+- Fluting inputs from Create Quote UI
+
+Flute Settings are GLOBAL TECHNICAL CONSTANTS.
+
+Each flute has:
+- Fluting Factor (for paper weight)
+- Flute Height (mm) (for board thickness)
+
+Flute types:
+- A
+- B
+- C
+- E
+- F
+
+Flute Settings rules:
+- Editable ONLY in Masters → Flute Settings
+- Mandatory values (no nulls)
+- Used in EVERY costing
+- Changes apply to NEW quotes only
+
+================================================
+BOARD THICKNESS (AUTOMATIC)
+================================================
+
+Board Thickness = SUM of flute heights
+Based on flute combination.
+
+Examples:
+- B → 2.5 mm
+- BC → B + C
+- AB → A + B
+- ABC → A + B + C
+
+Create Quote behavior:
+- User selects Ply + Flute Combination
+- System auto-calculates board thickness
+- Board thickness field must be:
+  - Visible
+  - Read-only
+  - Auto-filled
+- Used ONLY for BCT calculation
+
+Manual override is NOT allowed.
+
+================================================
+SNAPSHOT RULE (CRITICAL)
+================================================
+
+At quote creation, SNAPSHOT the following into quote_versions:
+- All flute factors (A–F)
+- All flute heights (A–F)
+- Calculated board thickness
+- GST %
+- Subtotal
+- Final total
+
+Reports MUST NEVER read live masters.
+
+================================================
+NEGOTIATION LOGIC (LOCKED)
+================================================
+
+Negotiation is OPTIONAL and FINAL.
+
+Rules:
+- User may apply:
+  - Flat negotiated price OR
+  - Percentage discount
+- Negotiation does NOT recalculate cost
+- Negotiation creates a NEW quote_version
+- Original calculated price must be preserved
+- Negotiated version is LOCKED
+
+UI rules:
+- Original price shown STRIKETHROUGH
+- Negotiated price shown BOLD
+- Calculator inputs disabled after negotiation
+
+================================================
+DATA STRUCTURE – REQUIRED FIELDS
+================================================
+
+quote_versions:
+- version_no
+- is_negotiated
+- negotiation_type (flat / percentage / null)
+- negotiation_value
+- final_total
+- gst_percent
+- gst_amount
+- board_thickness_mm
+- flute_factor_A..F
+- flute_height_A..F
+
+quote_items_versions:
+- original_cost_per_box
+- negotiated_cost_per_box (nullable)
+- final_cost_per_box
+- final_total_cost
+
+================================================
+REPORTING – ABSOLUTE SAFETY RULES
+================================================
+
+Reports MUST:
+- Read ONLY from quotes.active_version_id
+- Use ONLY final_* fields
+- Ignore old versions
+- Ignore live master data
+- Show negotiated price if exists
+
+Reports are READ-ONLY.
+No recalculation.
+No edits.
+
+================================================
+REPORTS REQUIRED
+================================================
+
+1. Quote Register
+2. Party-wise Summary
+3. Item-wise Price Report (PRICE MEMORY)
+4. Date-wise Sales Report
+5. Cost Breakdown Report
+6. Paper Consumption Report
+7. GST & Tax Report
+8. Saved Reports (Print & File)
+
+================================================
+ITEM-WISE PRICE REPORT (CRITICAL)
+================================================
+
+This report is a PRICE BOOK.
+
+Rules:
+- Shows FINAL negotiated price only
+- Uses active_version only
+- Printable and savable
+- Used for cross-check & reference
+- Replaces Excel registers
+
+================================================
+GST – SINGLE SOURCE OF TRUTH
+================================================
+
+- GST % defined in Masters → Tax & GST
+- GST % snapshotted at quote creation
+- GST never recalculated
+- Reports always use stored GST
+
+================================================
+NAVIGATION & UI RULES
+================================================
+
+Create Quote page MUST NOT contain:
+- Upload Excel
+- Load Quote
+- Reports
+- Masters
+- Admin shortcuts
+
+Left Navigation MUST be:
+- Dashboard
+- Create Quote
+- Quotes
+  - Bulk Upload
+- Reports
+- Masters
+- Account
+
+================================================
+MASTERS – FINAL SCOPE
+================================================
+
+Masters may ONLY contain:
+- Paper Master
+- Flute Settings
+- Tax & GST
+- Business Defaults
+
+NO blank master screens allowed.
+If a master is listed, it must be implemented fully.
+
+================================================
+FINAL VALIDATION (MANDATORY)
+================================================
+
+Before completing:
+- Same inputs → same cost
+- Old quotes unchanged
+- Negotiated quotes locked
+- Reports show negotiated price only
+- Board thickness auto-calculated correctly
+
+If ANY instruction is unclear:
+STOP and ASK.
+DO NOT ASSUME.
