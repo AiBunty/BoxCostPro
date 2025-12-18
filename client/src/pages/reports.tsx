@@ -71,7 +71,7 @@ export default function Reports() {
         q.partyName?.toLowerCase().includes(term) ||
         q.customerCompany?.toLowerCase().includes(term) ||
         q.quoteNo?.toLowerCase().includes(term) ||
-        JSON.stringify(q.items).toLowerCase().includes(term)
+        JSON.stringify(q.items || []).toLowerCase().includes(term)
       );
     }
 
