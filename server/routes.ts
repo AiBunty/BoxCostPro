@@ -294,9 +294,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/quotes", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const data = insertQuoteSchema.parse({ ...req.body, userId });
-      const quote = await storage.createQuote(data);
-      res.status(201).json(quote);
+      const { items, paymentTerms, deliveryDays, transportCharge, transportRemark, totalValue, boardThickness, ...quoteData } = req.body;
+      
+      // Get flute settings for snapshot
+      const fluteSettingsData = await storage.getAllFluteSettings(userId);
+      const fluteFactors: Record<string, number> = {};
+      const fluteHeights: Record<string, number> = {};
+      fluteSettingsData.forEach((s: any) => {
+        fluteFactors[s.fluteType] = s.flutingFactor || 1.35;
+        fluteHeights[s.fluteType] = s.fluteHeight || 2.5;
+      });
+      
+      // Get business defaults for GST snapshot
+      const businessDefaults = await storage.getBusinessDefaults(userId);
+      const gstPercent = businessDefaults?.defaultGstPercent || 18;
+      
+      // Generate quote number
+      const quoteNo = await storage.generateQuoteNumber(userId);
+      
+      // Create the quote record
+      const quote = await storage.createQuote({
+        ...quoteData,
+        userId,
+        quoteNo,
+        status: 'draft',
+      });
+      
+      // Calculate totals
+      const subtotal = items?.reduce((sum: number, item: any) => sum + (item.totalValue || 0), 0) || 0;
+      const gstAmount = subtotal * (gstPercent / 100);
+      const finalTotal = subtotal + gstAmount + (transportCharge || 0);
+      
+      // Create initial quote version with snapshots
+      const version = await storage.createQuoteVersion({
+        quoteId: quote.id,
+        versionNo: 1,
+        paymentTerms: paymentTerms || null,
+        deliveryDays: deliveryDays || null,
+        transportCharge: transportCharge || null,
+        transportRemark: transportRemark || null,
+        subtotal,
+        gstPercent,
+        gstAmount,
+        finalTotal,
+        isNegotiated: false,
+        isLocked: false,
+        // Snapshot board thickness
+        boardThicknessMm: boardThickness || null,
+        // Snapshot flute factors and heights (actual user settings, not defaults)
+        fluteFactorA: fluteFactors['A'] ?? null,
+        fluteFactorB: fluteFactors['B'] ?? null,
+        fluteFactorC: fluteFactors['C'] ?? null,
+        fluteFactorE: fluteFactors['E'] ?? null,
+        fluteFactorF: fluteFactors['F'] ?? null,
+        fluteHeightA: fluteHeights['A'] ?? null,
+        fluteHeightB: fluteHeights['B'] ?? null,
+        fluteHeightC: fluteHeights['C'] ?? null,
+        fluteHeightE: fluteHeights['E'] ?? null,
+        fluteHeightF: fluteHeights['F'] ?? null,
+        createdBy: userId,
+      });
+      
+      // Create quote item versions with full snapshot data
+      if (items && items.length > 0) {
+        const itemVersions = items.map((item: any, index: number) => {
+          const originalCost = item.totalCostPerBox || 0;
+          const negotiatedCost = item.negotiatedPrice || null;
+          const finalCost = negotiatedCost || originalCost;
+          const qty = item.quantity || 0;
+          
+          // Include negotiation metadata in the snapshot
+          const itemSnapshot = {
+            ...item,
+            negotiationMode: item.negotiationMode || 'none',
+            negotiationValue: item.negotiationValue || null,
+            originalCostPerBox: originalCost,
+            negotiatedPrice: negotiatedCost,
+          };
+          
+          return {
+            quoteVersionId: version.id,
+            itemIndex: index,
+            itemType: item.itemType || 'rsc',
+            boxName: item.boxName || 'Unnamed',
+            boxDescription: item.boxDescription || null,
+            ply: item.ply || '5',
+            length: item.length || 0,
+            width: item.width || 0,
+            height: item.height || null,
+            quantity: qty,
+            sheetLength: item.sheetLength || null,
+            sheetWidth: item.sheetWidth || null,
+            sheetWeight: item.sheetWeight || null,
+            originalCostPerBox: originalCost,
+            negotiatedCostPerBox: negotiatedCost,
+            finalCostPerBox: finalCost,
+            originalTotalCost: originalCost * qty,
+            negotiatedTotalCost: negotiatedCost ? negotiatedCost * qty : null,
+            finalTotalCost: finalCost * qty,
+            itemDataSnapshot: itemSnapshot, // Full item data with negotiation metadata
+          };
+        });
+        await storage.createQuoteItemVersions(itemVersions);
+      }
+      
+      // Update quote with active version ID
+      await storage.updateQuote(quote.id, { activeVersionId: version.id });
+      
+      // Return quote with version info
+      res.status(201).json({
+        ...quote,
+        activeVersionId: version.id,
+        quoteNo,
+      });
     } catch (error) {
       console.error("Failed to create quote:", error);
       res.status(400).json({ error: "Invalid quote data" });
@@ -325,6 +435,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete quote" });
+    }
+  });
+
+  // Create new quote version (for edits or negotiation)
+  // Every edit creates a new version; negotiation locks the version
+  app.post("/api/quotes/:id/versions", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const quoteId = req.params.id;
+      const { items, isNegotiated, negotiationType, negotiationValue, boardThickness, ...versionData } = req.body;
+      
+      // Get existing quote
+      const quote = await storage.getQuote(quoteId);
+      if (!quote) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      
+      // Get next version number
+      const versionNo = await storage.getNextVersionNumber(quoteId);
+      
+      // Get flute settings for snapshot (use actual user settings, not defaults)
+      const fluteSettingsData = await storage.getAllFluteSettings(userId);
+      const fluteFactors: Record<string, number | null> = {};
+      const fluteHeights: Record<string, number | null> = {};
+      fluteSettingsData.forEach((s: any) => {
+        fluteFactors[s.fluteType] = s.flutingFactor;
+        fluteHeights[s.fluteType] = s.fluteHeight;
+      });
+      
+      // Get business defaults for GST snapshot
+      const businessDefaults = await storage.getBusinessDefaults(userId);
+      const gstPercent = businessDefaults?.defaultGstPercent || 18;
+      
+      // Calculate totals
+      const subtotal = items?.reduce((sum: number, item: any) => {
+        const price = item.negotiatedPrice || item.totalCostPerBox || 0;
+        const qty = item.quantity || 0;
+        return sum + (price * qty);
+      }, 0) || 0;
+      const gstAmount = subtotal * (gstPercent / 100);
+      const transportCharge = versionData.transportCharge || 0;
+      const finalTotal = subtotal + gstAmount + transportCharge;
+      
+      // Create new version (negotiated versions are locked)
+      const version = await storage.createQuoteVersion({
+        quoteId,
+        versionNo,
+        paymentTerms: versionData.paymentTerms || null,
+        deliveryDays: versionData.deliveryDays || null,
+        transportCharge: versionData.transportCharge || null,
+        transportRemark: versionData.transportRemark || null,
+        subtotal,
+        gstPercent,
+        gstAmount,
+        finalTotal,
+        isNegotiated: isNegotiated || false,
+        negotiationType: negotiationType || null,
+        negotiationValue: negotiationValue != null ? String(negotiationValue) : null,
+        isLocked: isNegotiated || false, // Lock negotiated versions
+        // Snapshot board thickness
+        boardThicknessMm: boardThickness || null,
+        // Snapshot flute factors and heights (actual user settings, not defaults)
+        fluteFactorA: fluteFactors['A'] ?? null,
+        fluteFactorB: fluteFactors['B'] ?? null,
+        fluteFactorC: fluteFactors['C'] ?? null,
+        fluteFactorE: fluteFactors['E'] ?? null,
+        fluteFactorF: fluteFactors['F'] ?? null,
+        fluteHeightA: fluteHeights['A'] ?? null,
+        fluteHeightB: fluteHeights['B'] ?? null,
+        fluteHeightC: fluteHeights['C'] ?? null,
+        fluteHeightE: fluteHeights['E'] ?? null,
+        fluteHeightF: fluteHeights['F'] ?? null,
+        createdBy: userId,
+      });
+      
+      // Create quote item versions with negotiation metadata
+      if (items && items.length > 0) {
+        const itemVersions = items.map((item: any, index: number) => {
+          const originalCost = item.totalCostPerBox || 0;
+          const negotiatedCost = item.negotiatedPrice || null;
+          const finalCost = negotiatedCost || originalCost;
+          const qty = item.quantity || 0;
+          
+          // Include negotiation metadata in the snapshot
+          const itemSnapshot = {
+            ...item,
+            negotiationMode: item.negotiationMode || 'none',
+            negotiationValue: item.negotiationValue || null,
+            originalCostPerBox: originalCost,
+            negotiatedPrice: negotiatedCost,
+          };
+          
+          return {
+            quoteVersionId: version.id,
+            itemIndex: index,
+            itemType: item.itemType || 'rsc',
+            boxName: item.boxName || 'Unnamed',
+            boxDescription: item.boxDescription || null,
+            ply: item.ply || '5',
+            length: item.length || 0,
+            width: item.width || 0,
+            height: item.height || null,
+            quantity: qty,
+            sheetLength: item.sheetLength || null,
+            sheetWidth: item.sheetWidth || null,
+            sheetWeight: item.sheetWeight || null,
+            originalCostPerBox: originalCost,
+            negotiatedCostPerBox: negotiatedCost,
+            finalCostPerBox: finalCost,
+            originalTotalCost: originalCost * qty,
+            negotiatedTotalCost: negotiatedCost ? negotiatedCost * qty : null,
+            finalTotalCost: finalCost * qty,
+            itemDataSnapshot: itemSnapshot, // Full item data with negotiation metadata
+          };
+        });
+        await storage.createQuoteItemVersions(itemVersions);
+      }
+      
+      // Update quote with new active version ID
+      await storage.updateQuote(quoteId, { activeVersionId: version.id });
+      
+      res.status(201).json({
+        ...version,
+        quoteNo: quote.quoteNo,
+      });
+    } catch (error) {
+      console.error("Failed to create quote version:", error);
+      res.status(400).json({ error: "Failed to create quote version" });
+    }
+  });
+
+  // Get all versions for a quote
+  app.get("/api/quotes/:id/versions", combinedAuth, async (req: any, res) => {
+    try {
+      const versions = await storage.getQuoteVersionsByQuoteId(req.params.id);
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch quote versions" });
+    }
+  });
+
+  // Get quote with active version and items
+  app.get("/api/quotes/:id/full", combinedAuth, async (req: any, res) => {
+    try {
+      const result = await storage.getQuoteWithActiveVersion(req.params.id);
+      if (!result) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch quote details" });
     }
   });
 

@@ -5,6 +5,10 @@ import {
   type InsertPartyProfile,
   type Quote,
   type InsertQuote,
+  type QuoteVersion,
+  type InsertQuoteVersion,
+  type QuoteItemVersion,
+  type InsertQuoteItemVersion,
   type AppSettings,
   type InsertAppSettings,
   type RateMemoryEntry,
@@ -48,6 +52,8 @@ import {
   companyProfiles,
   partyProfiles,
   quotes,
+  quoteVersions,
+  quoteItemVersions,
   appSettings,
   rateMemory,
   users,
@@ -490,6 +496,88 @@ export class DatabaseStorage implements IStorage {
   async deleteQuote(id: string): Promise<boolean> {
     await db.delete(quotes).where(eq(quotes.id, id));
     return true;
+  }
+
+  // Generate unique quote number (format: QT-YYYYMMDD-XXX)
+  async generateQuoteNumber(userId: string): Promise<string> {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    
+    // Count quotes created today by this user
+    const existingQuotes = await db.select().from(quotes)
+      .where(eq(quotes.userId, userId));
+    
+    const todayQuotes = existingQuotes.filter(q => {
+      if (!q.createdAt) return false;
+      const quoteDate = new Date(q.createdAt).toISOString().slice(0, 10).replace(/-/g, '');
+      return quoteDate === dateStr;
+    });
+    
+    const sequence = (todayQuotes.length + 1).toString().padStart(3, '0');
+    return `QT-${dateStr}-${sequence}`;
+  }
+
+  // Quote Versions
+  async createQuoteVersion(insertVersion: InsertQuoteVersion): Promise<QuoteVersion> {
+    const [version] = await db.insert(quoteVersions).values(insertVersion).returning();
+    return version;
+  }
+
+  async getQuoteVersion(id: string): Promise<QuoteVersion | undefined> {
+    const [version] = await db.select().from(quoteVersions).where(eq(quoteVersions.id, id));
+    return version;
+  }
+
+  async getQuoteVersionsByQuoteId(quoteId: string): Promise<QuoteVersion[]> {
+    return await db.select().from(quoteVersions)
+      .where(eq(quoteVersions.quoteId, quoteId))
+      .orderBy(quoteVersions.versionNo);
+  }
+
+  async getLatestQuoteVersion(quoteId: string): Promise<QuoteVersion | undefined> {
+    const versions = await this.getQuoteVersionsByQuoteId(quoteId);
+    return versions.length > 0 ? versions[versions.length - 1] : undefined;
+  }
+
+  async getNextVersionNumber(quoteId: string): Promise<number> {
+    const versions = await this.getQuoteVersionsByQuoteId(quoteId);
+    return versions.length > 0 ? Math.max(...versions.map(v => v.versionNo)) + 1 : 1;
+  }
+
+  // Quote Item Versions
+  async createQuoteItemVersions(items: InsertQuoteItemVersion[]): Promise<QuoteItemVersion[]> {
+    if (items.length === 0) return [];
+    const inserted = await db.insert(quoteItemVersions).values(items).returning();
+    return inserted;
+  }
+
+  async getQuoteItemVersionsByVersionId(versionId: string): Promise<QuoteItemVersion[]> {
+    return await db.select().from(quoteItemVersions)
+      .where(eq(quoteItemVersions.quoteVersionId, versionId))
+      .orderBy(quoteItemVersions.itemIndex);
+  }
+
+  // Get quote with active version and items (for display)
+  async getQuoteWithActiveVersion(quoteId: string): Promise<{
+    quote: Quote;
+    version: QuoteVersion | null;
+    items: QuoteItemVersion[];
+  } | null> {
+    const quote = await this.getQuote(quoteId);
+    if (!quote) return null;
+
+    let version: QuoteVersion | null = null;
+    let items: QuoteItemVersion[] = [];
+
+    if (quote.activeVersionId) {
+      const v = await this.getQuoteVersion(quote.activeVersionId);
+      if (v) {
+        version = v;
+        items = await this.getQuoteItemVersionsByVersionId(v.id);
+      }
+    }
+
+    return { quote, version, items };
   }
   
   // Rate Memory
