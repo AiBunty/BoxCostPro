@@ -1,0 +1,203 @@
+You are working on an EXISTING production SaaS application:
+“Corrugated Box Costing & Quotation Software”.
+
+THIS IS A UI/UX REFACTOR ONLY.
+⚠️ YOU MUST NOT change, simplify, optimize, or invent any business logic.
+⚠️ YOU MUST NOT modify formulas, calculations, GST logic, costing logic, or data models.
+⚠️ YOU MUST NOT add new assumptions or default values.
+⚠️ YOU MUST PRESERVE ALL EXISTING FUNCTIONALITY EXACTLY AS IS.
+
+Your task is ONLY:
+- UI restructuring
+- Navigation restructuring
+- Layout refactor
+- Mobile-first UX improvements
+- Visual polish
+
+--------------------------------------------------
+GLOBAL RULES (VERY IMPORTANT)
+--------------------------------------------------
+
+1. DO NOT TOUCH:
+   - Paper weight calculation
+   - Fluting factor logic
+   - BF / RCT / BCT logic
+   - Cost per box calculation
+   - Margin logic
+   - GST logic
+   - Quote totals
+   - Export / WhatsApp / PDF logic
+   - Database schema
+   - API calls
+
+2. DO NOT:
+   - Rename existing variables
+   - Change function signatures
+   - Merge or split calculation functions
+   - Add AI logic or automation
+
+3. YOU MAY:
+   - Move components
+   - Wrap components in new layout containers
+   - Add UI-only state (collapsed/expanded, mobile view)
+   - Add tooltips, labels, grouping
+   - Add responsive layouts
+
+--------------------------------------------------
+NEW NAVIGATION STRUCTURE (MANDATORY)
+--------------------------------------------------
+
+Replace the current top-heavy button navigation with:
+
+DESKTOP:
+- Left sidebar navigation
+
+MOBILE:
+- Bottom navigation bar
+
+Main Navigation Items (ONLY THESE 6):
+1. Dashboard
+2. Create Quote
+3. Quotes
+4. Reports
+5. Masters
+6. Account
+
+REMOVE from top bar:
+- Paper Settings
+- Fluting Settings
+- Party Profile
+- Business Profile
+- Admin shortcuts
+
+Top bar should contain ONLY:
+- Company name
+- Active business
+- User avatar
+- Help icon
+
+--------------------------------------------------
+MASTERS SECTION (CRITICAL)
+--------------------------------------------------
+
+Create a dedicated “Masters” section.
+
+Masters must contain ALL editable user-controlled settings:
+
+Tabs inside Masters:
+- Paper Master
+- BF & Fluting Settings
+- Ply / Board Presets
+- Conversion & Manufacturing Costs
+- Margin Rules
+- Tax & GST Settings
+- Machine / Threshold Settings
+
+Rules:
+- Masters affect FUTURE quotes only
+- Calculator page must NOT directly edit master data
+- Provide “Reset to Defaults” button where already supported
+- Use existing forms and logic, only relocate them
+
+--------------------------------------------------
+CREATE QUOTE PAGE (STRICT SCOPE)
+--------------------------------------------------
+
+The Create Quote page must:
+- ONLY handle quote creation
+- NOT show master settings
+- NOT expose global configuration
+
+Layout:
+- Step-based or sectioned flow:
+  1. Party selection
+  2. Box dimensions
+  3. Paper / ply selection (from Masters)
+  4. Manufacturing options
+  5. Review & Add to Quote
+
+Right-side analysis panels:
+- Move into a collapsible “Insights” drawer
+- Keep logic unchanged
+
+--------------------------------------------------
+QUOTE ITEMS PAGE (VERY IMPORTANT)
+--------------------------------------------------
+
+Redesign Quote Items UI without changing logic.
+
+DESKTOP:
+- Table layout
+- Sticky top summary bar showing:
+  Subtotal, GST, Grand Total
+- Primary buttons:
+  Save Quote
+  Share (dropdown)
+- Share dropdown must include:
+  WhatsApp, Email, PDF, Excel
+
+COLUMN VISIBILITY:
+- Move “Show Columns” into a
+  ⚙ Display Settings dropdown
+- Provide presets:
+  Simple
+  Detailed
+  Finance
+  Factory
+
+ACTIONS:
+- Replace icon-only actions with:
+  View Details
+  Edit
+  Duplicate
+  Delete
+
+MOBILE:
+- Replace tables with CARD-BASED layout
+- One quote item per card
+- Sticky bottom bar with:
+  Total + Save + Share
+
+--------------------------------------------------
+VISUAL DESIGN RULES
+--------------------------------------------------
+
+- White background
+- Light grey cards
+- Soft shadows
+- Rounded corners
+- Minimal borders
+- Clear typography (Inter / system font)
+- Large totals, clear hierarchy
+
+--------------------------------------------------
+RESPONSIVENESS (MANDATORY)
+--------------------------------------------------
+
+- No horizontal scroll on mobile
+- Tables collapse into cards
+- Accordions for long sections
+- Sticky CTAs on mobile
+
+--------------------------------------------------
+WEBSITE (paperboxerp.com) – UI ONLY
+--------------------------------------------------
+
+If modifying the public website:
+- Modern SaaS look
+- AI-first but subtle
+- Pages:
+  Home, Product, Pricing, Testimonials, About, Sign In, Sign Up
+- No backend or auth logic changes
+
+--------------------------------------------------
+FINAL CHECK BEFORE COMPLETING TASK
+--------------------------------------------------
+
+Before marking task complete, verify:
+- All calculations match previous output exactly
+- Same input → same cost → same total
+- No business logic was altered
+- Only UI, layout, and navigation changed
+
+If ANY logic change is required, STOP and ASK.
