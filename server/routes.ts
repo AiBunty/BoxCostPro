@@ -2,8 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import bcrypt from "bcrypt";
-import crypto from "crypto";
+import { supabaseAuthMiddleware, requireSupabaseAuth, requireOwner as requireSupabaseOwner } from "./supabaseAuth";
 import { z } from "zod";
 import { 
   insertCompanyProfileSchema, 
@@ -25,26 +24,29 @@ import {
   insertBoxSpecVersionSchema
 } from "@shared/schema";
 
-// Email signup validation schema
-const emailSignupSchema = z.object({
-  firstName: z.string().min(1, "Name is required"),
-  companyName: z.string().min(1, "Company name is required"),
-  mobileNo: z.string().min(10, "Valid mobile number is required"),
-  email: z.string().email("Valid email is required"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
-
-const emailLoginSchema = z.object({
-  email: z.string().email("Valid email is required"),
-  password: z.string().min(1, "Password is required"),
-});
+// Combined auth middleware - checks both Supabase JWT and session-based auth
+const combinedAuth = async (req: any, res: Response, next: NextFunction) => {
+  // First check Supabase auth
+  if (req.supabaseUser) {
+    req.userId = req.supabaseUser.id;
+    return next();
+  }
+  
+  // Fall back to session-based auth
+  if (req.user?.claims?.sub) {
+    req.userId = req.user.claims.sub;
+    return next();
+  }
+  
+  return res.status(401).json({ message: "Unauthorized" });
+};
 
 // Owner authorization middleware
 const isOwner = async (req: any, res: Response, next: NextFunction) => {
-  if (!req.user) {
+  const userId = req.userId || req.supabaseUser?.id || req.user?.claims?.sub;
+  if (!userId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  const userId = req.user.claims.sub;
   const user = await storage.getUser(userId);
   if (!user || user.role !== 'owner') {
     return res.status(403).json({ message: "Forbidden: Owner access required" });
@@ -53,174 +55,86 @@ const isOwner = async (req: any, res: Response, next: NextFunction) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup authentication
+  // Setup session-based authentication (for backward compatibility)
   await setupAuth(app);
+  
+  // Add Supabase JWT auth middleware globally
+  app.use(supabaseAuthMiddleware);
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  // Auth routes - unified for both Supabase JWT and session auth
+  app.get('/api/auth/user', combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const user = await storage.getUser(userId);
-      res.json(user);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Also fetch user profile for onboarding status
+      const profile = await storage.getUserProfile(userId);
+      
+      res.json({
+        ...user,
+        profile: profile || null,
+      });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
 
-  // Email Signup Route
-  app.post('/api/auth/signup', async (req: Request, res: Response) => {
-    try {
-      const validatedData = emailSignupSchema.parse(req.body);
-      
-      // Check if email already exists
-      const existingUser = await storage.getUserByEmail(validatedData.email);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
-      }
-      
-      // Hash password
-      const passwordHash = await bcrypt.hash(validatedData.password, 10);
-      
-      // Generate verification token
-      const verificationToken = crypto.randomBytes(32).toString('hex');
-      const tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      
-      // Create user
-      const userId = crypto.randomUUID();
-      const user = await storage.upsertUser({
-        id: userId,
-        email: validatedData.email,
-        firstName: validatedData.firstName,
-        companyName: validatedData.companyName,
-        mobileNo: validatedData.mobileNo,
-        passwordHash,
-        authProvider: 'email',
-        emailVerified: false,
-        verificationToken,
-        verificationTokenExpiry: tokenExpiry,
-      });
-      
-      // TODO: In production, send verification email with token link
-      // For development, we'll auto-verify but in production this should be removed
-      // Verification link would be: /api/auth/verify-email/{verificationToken}
-      
-      // Auto-verify for development (remove in production)
-      if (process.env.NODE_ENV === 'development') {
-        await storage.updateUser(userId, { 
-          emailVerified: true,
-          verificationToken: null,
-          verificationTokenExpiry: null
-        });
-      }
-      
-      res.status(201).json({ 
-        message: process.env.NODE_ENV === 'development' 
-          ? "Account created successfully. You can now log in." 
-          : "Account created. Please check your email to verify your account.",
-        userId: user.id,
-        requiresVerification: process.env.NODE_ENV !== 'development'
-      });
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
-      }
-      console.error("Signup error:", error);
-      res.status(500).json({ message: "Failed to create account" });
-    }
+  // Logout route
+  app.post('/api/auth/logout', (req: any, res) => {
+    req.logout(() => {
+      res.json({ message: "Logged out successfully" });
+    });
   });
 
-  // Email Login Route
-  app.post('/api/auth/login', async (req: Request, res: Response) => {
+  // User Profile routes
+  app.get('/api/user-profile', combinedAuth, async (req: any, res) => {
     try {
-      const validatedData = emailLoginSchema.parse(req.body);
+      const userId = req.userId;
+      let profile = await storage.getUserProfile(userId);
       
-      const user = await storage.getUserByEmail(validatedData.email);
-      if (!user) {
-        return res.status(401).json({ message: "Invalid email or password" });
+      // Auto-create profile if missing
+      if (!profile) {
+        profile = await storage.createUserProfile({ userId });
       }
       
-      if (!user.passwordHash) {
-        return res.status(401).json({ message: "Please use Google login for this account" });
-      }
-      
-      const passwordValid = await bcrypt.compare(validatedData.password, user.passwordHash);
-      if (!passwordValid) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-      
-      if (!user.emailVerified) {
-        return res.status(401).json({ message: "Please verify your email first" });
-      }
-      
-      // Create a user session object compatible with Passport/Replit Auth
-      const sessionUser = {
-        claims: { 
-          sub: user.id, 
-          email: user.email,
-          first_name: user.firstName,
-          last_name: user.lastName,
-        },
-        expires_at: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 1 week from now
-      };
-      
-      // Use Passport's login function to establish the session
-      await new Promise<void>((resolve, reject) => {
-        (req as any).login(sessionUser, (err: any) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-      
-      res.json({ 
-        message: "Login successful",
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          companyName: user.companyName,
-        }
-      });
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
-      }
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Login failed" });
-    }
-  });
-
-  // Email Verification Route
-  app.get('/api/auth/verify-email/:token', async (req: Request, res: Response) => {
-    try {
-      const { token } = req.params;
-      
-      const user = await storage.getUserByVerificationToken(token);
-      if (!user) {
-        return res.status(400).json({ message: "Invalid or expired verification token" });
-      }
-      
-      if (user.verificationTokenExpiry && new Date() > user.verificationTokenExpiry) {
-        return res.status(400).json({ message: "Verification token has expired" });
-      }
-      
-      await storage.updateUser(user.id, {
-        emailVerified: true,
-        verificationToken: null,
-        verificationTokenExpiry: null,
-      });
-      
-      res.json({ message: "Email verified successfully" });
+      res.json(profile);
     } catch (error) {
-      console.error("Verification error:", error);
-      res.status(500).json({ message: "Verification failed" });
+      console.error("Error fetching user profile:", error);
+      res.status(500).json({ message: "Failed to fetch user profile" });
+    }
+  });
+
+  const userProfileUpdateSchema = z.object({
+    paperSetupDone: z.boolean().optional(),
+    termsSetupDone: z.boolean().optional(),
+    onboardingCompleted: z.boolean().optional(),
+    preferredCurrency: z.string().optional(),
+    timezone: z.string().optional(),
+  });
+
+  app.patch('/api/user-profile', combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const validatedData = userProfileUpdateSchema.parse(req.body);
+      const profile = await storage.updateUserProfile(userId, validatedData);
+      res.json(profile);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid profile data", errors: error.errors });
+      }
+      console.error("Error updating user profile:", error);
+      res.status(500).json({ message: "Failed to update user profile" });
     }
   });
 
   // Company Profiles (protected, user-scoped)
-  app.get("/api/company-profiles", isAuthenticated, async (req: any, res) => {
+  app.get("/api/company-profiles", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const profiles = await storage.getAllCompanyProfiles(userId);
       res.json(profiles);
     } catch (error) {
@@ -228,9 +142,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/company-profiles/default", isAuthenticated, async (req: any, res) => {
+  app.get("/api/company-profiles/default", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const profile = await storage.getDefaultCompanyProfile(userId);
       if (!profile) {
         return res.status(404).json({ error: "No default profile found" });
@@ -241,7 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/company-profiles/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/company-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
       const profile = await storage.getCompanyProfile(req.params.id);
       if (!profile) {
@@ -253,9 +167,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/company-profiles", isAuthenticated, async (req: any, res) => {
+  app.post("/api/company-profiles", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertCompanyProfileSchema.parse({ ...req.body, userId });
       const profile = await storage.createCompanyProfile(data);
       res.status(201).json(profile);
@@ -264,7 +178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/company-profiles/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/company-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertCompanyProfileSchema.partial().parse(req.body);
       const profile = await storage.updateCompanyProfile(req.params.id, data);
@@ -277,9 +191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/company-profiles/:id/set-default", isAuthenticated, async (req: any, res) => {
+  app.post("/api/company-profiles/:id/set-default", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       await storage.setDefaultCompanyProfile(req.params.id, userId);
       res.json({ success: true });
     } catch (error) {
@@ -288,9 +202,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Party Profiles (protected, user-scoped)
-  app.get("/api/party-profiles", isAuthenticated, async (req: any, res) => {
+  app.get("/api/party-profiles", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const profiles = await storage.getAllPartyProfiles(userId);
       res.json(profiles);
     } catch (error) {
@@ -298,9 +212,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/party-profiles/search", isAuthenticated, async (req: any, res) => {
+  app.get("/api/party-profiles/search", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const search = req.query.q as string || "";
       const profiles = await storage.searchPartyProfiles(userId, search);
       res.json(profiles);
@@ -309,9 +223,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/party-profiles", isAuthenticated, async (req: any, res) => {
+  app.post("/api/party-profiles", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertPartyProfileSchema.parse({ ...req.body, userId });
       const profile = await storage.createPartyProfile(data);
       res.status(201).json(profile);
@@ -320,7 +234,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/party-profiles/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/party-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertPartyProfileSchema.partial().parse(req.body);
       const profile = await storage.updatePartyProfile(req.params.id, data);
@@ -333,7 +247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/party-profiles/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/party-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
       const success = await storage.deletePartyProfile(req.params.id);
       if (!success) {
@@ -346,9 +260,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Quotes (protected, user-scoped)
-  app.get("/api/quotes", isAuthenticated, async (req: any, res) => {
+  app.get("/api/quotes", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const partyName = req.query.partyName as string | undefined;
       const boxName = req.query.boxName as string | undefined;
       const boxSize = req.query.boxSize as string | undefined;
@@ -365,7 +279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/quotes/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/quotes/:id", combinedAuth, async (req: any, res) => {
     try {
       const quote = await storage.getQuote(req.params.id);
       if (!quote) {
@@ -377,9 +291,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/quotes", isAuthenticated, async (req: any, res) => {
+  app.post("/api/quotes", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertQuoteSchema.parse({ ...req.body, userId });
       const quote = await storage.createQuote(data);
       res.status(201).json(quote);
@@ -389,7 +303,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/quotes/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/quotes/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertQuoteSchema.partial().parse(req.body);
       const quote = await storage.updateQuote(req.params.id, data);
@@ -402,7 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/quotes/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/quotes/:id", combinedAuth, async (req: any, res) => {
     try {
       const success = await storage.deleteQuote(req.params.id);
       if (!success) {
@@ -415,9 +329,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Rate Memory (protected, user-scoped)
-  app.get("/api/rate-memory", isAuthenticated, async (req: any, res) => {
+  app.get("/api/rate-memory", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const rates = await storage.getAllRateMemory(userId);
       res.json(rates);
     } catch (error) {
@@ -425,9 +339,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/rate-memory/:bf/:shade", isAuthenticated, async (req: any, res) => {
+  app.get("/api/rate-memory/:bf/:shade", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const rate = await storage.getRateMemoryByKey(req.params.bf, req.params.shade, userId);
       if (!rate) {
         return res.status(404).json({ error: "Rate not found" });
@@ -438,9 +352,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/rate-memory", isAuthenticated, async (req: any, res) => {
+  app.post("/api/rate-memory", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const { bfValue, shade, rate } = req.body;
       const saved = await storage.saveOrUpdateRateMemory(bfValue, shade, rate, userId);
       res.status(201).json(saved);
@@ -450,9 +364,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // App Settings (protected, user-scoped)
-  app.get("/api/settings", isAuthenticated, async (req: any, res) => {
+  app.get("/api/settings", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const settings = await storage.getAppSettings(userId);
       res.json(settings);
     } catch (error) {
@@ -460,9 +374,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/settings", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/settings", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertAppSettingsSchema.partial().parse(req.body);
       const settings = await storage.updateAppSettings(data, userId);
       res.json(settings);
@@ -472,9 +386,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== FLUTING SETTINGS (per user) ==========
-  app.get("/api/fluting-settings", isAuthenticated, async (req: any, res) => {
+  app.get("/api/fluting-settings", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const settings = await storage.getFlutingSettings(userId);
       res.json(settings);
     } catch (error) {
@@ -483,9 +397,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Check if user has configured fluting settings (for first-time setup)
-  app.get("/api/fluting-settings/status", isAuthenticated, async (req: any, res) => {
+  app.get("/api/fluting-settings/status", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const settings = await storage.getFlutingSettings(userId);
       const requiredFluteTypes = ['A', 'B', 'C', 'E', 'F'];
       const configuredTypes = settings.map(s => s.fluteType);
@@ -501,9 +415,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/fluting-settings", isAuthenticated, async (req: any, res) => {
+  app.post("/api/fluting-settings", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertFlutingSettingSchema.parse({ ...req.body, userId });
       const setting = await storage.saveFlutingSetting(data);
       
@@ -519,7 +433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/fluting-settings/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/fluting-settings/:id", combinedAuth, async (req: any, res) => {
     try {
       await storage.deleteFlutingSetting(req.params.id);
       res.json({ success: true });
@@ -529,9 +443,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== PAPER PRICES (per user) ==========
-  app.get("/api/paper-prices", isAuthenticated, async (req: any, res) => {
+  app.get("/api/paper-prices", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const prices = await storage.getPaperPrices(userId);
       res.json(prices);
     } catch (error) {
@@ -539,7 +453,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/paper-prices/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/paper-prices/:id", combinedAuth, async (req: any, res) => {
     try {
       const price = await storage.getPaperPrice(req.params.id);
       if (!price) {
@@ -551,9 +465,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/paper-prices", isAuthenticated, async (req: any, res) => {
+  app.post("/api/paper-prices", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       
       // Ensure user exists in database (handles OIDC test bypass scenarios)
       const existingUser = await storage.getUser(userId);
@@ -576,7 +490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/paper-prices/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/paper-prices/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertPaperPriceSchema.partial().parse(req.body);
       const price = await storage.updatePaperPrice(req.params.id, data);
@@ -589,7 +503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/paper-prices/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/paper-prices/:id", combinedAuth, async (req: any, res) => {
     try {
       await storage.deletePaperPrice(req.params.id);
       res.json({ success: true });
@@ -599,9 +513,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Lookup paper price by GSM/BF/Shade for calculator auto-fill
-  app.get("/api/paper-prices/lookup/:gsm/:bf/:shade", isAuthenticated, async (req: any, res) => {
+  app.get("/api/paper-prices/lookup/:gsm/:bf/:shade", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const gsm = parseInt(req.params.gsm);
       const bf = parseInt(req.params.bf);
       const shade = req.params.shade;
@@ -640,9 +554,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== PAPER PRICING RULES (per user) ==========
-  app.get("/api/paper-pricing-rules", isAuthenticated, async (req: any, res) => {
+  app.get("/api/paper-pricing-rules", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const rules = await storage.getPaperPricingRules(userId);
       res.json(rules || {
         lowGsmLimit: 101,
@@ -657,9 +571,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/paper-pricing-rules", isAuthenticated, async (req: any, res) => {
+  app.post("/api/paper-pricing-rules", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertPaperPricingRulesSchema.parse({ ...req.body, userId });
       const rules = await storage.createOrUpdatePaperPricingRules(data);
       res.status(201).json(rules);
@@ -670,9 +584,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Paper Setup Status (for first-login check)
-  app.get("/api/paper-setup-status", isAuthenticated, async (req: any, res) => {
+  app.get("/api/paper-setup-status", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const status = await storage.getPaperSetupStatus(userId);
       res.json(status);
     } catch (error) {
@@ -709,9 +623,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     { shade: "Bagass (Agro based)", premium: 0 }
   ];
   
-  app.get("/api/paper-bf-prices", isAuthenticated, async (req: any, res) => {
+  app.get("/api/paper-bf-prices", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const prices = await storage.getPaperBfPrices(userId);
       res.json(prices);
     } catch (error) {
@@ -720,9 +634,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Initialize default BF prices for new users
-  app.post("/api/paper-bf-prices/init-defaults", isAuthenticated, async (req: any, res) => {
+  app.post("/api/paper-bf-prices/init-defaults", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       
       // Ensure user exists
       const existingUser = await storage.getUser(userId);
@@ -772,9 +686,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/paper-bf-prices", isAuthenticated, async (req: any, res) => {
+  app.post("/api/paper-bf-prices", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       
       // Ensure user exists
       const existingUser = await storage.getUser(userId);
@@ -805,7 +719,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/paper-bf-prices/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/paper-bf-prices/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertPaperBfPriceSchema.partial().parse(req.body);
       const price = await storage.updatePaperBfPrice(req.params.id, data);
@@ -818,7 +732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/paper-bf-prices/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/paper-bf-prices/:id", combinedAuth, async (req: any, res) => {
     try {
       await storage.deletePaperBfPrice(req.params.id);
       res.json({ success: true });
@@ -828,9 +742,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== SHADE PREMIUMS (per user) ==========
-  app.get("/api/shade-premiums", isAuthenticated, async (req: any, res) => {
+  app.get("/api/shade-premiums", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const premiums = await storage.getShadePremiums(userId);
       res.json(premiums);
     } catch (error) {
@@ -838,9 +752,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/shade-premiums", isAuthenticated, async (req: any, res) => {
+  app.post("/api/shade-premiums", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       
       // Ensure user exists
       const existingUser = await storage.getUser(userId);
@@ -871,7 +785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/shade-premiums/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/shade-premiums/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertShadePremiumSchema.partial().parse(req.body);
       const premium = await storage.updateShadePremium(req.params.id, data);
@@ -884,7 +798,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/shade-premiums/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/shade-premiums/:id", combinedAuth, async (req: any, res) => {
     try {
       await storage.deleteShadePremium(req.params.id);
       res.json({ success: true });
@@ -894,9 +808,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Calculate paper rate with new BF-based pricing
-  app.get("/api/calculate-paper-rate/:bf/:gsm/:shade", isAuthenticated, async (req: any, res) => {
+  app.get("/api/calculate-paper-rate/:bf/:gsm/:shade", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const bf = parseInt(req.params.bf);
       const gsm = parseInt(req.params.gsm);
       const shade = req.params.shade;
@@ -941,9 +855,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== USER QUOTE TERMS (per user) ==========
-  app.get("/api/user-quote-terms", isAuthenticated, async (req: any, res) => {
+  app.get("/api/user-quote-terms", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const terms = await storage.getUserQuoteTerms(userId);
       res.json(terms || {
         validityDays: 7,
@@ -956,9 +870,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/user-quote-terms", isAuthenticated, async (req: any, res) => {
+  app.post("/api/user-quote-terms", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertUserQuoteTermsSchema.parse({ ...req.body, userId });
       const terms = await storage.createOrUpdateUserQuoteTerms(data);
       res.status(201).json(terms);
@@ -968,9 +882,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== BOX SPECIFICATIONS (per user with versioning) ==========
-  app.get("/api/box-specifications", isAuthenticated, async (req: any, res) => {
+  app.get("/api/box-specifications", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const customerId = req.query.customerId as string | undefined;
       const specs = await storage.getBoxSpecifications(userId, customerId);
       res.json(specs);
@@ -979,7 +893,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/box-specifications/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/box-specifications/:id", combinedAuth, async (req: any, res) => {
     try {
       const spec = await storage.getBoxSpecification(req.params.id);
       if (!spec) {
@@ -991,7 +905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/box-specifications/:id/versions", isAuthenticated, async (req: any, res) => {
+  app.get("/api/box-specifications/:id/versions", combinedAuth, async (req: any, res) => {
     try {
       const versions = await storage.getBoxSpecVersions(req.params.id);
       res.json(versions);
@@ -1001,9 +915,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create or update box specification with versioning
-  app.post("/api/box-specifications", isAuthenticated, async (req: any, res) => {
+  app.post("/api/box-specifications", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const { customerId, boxType, length, breadth, height, ply, dataSnapshot, changeNote } = req.body;
       
       // Check for existing spec with same unique combination
@@ -1068,9 +982,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Restore a previous version
-  app.post("/api/box-specifications/:id/restore/:versionNumber", isAuthenticated, async (req: any, res) => {
+  app.post("/api/box-specifications/:id/restore/:versionNumber", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const specId = req.params.id;
       const versionNumber = parseInt(req.params.versionNumber);
       
@@ -1110,9 +1024,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== CHATBOT WIDGETS (per user) ==========
-  app.get("/api/chatbot-widgets", isAuthenticated, async (req: any, res) => {
+  app.get("/api/chatbot-widgets", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const widgets = await storage.getChatbotWidgets(userId);
       res.json(widgets);
     } catch (error) {
@@ -1120,9 +1034,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/chatbot-widgets", isAuthenticated, async (req: any, res) => {
+  app.post("/api/chatbot-widgets", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const data = insertChatbotWidgetSchema.parse({ ...req.body, userId });
       const widget = await storage.createChatbotWidget(data);
       res.status(201).json(widget);
@@ -1131,7 +1045,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/chatbot-widgets/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/chatbot-widgets/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertChatbotWidgetSchema.partial().parse(req.body);
       const widget = await storage.updateChatbotWidget(req.params.id, data);
@@ -1144,7 +1058,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/chatbot-widgets/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/chatbot-widgets/:id", combinedAuth, async (req: any, res) => {
     try {
       await storage.deleteChatbotWidget(req.params.id);
       res.json({ success: true });
@@ -1351,9 +1265,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========== RAZORPAY INTEGRATION ==========
-  app.post("/api/payments/create-order", isAuthenticated, async (req: any, res) => {
+  app.post("/api/payments/create-order", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const { planId, billingCycle, couponCode } = req.body;
       
       const plan = await storage.getSubscriptionPlan(planId);
@@ -1396,9 +1310,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/payments/verify", isAuthenticated, async (req: any, res) => {
+  app.post("/api/payments/verify", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const { transactionId, razorpayPaymentId, razorpayOrderId, razorpaySignature, planId, billingCycle, couponCode } = req.body;
       
       // In production, verify the signature with Razorpay
@@ -1452,9 +1366,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User subscription status
-  app.get("/api/subscription", isAuthenticated, async (req: any, res) => {
+  app.get("/api/subscription", combinedAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const subscription = await storage.getUserSubscription(userId);
       const user = await storage.getUser(userId);
       
