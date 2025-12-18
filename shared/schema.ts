@@ -139,13 +139,29 @@ export const insertPaymentTransactionSchema = createInsertSchema(paymentTransact
 export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
 export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
 
-// Fluting Settings (per user - machine configuration)
+// Flute Settings (per user - technical constants for board costing)
+// Each flute type has a fluting factor (paper weight multiplier) and height (for board thickness)
+export const fluteSettings = pgTable("flute_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  fluteType: varchar("flute_type").notNull(), // 'A', 'B', 'C', 'E', 'F'
+  flutingFactor: real("fluting_factor").notNull(), // Multiplier for paper weight calculation
+  fluteHeightMm: real("flute_height_mm").notNull(), // Flute height in mm for board thickness
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertFluteSettingSchema = createInsertSchema(fluteSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFluteSetting = z.infer<typeof insertFluteSettingSchema>;
+export type FluteSetting = typeof fluteSettings.$inferSelect;
+
+// Legacy flutingSettings table (deprecated - use fluteSettings instead)
 export const flutingSettings = pgTable("fluting_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id),
-  fluteType: varchar("flute_type").notNull(), // 'A', 'B', 'C', 'E', 'F'
+  fluteType: varchar("flute_type").notNull(),
   flutingFactor: real("fluting_factor").notNull(),
-  fluteHeight: real("flute_height"), // optional flute height in mm
+  fluteHeight: real("flute_height"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -223,39 +239,140 @@ export const insertPartyProfileSchema = createInsertSchema(partyProfiles).omit({
 export type InsertPartyProfile = z.infer<typeof insertPartyProfileSchema>;
 export type PartyProfile = typeof partyProfiles.$inferSelect;
 
-// Quotes with embedded items (per user)
+// Quotes master table - stores quote header, points to active version
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id),
+  quoteNo: varchar("quote_no").notNull(), // User-visible quote number (stays constant across versions)
+  partyId: varchar("party_id").references(() => partyProfiles.id),
   partyName: text("party_name").notNull(),
   customerCompany: text("customer_company"),
   customerEmail: text("customer_email"),
   customerMobile: text("customer_mobile"),
+  companyProfileId: varchar("company_profile_id"),
+  activeVersionId: varchar("active_version_id"), // Points to current quote_versions record
+  status: varchar("status").default("draft"), // 'draft', 'sent', 'accepted', 'rejected', 'expired'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertQuoteSchema = createInsertSchema(quotes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertQuote = z.infer<typeof insertQuoteSchema>;
+export type Quote = typeof quotes.$inferSelect;
+
+// Quote versions - every edit creates a new version, negotiation locks a version
+export const quoteVersions = pgTable("quote_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id).notNull(),
+  versionNo: integer("version_no").notNull().default(1),
+  
+  // Quote details
   paymentTerms: text("payment_terms"),
   deliveryDays: text("delivery_days"),
   transportCharge: real("transport_charge"),
   transportRemark: text("transport_remark"),
-  totalValue: real("total_value").notNull(),
-  items: jsonb("items").notNull(),
-  companyProfileId: varchar("company_profile_id"),
-  termsSnapshot: jsonb("terms_snapshot"), // Immutable snapshot of quote terms at creation
-  paperPricesSnapshot: jsonb("paper_prices_snapshot"), // Snapshot of paper prices used for calculations
-  transportSnapshot: jsonb("transport_snapshot"), // Snapshot of transport settings
-  moqEnabled: boolean("moq_enabled").default(false), // Minimum order quantity enabled
-  moqValue: real("moq_value"), // MOQ amount if enabled
-  paymentType: varchar("payment_type").default("advance"), // 'advance', 'credit', 'partial'
+  moqEnabled: boolean("moq_enabled").default(false),
+  moqValue: real("moq_value"),
+  paymentType: varchar("payment_type").default("advance"),
   advancePercent: integer("advance_percent"),
   creditDays: integer("credit_days"),
   customDeliveryText: text("custom_delivery_text"),
-  quoteNumber: varchar("quote_number"), // Optional user-readable quote number
-  validUntil: timestamp("valid_until"), // Quote validity date
-  status: varchar("status").default("draft"), // 'draft', 'sent', 'accepted', 'rejected', 'expired'
-  createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  validUntil: timestamp("valid_until"),
+  
+  // Pricing
+  subtotal: real("subtotal").notNull(),
+  gstPercent: real("gst_percent").notNull(),
+  gstAmount: real("gst_amount").notNull(),
+  finalTotal: real("final_total").notNull(),
+  
+  // Negotiation fields
+  isNegotiated: boolean("is_negotiated").default(false),
+  negotiationType: varchar("negotiation_type"), // 'flat', 'percentage', null
+  negotiationValue: real("negotiation_value"),
+  isLocked: boolean("is_locked").default(false), // Once negotiated, version is locked
+  
+  // Snapshotted master data (captured at quote creation - CRITICAL)
+  boardThicknessMm: real("board_thickness_mm"),
+  fluteFactorA: real("flute_factor_a"),
+  fluteFactorB: real("flute_factor_b"),
+  fluteFactorC: real("flute_factor_c"),
+  fluteFactorE: real("flute_factor_e"),
+  fluteFactorF: real("flute_factor_f"),
+  fluteHeightA: real("flute_height_a"),
+  fluteHeightB: real("flute_height_b"),
+  fluteHeightC: real("flute_height_c"),
+  fluteHeightE: real("flute_height_e"),
+  fluteHeightF: real("flute_height_f"),
+  
+  // Legacy snapshot fields (for backward compatibility)
+  termsSnapshot: jsonb("terms_snapshot"),
+  paperPricesSnapshot: jsonb("paper_prices_snapshot"),
+  transportSnapshot: jsonb("transport_snapshot"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id),
 });
 
-export const insertQuoteSchema = createInsertSchema(quotes).omit({ id: true, createdAt: true });
-export type InsertQuote = z.infer<typeof insertQuoteSchema>;
-export type Quote = typeof quotes.$inferSelect;
+export const insertQuoteVersionSchema = createInsertSchema(quoteVersions).omit({ id: true, createdAt: true });
+export type InsertQuoteVersion = z.infer<typeof insertQuoteVersionSchema>;
+export type QuoteVersion = typeof quoteVersions.$inferSelect;
+
+// Quote item versions - stores items for each quote version
+export const quoteItemVersions = pgTable("quote_item_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteVersionId: varchar("quote_version_id").references(() => quoteVersions.id).notNull(),
+  itemIndex: integer("item_index").notNull(), // Order of item in quote
+  
+  // Item details
+  itemType: varchar("item_type").notNull(), // 'rsc', 'sheet'
+  boxName: text("box_name").notNull(),
+  boxDescription: text("box_description"),
+  ply: varchar("ply").notNull(),
+  length: real("length").notNull(),
+  width: real("width").notNull(),
+  height: real("height"),
+  quantity: integer("quantity").notNull(),
+  
+  // Calculated dimensions
+  sheetLength: real("sheet_length"),
+  sheetWidth: real("sheet_width"),
+  sheetWeight: real("sheet_weight"),
+  
+  // Pricing (per box)
+  originalCostPerBox: real("original_cost_per_box").notNull(), // Calculated cost before negotiation
+  negotiatedCostPerBox: real("negotiated_cost_per_box"), // Negotiated price (null if not negotiated)
+  finalCostPerBox: real("final_cost_per_box").notNull(), // Final price (negotiated if exists, else original)
+  
+  // Total pricing
+  originalTotalCost: real("original_total_cost").notNull(),
+  negotiatedTotalCost: real("negotiated_total_cost"),
+  finalTotalCost: real("final_total_cost").notNull(),
+  
+  // Full item data snapshot (for detailed breakdowns)
+  itemDataSnapshot: jsonb("item_data_snapshot").notNull(), // Complete QuoteItem data
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertQuoteItemVersionSchema = createInsertSchema(quoteItemVersions).omit({ id: true, createdAt: true });
+export type InsertQuoteItemVersion = z.infer<typeof insertQuoteItemVersionSchema>;
+export type QuoteItemVersion = typeof quoteItemVersions.$inferSelect;
+
+// Business Defaults - stores user's default GST% and tax settings
+export const businessDefaults = pgTable("business_defaults", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  defaultGstPercent: real("default_gst_percent").notNull().default(18),
+  gstRegistered: boolean("gst_registered").default(true),
+  gstNumber: varchar("gst_number"),
+  igstApplicable: boolean("igst_applicable").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertBusinessDefaultsSchema = createInsertSchema(businessDefaults).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertBusinessDefaults = z.infer<typeof insertBusinessDefaultsSchema>;
+export type BusinessDefaults = typeof businessDefaults.$inferSelect;
 
 // App Settings (per user)
 export const appSettings = pgTable("app_settings", {
