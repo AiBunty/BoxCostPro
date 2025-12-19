@@ -451,7 +451,13 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
   
-  async getQuotesByPartyId(partyId: string): Promise<Quote[]> {
+  async getQuotesByPartyId(partyId: string, userId?: string): Promise<Quote[]> {
+    if (userId) {
+      return await db.select().from(quotes).where(and(
+        eq(quotes.partyId, partyId),
+        eq(quotes.userId, userId)
+      ));
+    }
     return await db.select().from(quotes).where(eq(quotes.partyId, partyId));
   }
 

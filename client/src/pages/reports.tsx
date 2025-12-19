@@ -501,7 +501,9 @@ export default function Reports() {
           "Remarks": item.remarks || '-',
           "Paper Specification (GSM/BF)": formatPaperSpec(item),
           "Ply": item.ply || '-',
-          "Box Size (L×W×H)": `${item.length || '-'}×${item.width || '-'}×${item.height || '-'}`,
+          "Box Size (L×W×H mm)": item.height 
+            ? `${Math.round(item.length || 0)}×${Math.round(item.width || 0)}×${Math.round(item.height || 0)}`
+            : `${Math.round(item.length || 0)}×${Math.round(item.width || 0)}`,
           "Printing Type": item.printingEnabled ? (item.printType || 'Printed') : 'Plain',
           "Number of Colors": item.printColours || 0,
           "Reel Size / Deckle": item.sheetWidth ? `${item.sheetWidth.toFixed(2)}` : '-',

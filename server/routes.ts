@@ -306,7 +306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/quotes", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const { items, paymentTerms, deliveryDays, transportCharge, transportRemark, totalValue, boardThickness, ...quoteData } = req.body;
+      const { items, paymentTerms, deliveryDays, transportCharge, transportRemark, totalValue, boardThickness, partyId, ...quoteData } = req.body;
       
       // Get flute settings for snapshot
       const fluteSettingsData = await storage.getFluteSettings(userId);
@@ -321,26 +321,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const businessDefaults = await storage.getBusinessDefaults(userId);
       const gstPercent = businessDefaults?.defaultGstPercent || 18;
       
-      // Generate quote number
-      const quoteNo = await storage.generateQuoteNumber(userId);
+      // DUPLICATE DETECTION: Check if a quote with same Party+BoxName+BoxSize exists
+      let existingQuote = null;
+      let isNewVersion = false;
       
-      // Create the quote record
-      const quote = await storage.createQuote({
-        ...quoteData,
-        userId,
-        quoteNo,
-        status: 'draft',
-      });
+      if (partyId && items && items.length > 0) {
+        // Get all existing quotes for this party
+        const existingQuotes = await storage.getQuotesByPartyId(partyId, userId);
+        
+        // For each existing quote, check if any item matches by boxName+dimensions
+        for (const eq of existingQuotes) {
+          if (eq.activeVersionId) {
+            const versionItems = await storage.getQuoteItemVersionsByVersionId(eq.activeVersionId);
+            
+            // Check if any new item matches an existing item
+            for (const newItem of items) {
+              const matchingItem = versionItems.find((vi: any) => {
+                const boxNameMatch = vi.boxName?.toLowerCase() === (newItem.boxName || '').toLowerCase();
+                const lengthMatch = Math.abs((vi.length || 0) - (newItem.length || 0)) < 1; // 1mm tolerance
+                const widthMatch = Math.abs((vi.width || 0) - (newItem.width || 0)) < 1;
+                const heightMatch = !newItem.height || Math.abs((vi.height || 0) - (newItem.height || 0)) < 1;
+                return boxNameMatch && lengthMatch && widthMatch && heightMatch;
+              });
+              
+              if (matchingItem) {
+                existingQuote = eq;
+                isNewVersion = true;
+                break;
+              }
+            }
+            if (existingQuote) break;
+          }
+        }
+      }
+      
+      let quote;
+      let quoteNo: string;
+      
+      if (existingQuote && isNewVersion) {
+        // Use existing quote, will create new version
+        quote = existingQuote;
+        quoteNo = quote.quoteNo;
+      } else {
+        // Generate new quote number and create new quote
+        quoteNo = await storage.generateQuoteNumber(userId);
+        
+        // Create the quote record
+        quote = await storage.createQuote({
+          ...quoteData,
+          partyId,
+          userId,
+          quoteNo,
+          status: 'draft',
+        });
+      }
       
       // Calculate totals
       const subtotal = items?.reduce((sum: number, item: any) => sum + (item.totalValue || 0), 0) || 0;
       const gstAmount = subtotal * (gstPercent / 100);
       const finalTotal = subtotal + gstAmount + (transportCharge || 0);
       
-      // Create initial quote version with snapshots
+      // Get next version number (1 for new quotes, next number for existing)
+      const versionNo = isNewVersion ? await storage.getNextVersionNumber(quote.id) : 1;
+      
+      // Create quote version with snapshots
       const version = await storage.createQuoteVersion({
         quoteId: quote.id,
-        versionNo: 1,
+        versionNo,
         paymentTerms: paymentTerms || null,
         deliveryDays: deliveryDays || null,
         transportCharge: transportCharge || null,
@@ -418,6 +465,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...quote,
         activeVersionId: version.id,
         quoteNo,
+        versionNo,
+        isNewVersion, // True if this was added to an existing quote
       });
     } catch (error) {
       console.error("Failed to create quote:", error);

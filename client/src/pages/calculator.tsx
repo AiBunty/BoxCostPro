@@ -244,6 +244,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   // Paper Mill and Board Thickness
   const [paperMill, setPaperMill] = useState<string>("");
   const [customBoardThickness, setCustomBoardThickness] = useState<string>("");
+  const [thicknessManualOverride, setThicknessManualOverride] = useState<boolean>(false);
   
   // Update layers when ply changes
   const updateLayersForPly = (newPly: string) => {
@@ -475,8 +476,10 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
     }
   }, [fluteSettingsData]);
 
-  // Auto-calculate board thickness when flute combination or ply changes
+  // Auto-calculate board thickness when flute combination or ply changes (unless manually overridden)
   useEffect(() => {
+    if (thicknessManualOverride) return; // Skip auto-calc if manual override is enabled
+    
     if (ply !== '1') {
       const calculatedThickness = calculateBoardThicknessFromFlutes(fluteCombination, ply, fluteHeights);
       setCustomBoardThickness(calculatedThickness.toFixed(2));
@@ -484,7 +487,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
       // Mono (1-ply) has no flutes - board thickness is just paper thickness
       setCustomBoardThickness('0');
     }
-  }, [fluteCombination, ply, fluteHeights]);
+  }, [fluteCombination, ply, fluteHeights, thicknessManualOverride]);
   
   // Fetch versions for selected spec
   const { data: specVersions = [] } = useQuery<any[]>({
@@ -584,6 +587,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   // Save quote mutation
   const saveQuoteMutation = useMutation({
     mutationFn: async (data: {
+      partyId?: string;
       partyName: string;
       customerCompany: string;
       customerEmail: string;
@@ -597,11 +601,14 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
     }) => {
       return await apiRequest("POST", "/api/quotes", data);
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
+      const isNewVersion = response?.isNewVersion;
       toast({
-        title: "Quote saved",
-        description: "Your quote has been saved successfully.",
+        title: isNewVersion ? "New version created" : "Quote saved",
+        description: isNewVersion 
+          ? `Version ${response?.versionNo} added to existing quote ${response?.quoteNo}`
+          : "Your quote has been saved successfully.",
       });
       setShowSaveDialog(false);
     },
@@ -1326,6 +1333,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
       
       // Strength analysis
       boardThickness: result.boardThickness,
+      thicknessSource: thicknessManualOverride ? 'manual' : 'calculated',
       boxPerimeter: result.boxPerimeter,
       ect: result.ect,
       bct: result.bct,
@@ -1530,6 +1538,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
     const transportCost = parseFloat(transportCharge) || 0;
     
     saveQuoteMutation.mutate({
+      partyId: selectedPartyProfileId || undefined,
       partyName: partyName,
       customerCompany: customerCompany || "",
       customerEmail: customerEmail || "",
@@ -2378,26 +2387,47 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                     />
                   </div>
                   <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="board-thickness" className="flex items-center gap-1">
+                        Board Thickness (mm)
+                        {thicknessManualOverride && <Badge variant="outline" className="text-xs ml-1">Manual</Badge>}
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Override</span>
+                        <Switch
+                          checked={thicknessManualOverride}
+                          onCheckedChange={(checked) => {
+                            setThicknessManualOverride(checked);
+                            if (!checked) {
+                              // Reset to calculated value when disabling override
+                              const calc = calculateBoardThicknessFromFlutes(fluteCombination, ply, fluteHeights);
+                              setCustomBoardThickness(calc.toFixed(2));
+                            }
+                          }}
+                          data-testid="switch-thickness-override"
+                        />
+                      </div>
+                    </div>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div>
-                          <Label htmlFor="board-thickness" className="flex items-center gap-1">
-                            Board Thickness (mm)
-                            <Info className="w-3 h-3 text-muted-foreground" />
-                          </Label>
                           <Input
                             id="board-thickness"
-                            type="text"
+                            type="number"
+                            step="0.1"
                             value={customBoardThickness}
-                            readOnly
-                            className="bg-muted cursor-default"
+                            onChange={(e) => setCustomBoardThickness(e.target.value)}
+                            readOnly={!thicknessManualOverride}
+                            className={thicknessManualOverride ? "" : "bg-muted cursor-default"}
                             data-testid="input-board-thickness"
                           />
                         </div>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="max-w-xs">
                         <p className="text-xs">
-                          Auto-calculated: sum of flute heights ({fluteCombination.split('').map(f => `${f}: ${fluteHeights[f]?.toFixed(1) || '?'}mm`).join(' + ')})
+                          {thicknessManualOverride 
+                            ? "Manual override: enter your custom board thickness"
+                            : `Auto-calculated: sum of flute heights (${fluteCombination.split('').map(f => `${f}: ${fluteHeights[f]?.toFixed(1) || '?'}mm`).join(' + ')})`}
                         </p>
                       </TooltipContent>
                     </Tooltip>
@@ -3449,9 +3479,12 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                                 </span>
                               </TableCell>
                               <TableCell className="text-sm" data-testid={`text-item-size-${index}`}>
-                                {item.type === 'rsc' 
-                                  ? `${item.length}×${item.width}×${item.height || 0}` 
-                                  : `${item.length}×${item.width}`}
+                                <div className="whitespace-nowrap">
+                                  {item.type === 'rsc' 
+                                    ? `${Math.round(item.length)}×${Math.round(item.width)}×${Math.round(item.height || 0)}` 
+                                    : `${Math.round(item.length)}×${Math.round(item.width)}`}
+                                  <span className="text-muted-foreground ml-1">mm</span>
+                                </div>
                               </TableCell>
                               <TableCell data-testid={`text-item-ply-${index}`}>{item.ply}-Ply</TableCell>
                               <TableCell className="text-right" data-testid={`text-item-qty-${index}`}>{item.quantity.toLocaleString()}</TableCell>
@@ -4218,53 +4251,125 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                 </div>
                 
                 {selectedSpecId && (
-                  <div className="space-y-2">
-                    <Label>Version History</Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Version History</Label>
+                      <span className="text-xs text-muted-foreground">{specVersions.length} version(s)</span>
+                    </div>
                     {specVersions.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No versions found</p>
                     ) : (
-                      <div className="border rounded-md divide-y">
-                        {specVersions.map((version: any) => (
-                          <div key={version.id} className="p-3 flex items-center justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="secondary">v{version.versionNumber}</Badge>
-                                <span className="text-sm text-muted-foreground">
-                                  {new Date(version.editedAt).toLocaleDateString('en-IN', {
-                                    day: 'numeric',
-                                    month: 'short',
-                                    year: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
-                                </span>
+                      <div className="border rounded-md divide-y max-h-80 overflow-y-auto">
+                        {[...specVersions].reverse().map((version: any, idx: number) => {
+                          const isLatest = idx === 0;
+                          const snapshot = version.dataSnapshot || {};
+                          const prevVersion = idx < specVersions.length - 1 ? [...specVersions].reverse()[idx + 1] : null;
+                          const prevSnapshot = prevVersion?.dataSnapshot || {};
+                          const priceChange = prevSnapshot.paperCost 
+                            ? ((snapshot.paperCost || 0) - (prevSnapshot.paperCost || 0))
+                            : null;
+                          
+                          return (
+                            <div key={version.id} className={`p-3 ${isLatest ? 'bg-muted/30' : ''}`}>
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Badge variant={isLatest ? "default" : "secondary"}>
+                                      v{version.versionNumber}
+                                    </Badge>
+                                    {isLatest && (
+                                      <Badge variant="outline" className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
+                                        Current
+                                      </Badge>
+                                    )}
+                                    <span className="text-xs text-muted-foreground">
+                                      {new Date(version.editedAt).toLocaleDateString('en-IN', {
+                                        day: 'numeric',
+                                        month: 'short',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Show key specs from snapshot */}
+                                  {snapshot && (
+                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                      {snapshot.ply && <span>{snapshot.ply}-Ply</span>}
+                                      {snapshot.fluteCombination && <span>Flute: {snapshot.fluteCombination}</span>}
+                                      {snapshot.paperCost && (
+                                        <span className="flex items-center gap-1">
+                                          Paper: ₹{parseFloat(snapshot.paperCost).toFixed(2)}
+                                          {priceChange !== null && priceChange !== 0 && (
+                                            <span className={priceChange > 0 ? 'text-red-500' : 'text-green-500'}>
+                                              ({priceChange > 0 ? '+' : ''}{priceChange.toFixed(2)})
+                                            </span>
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {version.changeNote && (
+                                    <p className="text-sm text-muted-foreground mt-1 italic">
+                                      "{version.changeNote}"
+                                    </p>
+                                  )}
+                                </div>
+                                
+                                <div className="flex items-center gap-1">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        onClick={() => {
+                                          toast({
+                                            title: `Version ${version.versionNumber} Details`,
+                                            description: (
+                                              <pre className="text-xs max-h-40 overflow-auto mt-2 p-2 bg-muted rounded">
+                                                {JSON.stringify(snapshot, null, 2)}
+                                              </pre>
+                                            ),
+                                          });
+                                        }}
+                                        data-testid={`button-view-v${version.versionNumber}`}
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>View snapshot details</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  
+                                  {!isLatest && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="icon"
+                                          variant="outline"
+                                          onClick={() => restoreVersionMutation.mutate({ 
+                                            specId: selectedSpecId, 
+                                            versionNumber: version.versionNumber 
+                                          })}
+                                          disabled={restoreVersionMutation.isPending}
+                                          data-testid={`button-restore-v${version.versionNumber}`}
+                                        >
+                                          <RotateCcw className="w-4 h-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Restore to this version</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                </div>
                               </div>
-                              {version.changeNote && (
-                                <p className="text-sm text-muted-foreground mt-1">{version.changeNote}</p>
-                              )}
                             </div>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => restoreVersionMutation.mutate({ 
-                                    specId: selectedSpecId, 
-                                    versionNumber: version.versionNumber 
-                                  })}
-                                  disabled={restoreVersionMutation.isPending}
-                                  data-testid={`button-restore-v${version.versionNumber}`}
-                                >
-                                  <RotateCcw className="w-4 h-4 mr-1" />
-                                  Restore
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Restore to this version</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

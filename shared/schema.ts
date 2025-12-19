@@ -462,6 +462,7 @@ export const quoteItemSchema = z.object({
   sheetWeight: z.number(),
   
   boardThickness: z.number(),
+  thicknessSource: z.enum(['calculated', 'manual']).optional().default('calculated'),
   boxPerimeter: z.number(),
   ect: z.number(),
   bct: z.number(),
