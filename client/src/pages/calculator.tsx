@@ -1604,12 +1604,6 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                 </Badge>
               )}
               
-              {editingQuoteId && (
-                <Badge variant="outline" className="text-sm py-1 px-3">
-                  Editing Quote
-                </Badge>
-              )}
-              
               {(user as any)?.role === 'owner' && (
                 <Link href="/admin">
                   <Button variant="outline" size="sm" data-testid="button-admin-panel">
