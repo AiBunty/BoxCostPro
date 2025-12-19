@@ -227,6 +227,7 @@ export const partyProfiles = pgTable("party_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id),
   personName: text("person_name").notNull(),
+  designation: text("designation"),
   companyName: text("company_name"),
   mobileNo: text("mobile_no"),
   email: text("email"),

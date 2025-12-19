@@ -25,6 +25,8 @@ import { FlutingSettings, FLUTE_COMBINATIONS, getFlutingFactorForCombination, ca
 import type { FlutingSetting } from "@shared/schema";
 import brandLogo from "@assets/Untitled_(Invitation_(Square))_(2)_1765696414282.png";
 import { FlutingOnboarding } from "@/components/FlutingOnboarding";
+import { PartySelector } from "@/components/PartySelector";
+import type { PartyProfile } from "@shared/schema";
 import { Link } from "wouter";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -1245,6 +1247,16 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   const totalValue = totalCostPerBox * qty;
   
   const handleAddToQuote = () => {
+    // Guard: Party selection is required before adding to quote
+    if (!selectedPartyProfileId) {
+      toast({
+        title: "Party Required",
+        description: "Please select a party before adding items to a quote.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (!result) {
       toast({
         title: "Error",
@@ -1585,6 +1597,19 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
+              {selectedPartyProfileId && (
+                <Badge variant="secondary" className="text-sm py-1 px-3">
+                  <Users className="w-3 h-3 mr-1" />
+                  {allPartyProfiles.find((p: any) => p.id === selectedPartyProfileId)?.personName || "Party Selected"}
+                </Badge>
+              )}
+              
+              {editingQuoteId && (
+                <Badge variant="outline" className="text-sm py-1 px-3">
+                  Editing Quote
+                </Badge>
+              )}
+              
               {(user as any)?.role === 'owner' && (
                 <Link href="/admin">
                   <Button variant="outline" size="sm" data-testid="button-admin-panel">
@@ -1593,42 +1618,6 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                   </Button>
                 </Link>
               )}
-              
-              <Link href="/reports">
-                <Button variant="outline" size="sm" data-testid="button-reports">
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Reports
-                </Button>
-              </Link>
-              
-              <FlutingSettings onSettingsChange={setFluteSettings} />
-              
-              <Link href="/paper-setup">
-                <Button variant="outline" size="sm" data-testid="button-paper-settings">
-                  <FileText className="w-4 h-4 mr-2" />
-                  Paper Settings
-                </Button>
-              </Link>
-              
-              {allCompanyProfiles.length > 0 && (
-                <Select value={selectedCompanyProfileId} onValueChange={setSelectedCompanyProfileId}>
-                  <SelectTrigger className="w-48" data-testid="select-company-profile">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allCompanyProfiles.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.companyName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              
-              <Link href="/settings">
-                <Button variant="outline" size="sm" data-testid="button-settings">
-                  <User className="w-4 h-4 mr-2" />
-                  My Account
-                </Button>
-              </Link>
               
               <Dialog open={showBusinessProfile} onOpenChange={setShowBusinessProfile}>
                 <DialogTrigger asChild>
@@ -2065,15 +2054,57 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Party Selection Panel - REQUIRED first step */}
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Party Selection {!selectedPartyProfileId && <Badge variant="destructive" className="text-xs">Required</Badge>}
+            </CardTitle>
+            <CardDescription>
+              {selectedPartyProfileId 
+                ? "Party selected. You can now create or edit quotes."
+                : "Please select a party before creating a quote. You can also add a new party inline."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="max-w-md">
+              <PartySelector
+                selectedPartyId={selectedPartyProfileId}
+                onSelect={(party: PartyProfile | null) => {
+                  if (party) {
+                    setSelectedPartyProfileId(party.id);
+                    setPartyName(party.personName);
+                    setCustomerCompany(party.companyName || "");
+                    setCustomerEmail(party.email || "");
+                    setCustomerMobile(party.mobileNo || "");
+                  } else {
+                    setSelectedPartyProfileId("");
+                    setPartyName("");
+                    setCustomerCompany("");
+                    setCustomerEmail("");
+                    setCustomerMobile("");
+                  }
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Calculator content - disabled until party selected */}
+        <fieldset 
+          disabled={!selectedPartyProfileId}
+          className={!selectedPartyProfileId ? "opacity-50 cursor-not-allowed" : ""}
+        >
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "rsc" | "sheet")} className="space-y-6">
               <TabsList className="grid w-full max-w-md grid-cols-2">
-                <TabsTrigger value="rsc" data-testid="tab-rsc">
+                <TabsTrigger value="rsc" data-testid="tab-rsc" disabled={!selectedPartyProfileId}>
                   <Package className="w-4 h-4 mr-2" />
                   RSC Box
                 </TabsTrigger>
-                <TabsTrigger value="sheet" data-testid="tab-sheet">
+                <TabsTrigger value="sheet" data-testid="tab-sheet" disabled={!selectedPartyProfileId}>
                   <FileText className="w-4 h-4 mr-2" />
                   Sheet
                 </TabsTrigger>
@@ -3879,6 +3910,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
             </Card>
           </div>
         </div>
+        </fieldset>
       </main>
       
       {/* Edit Quote Item Dialog */}
