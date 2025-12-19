@@ -437,8 +437,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deletePartyProfile(id: string): Promise<boolean> {
+    // Check if any quotes exist for this party
+    const partyQuotes = await db.select({ id: quotes.id })
+      .from(quotes)
+      .where(eq(quotes.partyId, id))
+      .limit(1);
+    
+    if (partyQuotes.length > 0) {
+      throw new Error("PARTY_HAS_QUOTES");
+    }
+    
     const result = await db.delete(partyProfiles).where(eq(partyProfiles.id, id));
     return true;
+  }
+  
+  async getQuotesByPartyId(partyId: string): Promise<Quote[]> {
+    return await db.select().from(quotes).where(eq(quotes.partyId, partyId));
   }
 
   async searchPartyProfiles(userId: string, search: string): Promise<PartyProfile[]> {

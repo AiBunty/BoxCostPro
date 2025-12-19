@@ -1,0 +1,78 @@
+QUOTE VERSION UX ENHANCEMENTS (SAFE & NON-DESTRUCTIVE)
+
+================================================
+1. NEW VERSION TOAST
+================================================
+
+When user clicks “Save Quote” AND an existing quote exists
+(same Party + Box Name + Box Size):
+
+- Show informational toast:
+  “This will create a new version of the existing quote.”
+
+Rules:
+- Toast only, no modal.
+- Do NOT block save.
+- Auto-dismiss after a few seconds.
+
+================================================
+2. DUPLICATE BOX WARNING
+================================================
+
+Before saving a quote, if an existing quote is found with:
+- Same Party
+- Same Box Name
+- Same Box Size
+
+Show inline warning:
+“A quote already exists for this box. Saving will create a new version.”
+
+Rules:
+- Informational only.
+- Save must still proceed normally.
+
+================================================
+3. VERSION COMPARISON
+================================================
+
+Add version comparison feature:
+
+- Allow selecting two quote versions.
+- Show side-by-side comparison (read-only).
+- Highlight changed values.
+
+Compare fields:
+- Box details
+- Paper summary
+- Manufacturing costs
+- GST
+- Final & negotiated price
+
+Rules:
+- Do NOT allow editing.
+- Do NOT recalculate values.
+
+================================================
+4. VERSION RESTORE
+================================================
+
+Restore behavior:
+
+- Restoring a version must NOT reactivate old version.
+- Create a NEW version using selected version’s data.
+- Mark new version as active.
+
+Show confirmation message:
+“Version restored as a new active version.”
+
+================================================
+STRICT RULES
+================================================
+
+- NEVER overwrite existing versions.
+- NEVER directly activate old versions.
+- All restore/edit actions must create new versions.
+- Do NOT modify costing logic or formulas.
+
+If any requirement is unclear:
+STOP and ASK.

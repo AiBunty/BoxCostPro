@@ -292,6 +292,8 @@ export const quoteVersions = pgTable("quote_versions", {
   isLocked: boolean("is_locked").default(false), // Once negotiated, version is locked
   
   // Snapshotted master data (captured at quote creation - CRITICAL)
+  partySnapshot: jsonb("party_snapshot"), // Party details snapshot at quote creation time
+  thicknessSource: varchar("thickness_source").default("auto"), // 'auto' or 'manual' - tracks if user overrode calculated thickness
   boardThicknessMm: real("board_thickness_mm"),
   fluteFactorA: real("flute_factor_a"),
   fluteFactorB: real("flute_factor_b"),

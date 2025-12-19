@@ -1,0 +1,97 @@
+CREATE QUOTE – PARTY FIRST LOGIC (MANDATORY)
+
+Fix Create Quote flow so that Party selection/creation is the FIRST required step.
+
+================================================
+STEP 1: PARTY SELECTION (REQUIRED)
+================================================
+
+When user clicks “Create Quote”:
+
+- Show Party input immediately.
+- Calculator MUST remain disabled until a party is selected.
+- Do NOT allow quote creation without party.
+
+================================================
+PARTY INPUT UI
+================================================
+
+Party input must be a searchable dropdown.
+
+Rules:
+- Load existing parties instantly from database.
+- Support search by:
+  - Party Name
+  - Company Name
+  - Mobile Number
+- Deleted parties must not appear.
+
+================================================
+PARTY MANAGEMENT (INLINE)
+================================================
+
+From the same dropdown/dialog, user must be able to:
+
+- Select existing party
+- Add new party
+- Edit party
+- Delete party (rule-based)
+
+NO navigation to separate pages.
+
+================================================
+ADD / EDIT PARTY FORM
+================================================
+
+Fields:
+- Name (required)
+- Designation
+- Company Name
+- Email
+- Mobile Number (required)
+- GST Number
+- Address
+
+Rules:
+- Validate email and mobile.
+- Save to database instantly.
+- After save:
+  - Party must be auto-selected
+  - Calculator must unlock
+
+================================================
+CALCULATOR BEHAVIOR
+================================================
+
+- Calculator inputs must be disabled until party is selected.
+- Once selected:
+  - Calculator works normally
+  - Party name is shown at top of quote
+
+================================================
+SAVE QUOTE – PARTY SNAPSHOT
+================================================
+
+When saving a quote:
+- Snapshot party details into quote_version.
+- Editing party later must NOT affect existing quotes.
+- Party must be locked for that quote version.
+
+================================================
+DELETE PARTY RULE
+================================================
+
+- Party cannot be deleted if any quote exists.
+- If attempted, show:
+  “Please delete all related quotes first.”
+
+================================================
+STRICT RULES
+================================================
+
+- Do NOT allow quote save without party.
+- Do NOT allow calculator usage without party.
+- Do NOT modify costing or negotiation logic.
+
+If ANY rule is unclear:
+STOP and ASK.

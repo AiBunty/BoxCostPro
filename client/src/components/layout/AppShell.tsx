@@ -13,7 +13,6 @@ import {
   LogOut,
   Package,
   Building2,
-  Upload,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -301,34 +300,18 @@ export function AppShell({ children }: AppShellProps) {
                 <TooltipContent>Help & Support</TooltipContent>
               </Tooltip>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-                    <Avatar className="h-7 w-7">
-                      <AvatarImage src={user?.profileImageUrl || undefined} />
-                      <AvatarFallback className="text-xs">{getInitials()}</AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <div className="px-2 py-1.5">
-                    <p className="text-sm font-medium">{user?.firstName} {user?.lastName}</p>
-                    <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <Link href="/account">
-                    <DropdownMenuItem>
-                      <User className="mr-2 h-4 w-4" />
-                      Account Settings
-                    </DropdownMenuItem>
-                  </Link>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={signOut}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Avatar className="h-7 w-7 cursor-default">
+                    <AvatarImage src={user?.profileImageUrl || undefined} />
+                    <AvatarFallback className="text-xs">{getInitials()}</AvatarFallback>
+                  </Avatar>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="font-medium">{user?.firstName} {user?.lastName}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </header>

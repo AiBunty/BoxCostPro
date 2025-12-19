@@ -254,7 +254,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Profile not found" });
       }
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "PARTY_HAS_QUOTES") {
+        return res.status(409).json({ 
+          error: "Cannot delete party with existing quotes. Please delete all related quotes first." 
+        });
+      }
       res.status(500).json({ error: "Failed to delete party profile" });
     }
   });
