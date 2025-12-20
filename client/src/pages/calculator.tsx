@@ -2970,10 +2970,17 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
             
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Manufacturing Costs</CardTitle>
-                    <CardDescription>Toggle options to enable cost sections</CardDescription>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <CardTitle className="flex items-center gap-2">
+                      Manufacturing Costs
+                      {(printingEnabled || laminationEnabled || dieEnabled || punchingEnabled || varnishEnabled) && (
+                        <Badge variant="default" className="ml-2">
+                          ₹{(mfgCosts.printing + mfgCosts.lamination + mfgCosts.die + mfgCosts.punching + mfgCosts.varnish).toFixed(2)}/pc
+                        </Badge>
+                      )}
+                    </CardTitle>
+                    <CardDescription>Add printing, lamination, and finishing costs</CardDescription>
                   </div>
                   <Button
                     variant="ghost"
@@ -2982,14 +2989,16 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                     data-testid="button-toggle-mfg-costs"
                   >
                     <ChevronDown className={`w-4 h-4 transition-transform ${showMfgCosts ? '' : '-rotate-90'}`} />
-                    {showMfgCosts ? 'Collapse' : 'Expand'}
+                    {showMfgCosts ? 'Hide' : 'Show'}
                   </Button>
                 </div>
               </CardHeader>
               {showMfgCosts && (
               <CardContent className="space-y-4">
+                {/* Surface Treatments */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Surface Treatments</p>
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover-elevate">
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="printing-toggle"
@@ -2997,6 +3006,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                         onCheckedChange={(checked) => setPrintingEnabled(checked === true)}
                         data-testid="checkbox-printing-enabled"
                       />
+                      <Palette className="w-4 h-4 text-muted-foreground" />
                       <Label htmlFor="printing-toggle" className="font-medium cursor-pointer">
                         Printing {printingEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.printing.toFixed(2)}</Badge>}
                       </Label>
@@ -3066,10 +3076,8 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                       </div>
                     </div>
                   )}
-                </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover-elevate">
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="lamination-toggle"
@@ -3077,6 +3085,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                         onCheckedChange={(checked) => setLaminationEnabled(checked === true)}
                         data-testid="checkbox-lamination-enabled"
                       />
+                      <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
                       <Label htmlFor="lamination-toggle" className="font-medium cursor-pointer">
                         Lamination {laminationEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.lamination.toFixed(2)}</Badge>}
                       </Label>
@@ -3139,8 +3148,10 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                   )}
                 </div>
 
+                {/* Tooling & Finishing */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tooling & Finishing</p>
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover-elevate">
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="die-toggle"
@@ -3148,6 +3159,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                         onCheckedChange={(checked) => setDieEnabled(checked === true)}
                         data-testid="checkbox-die-enabled"
                       />
+                      <Package className="w-4 h-4 text-muted-foreground" />
                       <Label htmlFor="die-toggle" className="font-medium cursor-pointer">
                         Die Cost {dieEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.die.toFixed(2)}</Badge>}
                       </Label>
@@ -3176,10 +3188,8 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                       </div>
                     </div>
                   )}
-                </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover-elevate">
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="punching-toggle"
@@ -3187,6 +3197,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                         onCheckedChange={(checked) => setPunchingEnabled(checked === true)}
                         data-testid="checkbox-punching-enabled"
                       />
+                      <Settings className="w-4 h-4 text-muted-foreground" />
                       <Label htmlFor="punching-toggle" className="font-medium cursor-pointer">
                         Punching {punchingEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.punching.toFixed(2)}</Badge>}
                       </Label>
@@ -3206,10 +3217,8 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                       </div>
                     </div>
                   )}
-                </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover-elevate">
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="varnish-toggle"
@@ -3217,6 +3226,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                         onCheckedChange={(checked) => setVarnishEnabled(checked === true)}
                         data-testid="checkbox-varnish-enabled"
                       />
+                      <Tag className="w-4 h-4 text-muted-foreground" />
                       <Label htmlFor="varnish-toggle" className="font-medium cursor-pointer">
                         Varnish {varnishEnabled && <Badge variant="secondary" className="ml-2">₹{mfgCosts.varnish.toFixed(2)}</Badge>}
                       </Label>
