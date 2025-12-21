@@ -468,9 +468,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         versionNo,
         isNewVersion, // True if this was added to an existing quote
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to create quote:", error);
-      res.status(400).json({ error: "Invalid quote data" });
+      console.error("Error details:", error?.message || 'Unknown error');
+      console.error("Error stack:", error?.stack || 'No stack trace');
+      res.status(400).json({ error: error?.message || "Invalid quote data" });
     }
   });
 
