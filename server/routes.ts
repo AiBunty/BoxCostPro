@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { supabaseAuthMiddleware, requireSupabaseAuth, requireOwner as requireSupabaseOwner } from "./supabaseAuth";
+import { supabaseAuthMiddleware, requireSupabaseAuth, requireOwner as requireSupabaseOwner, requireAdmin, requireSupportAgent, requireSupportManager, requireSuperAdmin, hasRoleLevel } from "./supabaseAuth";
 import { z } from "zod";
 import { 
   insertCompanyProfileSchema, 
@@ -21,7 +21,10 @@ import {
   insertPaperPricingRulesSchema,
   insertUserQuoteTermsSchema,
   insertBoxSpecificationSchema,
-  insertBoxSpecVersionSchema
+  insertBoxSpecVersionSchema,
+  insertOnboardingStatusSchema,
+  insertSupportTicketSchema,
+  insertSupportMessageSchema
 } from "@shared/schema";
 
 // Combined auth middleware - checks both Supabase JWT and session-based auth
@@ -2004,6 +2007,447 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to validate coupon" });
+    }
+  });
+
+  // ==================== ONBOARDING STATUS ROUTES ====================
+  
+  // Get current user's onboarding status
+  app.get("/api/onboarding/status", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      let status = await storage.getOnboardingStatus(userId);
+      
+      // If no status exists, create one
+      if (!status) {
+        status = await storage.createOnboardingStatus({ userId });
+      }
+      
+      res.json(status);
+    } catch (error) {
+      console.error("Error fetching onboarding status:", error);
+      res.status(500).json({ error: "Failed to fetch onboarding status" });
+    }
+  });
+  
+  // Update onboarding progress
+  app.patch("/api/onboarding/status", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const updates = req.body;
+      
+      // Ensure onboarding status exists
+      let status = await storage.getOnboardingStatus(userId);
+      if (!status) {
+        status = await storage.createOnboardingStatus({ userId, ...updates });
+      } else {
+        status = await storage.updateOnboardingStatus(userId, updates);
+      }
+      
+      res.json(status);
+    } catch (error) {
+      console.error("Error updating onboarding status:", error);
+      res.status(500).json({ error: "Failed to update onboarding status" });
+    }
+  });
+  
+  // Submit for admin verification
+  app.post("/api/onboarding/submit-for-verification", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const status = await storage.getOnboardingStatus(userId);
+      
+      if (!status) {
+        return res.status(400).json({ error: "Please complete onboarding first" });
+      }
+      
+      // Check if all onboarding steps are complete
+      if (!status.businessProfileDone || !status.paperSetupDone || !status.fluteSetupDone || 
+          !status.taxSetupDone || !status.termsSetupDone) {
+        return res.status(400).json({ 
+          error: "Please complete all onboarding steps before submitting for verification",
+          missingSteps: {
+            businessProfile: !status.businessProfileDone,
+            paperSetup: !status.paperSetupDone,
+            fluteSetup: !status.fluteSetupDone,
+            taxSetup: !status.taxSetupDone,
+            termsSetup: !status.termsSetupDone
+          }
+        });
+      }
+      
+      const updatedStatus = await storage.submitForVerification(userId);
+      res.json(updatedStatus);
+    } catch (error) {
+      console.error("Error submitting for verification:", error);
+      res.status(500).json({ error: "Failed to submit for verification" });
+    }
+  });
+  
+  // ==================== ADMIN VERIFICATION ROUTES ====================
+  
+  // Get admin stats (admin+)
+  app.get("/api/admin/stats", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const stats = await storage.getAdminStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).json({ error: "Failed to fetch admin stats" });
+    }
+  });
+  
+  // Get all pending verifications (admin+)
+  app.get("/api/admin/verifications/pending", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const pending = await storage.getPendingVerifications();
+      
+      // Enrich with user details
+      const enrichedPending = await Promise.all(pending.map(async (status) => {
+        const user = await storage.getUser(status.userId);
+        const company = await storage.getDefaultCompanyProfile(status.userId);
+        return { ...status, user, company };
+      }));
+      
+      res.json(enrichedPending);
+    } catch (error) {
+      console.error("Error fetching pending verifications:", error);
+      res.status(500).json({ error: "Failed to fetch pending verifications" });
+    }
+  });
+  
+  // Get all onboarding statuses (admin+)
+  app.get("/api/admin/onboarding", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const statuses = await storage.getAllOnboardingStatuses();
+      
+      // Enrich with user details
+      const enrichedStatuses = await Promise.all(statuses.map(async (status) => {
+        const user = await storage.getUser(status.userId);
+        const company = await storage.getDefaultCompanyProfile(status.userId);
+        return { ...status, user, company };
+      }));
+      
+      res.json(enrichedStatuses);
+    } catch (error) {
+      console.error("Error fetching onboarding statuses:", error);
+      res.status(500).json({ error: "Failed to fetch onboarding statuses" });
+    }
+  });
+  
+  // Get all users (admin+)
+  app.get("/api/admin/users", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      
+      // Get onboarding status for each user
+      const enrichedUsers = await Promise.all(users.map(async (user) => {
+        const onboardingStatus = await storage.getOnboardingStatus(user.id);
+        const company = await storage.getDefaultCompanyProfile(user.id);
+        return { ...user, onboardingStatus, company };
+      }));
+      
+      res.json(enrichedUsers);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+  
+  // Get user details (admin+)
+  app.get("/api/admin/users/:userId", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const onboardingStatus = await storage.getOnboardingStatus(userId);
+      const company = await storage.getDefaultCompanyProfile(userId);
+      const adminActions = await storage.getAdminActions(userId);
+      
+      res.json({ user, onboardingStatus, company, adminActions });
+    } catch (error) {
+      console.error("Error fetching user details:", error);
+      res.status(500).json({ error: "Failed to fetch user details" });
+    }
+  });
+  
+  // Approve user (admin+)
+  app.post("/api/admin/users/:userId/approve", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const adminUserId = req.userId;
+      
+      const status = await storage.getOnboardingStatus(userId);
+      if (!status) {
+        return res.status(400).json({ error: "User has no onboarding record" });
+      }
+      
+      if (!status.submittedForVerification) {
+        return res.status(400).json({ error: "User has not submitted for verification" });
+      }
+      
+      const updatedStatus = await storage.approveUser(userId, adminUserId);
+      res.json(updatedStatus);
+    } catch (error) {
+      console.error("Error approving user:", error);
+      res.status(500).json({ error: "Failed to approve user" });
+    }
+  });
+  
+  // Reject user (admin+) - requires mandatory remarks
+  app.post("/api/admin/users/:userId/reject", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const { reason } = req.body;
+      const adminUserId = req.userId;
+      
+      if (!reason || reason.trim().length < 10) {
+        return res.status(400).json({ error: "Rejection reason must be at least 10 characters" });
+      }
+      
+      const status = await storage.getOnboardingStatus(userId);
+      if (!status) {
+        return res.status(400).json({ error: "User has no onboarding record" });
+      }
+      
+      const updatedStatus = await storage.rejectUser(userId, adminUserId, reason.trim());
+      res.json(updatedStatus);
+    } catch (error) {
+      console.error("Error rejecting user:", error);
+      res.status(500).json({ error: "Failed to reject user" });
+    }
+  });
+  
+  // Update user role (super_admin only)
+  app.patch("/api/admin/users/:userId/role", combinedAuth, requireSuperAdmin, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const { role } = req.body;
+      const adminUserId = req.userId;
+      
+      const validRoles = ['user', 'support_agent', 'support_manager', 'admin', 'super_admin'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+      
+      // Cannot change own role
+      if (userId === adminUserId) {
+        return res.status(400).json({ error: "Cannot change your own role" });
+      }
+      
+      const updatedUser = await storage.updateUser(userId, { role });
+      
+      // Log the action
+      await storage.createAdminAction({
+        adminUserId,
+        targetUserId: userId,
+        action: 'role_change',
+        remarks: `Role changed to ${role}`
+      });
+      
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      res.status(500).json({ error: "Failed to update user role" });
+    }
+  });
+  
+  // Get admin action history
+  app.get("/api/admin/actions", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const { userId } = req.query;
+      const actions = await storage.getAdminActions(userId as string | undefined);
+      res.json(actions);
+    } catch (error) {
+      console.error("Error fetching admin actions:", error);
+      res.status(500).json({ error: "Failed to fetch admin actions" });
+    }
+  });
+  
+  // ==================== SUPPORT TICKET ROUTES ====================
+  
+  // Create support ticket (authenticated user)
+  app.post("/api/support/tickets", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { subject, description, category, priority } = req.body;
+      
+      if (!subject || subject.trim().length < 5) {
+        return res.status(400).json({ error: "Subject must be at least 5 characters" });
+      }
+      
+      const ticket = await storage.createSupportTicket({
+        userId,
+        subject: subject.trim(),
+        description: description?.trim() || null,
+        category: category || 'general',
+        priority: priority || 'medium'
+      });
+      
+      res.json(ticket);
+    } catch (error) {
+      console.error("Error creating support ticket:", error);
+      res.status(500).json({ error: "Failed to create support ticket" });
+    }
+  });
+  
+  // Get user's tickets
+  app.get("/api/support/tickets/mine", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const tickets = await storage.getSupportTickets(userId);
+      res.json(tickets);
+    } catch (error) {
+      console.error("Error fetching user tickets:", error);
+      res.status(500).json({ error: "Failed to fetch tickets" });
+    }
+  });
+  
+  // Get all tickets (support_agent+)
+  app.get("/api/support/tickets", combinedAuth, requireSupportAgent, async (req: any, res) => {
+    try {
+      const { status } = req.query;
+      const tickets = await storage.getSupportTickets(undefined, status as string | undefined);
+      
+      // Enrich with user details
+      const enrichedTickets = await Promise.all(tickets.map(async (ticket) => {
+        const user = await storage.getUser(ticket.userId);
+        const assignee = ticket.assignedTo ? await storage.getUser(ticket.assignedTo) : null;
+        return { ...ticket, user, assignee };
+      }));
+      
+      res.json(enrichedTickets);
+    } catch (error) {
+      console.error("Error fetching all tickets:", error);
+      res.status(500).json({ error: "Failed to fetch tickets" });
+    }
+  });
+  
+  // Get single ticket
+  app.get("/api/support/tickets/:ticketId", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { ticketId } = req.params;
+      
+      const ticket = await storage.getSupportTicket(ticketId);
+      if (!ticket) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+      
+      // Only ticket owner or support staff can view
+      const isSupportStaff = hasRoleLevel(req.supabaseUser?.role, 'support_agent');
+      if (ticket.userId !== userId && !isSupportStaff) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Get messages - internal messages only for support staff
+      const messages = await storage.getSupportMessages(ticketId, isSupportStaff);
+      const user = await storage.getUser(ticket.userId);
+      const assignee = ticket.assignedTo ? await storage.getUser(ticket.assignedTo) : null;
+      
+      res.json({ ...ticket, messages, user, assignee });
+    } catch (error) {
+      console.error("Error fetching ticket:", error);
+      res.status(500).json({ error: "Failed to fetch ticket" });
+    }
+  });
+  
+  // Add message to ticket
+  app.post("/api/support/tickets/:ticketId/messages", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { ticketId } = req.params;
+      const { message, isInternal } = req.body;
+      
+      if (!message || message.trim().length < 1) {
+        return res.status(400).json({ error: "Message cannot be empty" });
+      }
+      
+      const ticket = await storage.getSupportTicket(ticketId);
+      if (!ticket) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+      
+      const isSupportStaff = hasRoleLevel(req.supabaseUser?.role, 'support_agent');
+      
+      // Only ticket owner or support staff can add messages
+      if (ticket.userId !== userId && !isSupportStaff) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Internal messages only allowed for support staff
+      if (isInternal && !isSupportStaff) {
+        return res.status(403).json({ error: "Internal messages are for support staff only" });
+      }
+      
+      const newMessage = await storage.createSupportMessage({
+        ticketId,
+        senderId: userId,
+        senderType: isSupportStaff ? 'support' : 'user',
+        message: message.trim(),
+        isInternal: isInternal || false
+      });
+      
+      res.json(newMessage);
+    } catch (error) {
+      console.error("Error adding message:", error);
+      res.status(500).json({ error: "Failed to add message" });
+    }
+  });
+  
+  // Assign ticket to agent (support_agent+)
+  app.post("/api/support/tickets/:ticketId/assign", combinedAuth, requireSupportAgent, async (req: any, res) => {
+    try {
+      const { ticketId } = req.params;
+      const { assignedTo } = req.body;
+      const agentId = assignedTo || req.userId; // Default to self-assignment
+      
+      const ticket = await storage.assignSupportTicket(ticketId, agentId);
+      res.json(ticket);
+    } catch (error) {
+      console.error("Error assigning ticket:", error);
+      res.status(500).json({ error: "Failed to assign ticket" });
+    }
+  });
+  
+  // Close ticket (support_agent+)
+  app.post("/api/support/tickets/:ticketId/close", combinedAuth, requireSupportAgent, async (req: any, res) => {
+    try {
+      const { ticketId } = req.params;
+      const { resolutionNote } = req.body;
+      const closedBy = req.userId;
+      
+      if (!resolutionNote || resolutionNote.trim().length < 5) {
+        return res.status(400).json({ error: "Resolution note must be at least 5 characters" });
+      }
+      
+      const ticket = await storage.closeSupportTicket(ticketId, closedBy, resolutionNote.trim());
+      res.json(ticket);
+    } catch (error) {
+      console.error("Error closing ticket:", error);
+      res.status(500).json({ error: "Failed to close ticket" });
+    }
+  });
+  
+  // Escalate ticket (support_manager+)
+  app.post("/api/support/tickets/:ticketId/escalate", combinedAuth, requireSupportManager, async (req: any, res) => {
+    try {
+      const { ticketId } = req.params;
+      const { escalatedTo } = req.body;
+      
+      if (!escalatedTo) {
+        return res.status(400).json({ error: "Must specify who to escalate to" });
+      }
+      
+      const ticket = await storage.escalateSupportTicket(ticketId, escalatedTo);
+      res.json(ticket);
+    } catch (error) {
+      console.error("Error escalating ticket:", error);
+      res.status(500).json({ error: "Failed to escalate ticket" });
     }
   });
 

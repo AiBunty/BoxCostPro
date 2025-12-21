@@ -108,8 +108,50 @@ export function requireOwner(
   if (!req.supabaseUser) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  if (req.supabaseUser.role !== 'owner') {
+  if (req.supabaseUser.role !== 'owner' && req.supabaseUser.role !== 'super_admin') {
     return res.status(403).json({ message: "Forbidden: Owner access required" });
   }
   next();
 }
+
+// Role hierarchy: user < support_agent < support_manager < admin < super_admin
+export const ROLE_LEVELS: Record<string, number> = {
+  'user': 0,
+  'support_agent': 1,
+  'support_manager': 2,
+  'admin': 3,
+  'super_admin': 4,
+  'owner': 4, // Legacy 'owner' maps to super_admin level
+};
+
+export type UserRole = 'user' | 'support_agent' | 'support_manager' | 'admin' | 'super_admin' | 'owner';
+
+export function hasRoleLevel(userRole: string | null, requiredRole: UserRole): boolean {
+  const userLevel = ROLE_LEVELS[userRole || 'user'] || 0;
+  const requiredLevel = ROLE_LEVELS[requiredRole] || 0;
+  return userLevel >= requiredLevel;
+}
+
+export function requireRole(minRole: UserRole) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.supabaseUser) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    if (!hasRoleLevel(req.supabaseUser.role, minRole)) {
+      return res.status(403).json({ 
+        message: `Forbidden: ${minRole} role or higher required`,
+        requiredRole: minRole,
+        currentRole: req.supabaseUser.role || 'user'
+      });
+    }
+    
+    next();
+  };
+}
+
+// Convenience role middleware for common checks
+export const requireSupportAgent = requireRole('support_agent');
+export const requireSupportManager = requireRole('support_manager');
+export const requireAdmin = requireRole('admin');
+export const requireSuperAdmin = requireRole('super_admin');
