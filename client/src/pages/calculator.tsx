@@ -599,9 +599,18 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
       totalValue: number;
       items: QuoteItem[];
     }) => {
-      return await apiRequest("POST", "/api/quotes", data);
+      // ==================== FRONTEND TRACE LOG ====================
+      console.log("QUOTE SAVE FRONTEND - Sending payload:", JSON.stringify(data, null, 2));
+      console.log("QUOTE SAVE FRONTEND - Items count:", data.items.length);
+      console.log("QUOTE SAVE FRONTEND - Total value:", data.totalValue);
+      
+      const response = await apiRequest("POST", "/api/quotes", data);
+      
+      console.log("QUOTE SAVE FRONTEND - Response received:", JSON.stringify(response, null, 2));
+      return response;
     },
     onSuccess: (response: any) => {
+      console.log("QUOTE SAVE FRONTEND - onSuccess triggered:", response);
       queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
       const isNewVersion = response?.isNewVersion;
       toast({
@@ -612,10 +621,12 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
       });
       setShowSaveDialog(false);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("QUOTE SAVE FRONTEND - onError triggered:", error);
+      console.error("QUOTE SAVE FRONTEND - Error message:", error?.message);
       toast({
         title: "Error",
-        description: "Failed to save quote.",
+        description: error?.message || "Failed to save quote.",
         variant: "destructive",
       });
     },
