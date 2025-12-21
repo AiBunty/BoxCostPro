@@ -307,27 +307,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/quotes", combinedAuth, async (req: any, res) => {
+    // ==================== TRACE LOG 1: ENTRY ====================
+    console.log("QUOTE SAVE HIT", JSON.stringify(req.body, null, 2));
+    
     try {
       const userId = req.userId;
       const { items, paymentTerms, deliveryDays, transportCharge, transportRemark, totalValue, boardThickness, partyId, ...quoteData } = req.body;
       
       // VALIDATION: Ensure required fields exist
       if (!partyId) {
-        return res.status(400).json({ error: "Party is required. Please select a customer." });
+        console.log("QUOTE SAVE VALIDATION FAILED: Missing partyId");
+        return res.status(400).json({ success: false, error: "Party is required. Please select a customer." });
       }
       if (!items || items.length === 0) {
-        return res.status(400).json({ error: "At least one item is required." });
+        console.log("QUOTE SAVE VALIDATION FAILED: No items");
+        return res.status(400).json({ success: false, error: "At least one item is required." });
       }
       
       // Validate items have valid qty and rate
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (typeof item.quantity !== 'number' || item.quantity <= 0) {
-          return res.status(400).json({ error: `Item ${i + 1}: Quantity must be a positive number.` });
+          console.log(`QUOTE SAVE VALIDATION FAILED: Item ${i + 1} has invalid quantity`);
+          return res.status(400).json({ success: false, error: `Item ${i + 1}: Quantity must be a positive number.` });
         }
       }
       
-      console.log("[Quote Save] Starting quote save for user:", userId);
+      // ==================== TRACE LOG 2: VALIDATION PASSED ====================
+      console.log("QUOTE PAYLOAD VALID");
+      console.log("[Quote Save] User ID:", userId);
       console.log("[Quote Save] Party ID:", partyId);
       console.log("[Quote Save] Items count:", items.length);
       
@@ -381,13 +389,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let quote;
       let quoteNo: string;
       
+      // ==================== TRACE LOG 3: STARTING TRANSACTION ====================
+      console.log("STARTING QUOTE TRANSACTION");
+      
       if (existingQuote && isNewVersion) {
         // Use existing quote, will create new version
         quote = existingQuote;
         quoteNo = quote.quoteNo;
+        console.log("USING EXISTING QUOTE FOR NEW VERSION:", quote.id);
       } else {
         // Generate new quote number and create new quote
         quoteNo = await storage.generateQuoteNumber(userId);
+        console.log("GENERATED QUOTE NO:", quoteNo);
         
         // Create the quote record
         quote = await storage.createQuote({
@@ -398,6 +411,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: 'draft',
           totalValue: 0, // Initial value, will be updated when version is created
         });
+        
+        // ==================== TRACE LOG 4: QUOTE CREATED ====================
+        console.log("QUOTE CREATED", quote?.id || "UNDEFINED!");
+        if (!quote || !quote.id) {
+          throw new Error("Quote creation failed - no ID returned");
+        }
       }
       
       // Calculate totals
@@ -405,8 +424,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const gstAmount = subtotal * (gstPercent / 100);
       const finalTotal = subtotal + gstAmount + (transportCharge || 0);
       
+      // ==================== TRACE LOG 5: TOTALS CALCULATED ====================
+      console.log("TOTALS", { subtotal, gstAmount, finalTotal, transportCharge: transportCharge || 0 });
+      
       // Get next version number (1 for new quotes, next number for existing)
       const versionNo = isNewVersion ? await storage.getNextVersionNumber(quote.id) : 1;
+      console.log("VERSION NUMBER:", versionNo);
       
       // Create quote version with snapshots
       const version = await storage.createQuoteVersion({
@@ -437,6 +460,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fluteHeightF: fluteHeights['F'] ?? null,
         createdBy: userId,
       });
+      
+      // ==================== TRACE LOG 6: VERSION CREATED ====================
+      console.log("VERSION CREATED", version?.id || "UNDEFINED!");
+      if (!version || !version.id) {
+        throw new Error("Version creation failed - no ID returned");
+      }
       
       // Create quote item versions with full snapshot data
       if (items && items.length > 0) {
@@ -479,22 +508,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         });
         await storage.createQuoteItemVersions(itemVersions);
+        
+        // ==================== TRACE LOG 7: ITEMS SAVED ====================
+        console.log("ITEMS SAVED", itemVersions.length);
       }
       
       // Update quote with active version ID AND calculated totalValue (CRITICAL FIX)
-      await storage.updateQuote(quote.id, { 
+      const updatedQuote = await storage.updateQuote(quote.id, { 
         activeVersionId: version.id,
         totalValue: finalTotal  // This was missing - totalValue was always 0
       });
       
-      console.log("[Quote Save] Quote saved successfully:");
-      console.log("[Quote Save] - Quote ID:", quote.id);
-      console.log("[Quote Save] - Quote No:", quoteNo);
-      console.log("[Quote Save] - Version:", versionNo);
-      console.log("[Quote Save] - Subtotal:", subtotal);
-      console.log("[Quote Save] - GST Amount:", gstAmount);
-      console.log("[Quote Save] - Final Total:", finalTotal);
-      console.log("[Quote Save] - Is New Version:", isNewVersion);
+      // ==================== TRACE LOG 8: QUOTE UPDATED ====================
+      console.log("QUOTE UPDATED WITH TOTAL", { 
+        quoteId: quote.id, 
+        activeVersionId: version.id, 
+        totalValue: finalTotal,
+        updateResult: updatedQuote ? "SUCCESS" : "FAILED"
+      });
+      
+      if (!updatedQuote) {
+        console.error("CRITICAL: Quote update returned undefined!");
+        throw new Error("Failed to update quote with final total");
+      }
+      
+      // ==================== TRACE LOG 9: SUCCESS ====================
+      console.log("QUOTE SAVE SUCCESS", {
+        quoteId: quote.id,
+        quoteNo,
+        versionNo,
+        subtotal,
+        gstAmount,
+        finalTotal,
+        isNewVersion
+      });
       
       // Return clear success response with all info frontend needs
       res.status(201).json({
@@ -507,10 +554,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         activeVersionId: version.id,
       });
     } catch (error: any) {
-      console.error("Failed to create quote:", error);
-      console.error("Error details:", error?.message || 'Unknown error');
-      console.error("Error stack:", error?.stack || 'No stack trace');
-      res.status(400).json({ error: error?.message || "Invalid quote data" });
+      // ==================== HARD FAIL ERROR HANDLING ====================
+      console.error("QUOTE SAVE ERROR", error);
+      console.error("QUOTE SAVE ERROR MESSAGE:", error?.message || 'Unknown error');
+      console.error("QUOTE SAVE ERROR STACK:", error?.stack || 'No stack trace');
+      
+      res.status(500).json({ 
+        success: false, 
+        error: error?.message || "Quote save failed",
+        message: error?.message || "Quote save failed"
+      });
     }
   });
 
