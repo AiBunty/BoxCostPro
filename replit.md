@@ -15,7 +15,9 @@ The frontend is built with React and TypeScript using Vite, featuring a modern U
 *   **Backend**: Node.js with Express and an ESM module format. It provides a RESTful API for company/party profiles, quotes, and admin functionalities. Data validation uses Zod schemas integrated with Drizzle ORM. A storage abstraction (`IStorage`) allows for swappable storage implementations. An owner-only admin control panel manages Subscriptions, Pricing Plans, Coupons, Trial Invites, and Settings (e.g., Razorpay configuration).
 
 ### Feature Specifications
-*   **Costing & Quoting**: Comprehensive RSC box and sheet material cost calculation, detailed paper specifications (GSM, BF, Fluting Factor, RCT, Shade, Rate), and robust quote generation/management. Includes quote duplicate prevention (Party+BoxName+BoxSize with 1mm tolerance creates new versions instead of duplicates), manual board thickness override with source tracking ('calculated' or 'manual'), and dimension unit consistency with "mm" labels across displays.
+*   **Costing & Quoting**: Comprehensive RSC box and sheet material cost calculation, detailed paper specifications (GSM, BF, Fluting Factor, RCT, Shade, Rate), and robust quote generation/management. Includes quote duplicate prevention (Party+BoxName+BoxSize with 1mm tolerance creates new versions instead of duplicates), manual board thickness override with source tracking ('calculated' or 'manual'), and dimension unit consistency with "mm" labels across displays. Quote save properly updates `totalValue` in the database for accurate reporting across all version-creating routes.
+*   **PDF Generation**: Branded quote PDF generation via `GET /api/quotes/:id/pdf` using PDFKit. Includes company header with logo/address/GST, quote details, items table, totals breakdown (subtotal, GST, transport), and payment/delivery terms.
+*   **Version History**: `QuoteVersionHistory.tsx` component displays all quote versions with Active badge, price change indicators (trending up/down), version comparison modal, and ability to view version snapshots including flute factors and terms.
 *   **Profile Management**: Detailed company and customer information management.
 *   **Cost Breakdown**: Detailed per-layer weight and cost analysis, total sheet weight, total KGs for order, and grouped paper combination costs, including burst strength (BS) calculation.
 *   **Admin & Settings**: Subscription, pricing, coupon, trial, payment history, and general owner settings management. User-configurable machine-specific fluting factors, fluting combination selector, and a first-time user onboarding for fluting setup.
@@ -43,3 +45,4 @@ The frontend is built with React and TypeScript using Vite, featuring a modern U
 *   **Font Integration**: Google Fonts CDN (Inter typeface).
 *   **Payment Gateway**: Razorpay (configuration managed via admin settings).
 *   **Excel Handling**: `xlsx` library for Excel import/export.
+*   **PDF Generation**: PDFKit for server-side PDF creation with branded quote documents.
