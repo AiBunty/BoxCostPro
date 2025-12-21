@@ -703,6 +703,181 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generate branded Quote PDF
+  app.get("/api/quotes/:id/pdf", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const quoteId = req.params.id;
+      
+      // Get quote with active version and items
+      const quoteData = await storage.getQuoteWithActiveVersion(quoteId);
+      if (!quoteData) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      
+      // Verify quote belongs to user
+      if (quoteData.quote.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Get business profile
+      const companyProfile = await storage.getCompanyProfile(userId);
+      const businessDefaults = await storage.getBusinessDefaults(userId);
+      
+      // Import PDFKit
+      const PDFDocument = require('pdfkit');
+      const doc = new PDFDocument({ margin: 50 });
+      
+      // Set response headers
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=Quote_${quoteData.quote.quoteNo}.pdf`);
+      
+      // Pipe PDF to response
+      doc.pipe(res);
+      
+      const { quote, version, items } = quoteData;
+      
+      // Header - Company Info
+      doc.fontSize(20).font('Helvetica-Bold')
+         .text(companyProfile?.companyName || 'BoxCost Pro', { align: 'center' });
+      
+      if (companyProfile?.address) {
+        doc.fontSize(10).font('Helvetica')
+           .text(companyProfile.address, { align: 'center' });
+      }
+      if (companyProfile?.phone || companyProfile?.email) {
+        doc.fontSize(10)
+           .text(`${companyProfile?.phone || ''} | ${companyProfile?.email || ''}`, { align: 'center' });
+      }
+      if (companyProfile?.gstNo) {
+        doc.fontSize(10).text(`GSTIN: ${companyProfile.gstNo}`, { align: 'center' });
+      }
+      
+      doc.moveDown(1.5);
+      
+      // Quote Title
+      doc.fontSize(16).font('Helvetica-Bold')
+         .text('QUOTATION', { align: 'center' });
+      doc.moveDown(0.5);
+      
+      // Quote Details Box
+      const leftCol = 50;
+      const rightCol = 350;
+      
+      doc.fontSize(10).font('Helvetica-Bold').text('Quote Details', leftCol);
+      doc.moveDown(0.3);
+      doc.font('Helvetica')
+         .text(`Quote No: ${quote.quoteNo}`, leftCol)
+         .text(`Version: ${version?.versionNo || 1}`, leftCol)
+         .text(`Date: ${new Date(quote.createdAt || Date.now()).toLocaleDateString('en-IN')}`, leftCol);
+      
+      // Party Details
+      doc.font('Helvetica-Bold').text('Bill To:', rightCol, doc.y - 45);
+      doc.font('Helvetica')
+         .text(quote.partyName || 'Customer', rightCol)
+         .text(quote.customerCompany || '', rightCol)
+         .text(quote.customerMobile || '', rightCol);
+      
+      doc.moveDown(1.5);
+      
+      // Items Table Header
+      const tableTop = doc.y;
+      const colWidths = [30, 160, 50, 70, 70, 70];
+      const cols = [50, 80, 240, 290, 360, 430];
+      
+      doc.font('Helvetica-Bold').fontSize(9)
+         .text('Sr.', cols[0], tableTop)
+         .text('Item Description', cols[1], tableTop)
+         .text('Qty', cols[2], tableTop)
+         .text('Rate', cols[3], tableTop)
+         .text('Amount', cols[4], tableTop);
+      
+      // Draw header line
+      doc.moveTo(50, tableTop + 12).lineTo(530, tableTop + 12).stroke();
+      
+      // Items
+      let y = tableTop + 20;
+      items.forEach((item: any, index: number) => {
+        const qty = item.quantity || 0;
+        const rate = item.finalCostPerBox || item.originalCostPerBox || 0;
+        const amount = item.finalTotalCost || (rate * qty);
+        
+        const description = `${item.boxName || 'Box'} - ${item.ply || '5'} Ply | ${item.length || 0}x${item.width || 0}${item.height ? 'x' + item.height : ''} mm`;
+        
+        doc.font('Helvetica').fontSize(9)
+           .text((index + 1).toString(), cols[0], y)
+           .text(description.substring(0, 40), cols[1], y)
+           .text(qty.toString(), cols[2], y)
+           .text(`₹${rate.toFixed(2)}`, cols[3], y)
+           .text(`₹${amount.toFixed(2)}`, cols[4], y);
+        
+        y += 18;
+        
+        // Page break if needed
+        if (y > 700) {
+          doc.addPage();
+          y = 50;
+        }
+      });
+      
+      // Draw line after items
+      doc.moveTo(50, y).lineTo(530, y).stroke();
+      y += 15;
+      
+      // Totals
+      const totalsX = 380;
+      
+      doc.font('Helvetica').fontSize(10)
+         .text('Subtotal:', totalsX, y)
+         .text(`₹${(version?.subtotal || 0).toFixed(2)}`, 480, y, { width: 50, align: 'right' });
+      y += 18;
+      
+      doc.text(`GST @ ${version?.gstPercent || 18}%:`, totalsX, y)
+         .text(`₹${(version?.gstAmount || 0).toFixed(2)}`, 480, y, { width: 50, align: 'right' });
+      y += 18;
+      
+      if (version?.transportCharge) {
+        doc.text('Transport:', totalsX, y)
+           .text(`₹${version.transportCharge.toFixed(2)}`, 480, y, { width: 50, align: 'right' });
+        y += 18;
+      }
+      
+      doc.font('Helvetica-Bold')
+         .text('Grand Total:', totalsX, y)
+         .text(`₹${(version?.finalTotal || 0).toFixed(2)}`, 480, y, { width: 50, align: 'right' });
+      
+      y += 30;
+      
+      // Payment & Delivery Terms
+      if (version?.paymentTerms || version?.deliveryDays) {
+        doc.font('Helvetica-Bold').fontSize(10).text('Terms & Conditions:', 50, y);
+        y += 15;
+        doc.font('Helvetica').fontSize(9);
+        
+        if (version?.paymentTerms) {
+          doc.text(`Payment Terms: ${version.paymentTerms}`, 50, y);
+          y += 12;
+        }
+        if (version?.deliveryDays) {
+          doc.text(`Delivery: ${version.deliveryDays} days`, 50, y);
+          y += 12;
+        }
+      }
+      
+      // Footer
+      doc.fontSize(8).font('Helvetica')
+         .text('Generated by BoxCost Pro', 50, 750, { align: 'center' });
+      
+      doc.end();
+      
+      console.log("[PDF] Generated PDF for Quote:", quote.quoteNo);
+      
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
+
   // Bulk negotiate: Update negotiated prices for multiple items across quotes
   // Creates a new version for each affected quote with negotiated prices
   app.post("/api/quotes/:id/bulk-negotiate", combinedAuth, async (req: any, res) => {
