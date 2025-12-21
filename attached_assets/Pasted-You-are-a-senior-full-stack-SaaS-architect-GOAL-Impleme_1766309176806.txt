@@ -1,0 +1,198 @@
+You are a senior full-stack SaaS architect.
+
+GOAL:
+Implement a STRICT multi-step onboarding flow where a user must:
+1) Complete all business and pricing setup
+2) Submit profile for manual admin verification
+3) Get approved by admin
+ONLY THEN can access Calculator, Quotes, Reports.
+
+CURRENT PROBLEM:
+- Users can access calculator immediately after login
+- Setup data is incomplete
+- No admin approval flow exists
+
+EXPECTED USER FLOW:
+Login →
+Mandatory Setup Wizard →
+Submit for Verification →
+Account Locked →
+Admin Approval →
+Full App Access
+
+--------------------------------------------------
+1) DATABASE DESIGN
+--------------------------------------------------
+
+Create / extend tables:
+
+A) business_profiles
+- id (uuid)
+- user_id (uuid, unique)
+- business_name
+- owner_name
+- mobile
+- email
+- address
+- gst_no
+- logo_url
+- payment_terms (text)
+- delivery_timeline (text)
+- is_completed (boolean)
+- verification_status (enum: pending, approved, rejected)
+- created_at
+
+B) paper_settings
+- id
+- user_id
+- paper_type
+- gsm
+- price_per_kg
+- is_default
+
+C) flute_settings
+- id
+- user_id
+- flute_type (B, C, E, F, BC, etc)
+- bf_value
+- rate
+
+D) tax_settings
+- id
+- user_id
+- gst_percent
+- cgst_percent
+- sgst_percent
+- igst_percent
+
+E) onboarding_status
+- user_id (unique)
+- business_profile_done (boolean)
+- paper_done (boolean)
+- flute_done (boolean)
+- tax_done (boolean)
+- submitted_for_verification (boolean)
+- admin_approved (boolean)
+
+--------------------------------------------------
+2) BACKEND STORAGE
+--------------------------------------------------
+
+Create storage methods:
+- getOnboardingStatus(userId)
+- updateOnboardingStep(userId, step)
+- submitForVerification(userId)
+- approveUser(userId)
+- rejectUser(userId, reason)
+
+--------------------------------------------------
+3) BACKEND ROUTES
+--------------------------------------------------
+
+User APIs:
+- GET /api/onboarding/status
+- POST /api/onboarding/business-profile
+- POST /api/onboarding/paper-settings
+- POST /api/onboarding/flute-settings
+- POST /api/onboarding/tax-settings
+- POST /api/onboarding/submit
+
+Admin APIs:
+- GET /api/admin/pending-verifications
+- POST /api/admin/approve-user
+- POST /api/admin/reject-user
+
+--------------------------------------------------
+4) AUTH & ACCESS MIDDLEWARE (CRITICAL)
+--------------------------------------------------
+
+Create middleware: checkOnboardingAccess
+
+Logic:
+- Fetch onboarding_status
+- IF any setup step incomplete → redirect to /onboarding
+- IF submitted_for_verification = true AND admin_approved = false
+  → return 403 “Awaiting Admin Approval”
+- IF admin_approved = false
+  → block calculator, quotes, reports
+
+Apply middleware to:
+- /calculator
+- /quotes
+- /reports
+- all pricing APIs
+
+--------------------------------------------------
+5) FRONTEND – ONBOARDING WIZARD
+--------------------------------------------------
+
+Create page:
+client/src/pages/onboarding/index.tsx
+
+Wizard Steps (cannot skip):
+1️⃣ Business Profile + Logo Upload
+2️⃣ Paper Price Settings (bulk upload + default)
+3️⃣ Flute Settings
+4️⃣ Tax & GST Settings
+5️⃣ Payment Terms & Delivery Timeline
+6️⃣ Review & Submit for Verification
+
+Rules:
+- Next step disabled until current step is valid
+- Progress indicator
+- Save on each step
+- Allow edit before submit
+
+--------------------------------------------------
+6) SUBMISSION & LOCK
+--------------------------------------------------
+
+On “Submit for Verification”:
+- Lock all forms
+- Set verification_status = pending
+- Show message:
+  “Your account is under review. You’ll be notified after approval.”
+
+--------------------------------------------------
+7) ADMIN PANEL
+--------------------------------------------------
+
+Create Admin Page:
+client/src/pages/admin/verifications.tsx
+
+Features:
+- List pending users
+- View full business profile
+- View paper/flute/tax settings
+- Approve or Reject with reason
+- Audit timestamp
+
+--------------------------------------------------
+8) POST-APPROVAL FLOW
+--------------------------------------------------
+
+After approval:
+- user.admin_approved = true
+- Auto-redirect user to Calculator
+- Show welcome toast:
+  “Your account is approved. You can now start quoting.”
+
+--------------------------------------------------
+9) UX & SECURITY
+--------------------------------------------------
+
+- Prevent URL bypass
+- Prevent API bypass
+- Show clear locked states
+- Log all approval actions
+- Do not expose admin APIs to non-admin users
+
+--------------------------------------------------
+DELIVERABLE
+--------------------------------------------------
+
+- Mandatory onboarding enforced
+- Pricing setup completed before use
+- Admin verification gate working
+- Calculator unlocked ONLY after approval
+- Enterprise-ready SaaS flow

@@ -1,0 +1,211 @@
+You are a senior full-stack SaaS architect working on BoxCostPro.
+
+GOAL:
+Design and implement a professional Admin Control System where:
+- Admin reviews user onboarding data
+- Admin can Approve or Reject applications
+- Rejection requires mandatory remarks via popup
+- Approval / Rejection triggers rich designer emails to users
+- Only approved users can access calculator and core features
+
+The system must be secure, auditable, and enterprise-grade.
+
+==================================================
+1) DATABASE DESIGN
+==================================================
+
+Extend existing onboarding/business tables.
+
+Update table:
+business_profiles OR onboarding_status
+
+Add fields:
+- verification_status (enum: pending, approved, rejected)
+- rejection_reason (text, nullable)
+- approved_at (timestamp, nullable)
+- rejected_at (timestamp, nullable)
+- approved_by (uuid, nullable)
+
+Create table:
+admin_actions
+- id (uuid)
+- admin_user_id
+- target_user_id
+- action (approved / rejected)
+- remarks (text)
+- created_at
+
+==================================================
+2) ADMIN CONTROL PANEL (UI)
+==================================================
+
+Create Admin Layout:
+client/src/pages/admin/layout.tsx
+
+Create Pages:
+
+A) Admin Dashboard
+- Total users
+- Pending approvals
+- Approved users
+- Rejected users
+- New signups (last 7 days)
+
+B) Verification List
+client/src/pages/admin/verifications.tsx
+- Table with:
+  - Business Name
+  - Owner Name
+  - Mobile
+  - Status badge
+  - View Details
+  - Approve / Reject buttons
+
+C) User Detail View
+client/src/pages/admin/user-details.tsx
+Show:
+- Business profile
+- Logo
+- Paper price settings
+- Flute settings
+- Tax & GST settings
+- Payment terms & delivery timeline
+- Onboarding completion checklist
+
+==================================================
+3) APPROVAL FLOW
+==================================================
+
+When Admin clicks "Approve":
+- Show confirmation dialog
+- On confirm:
+  - Set verification_status = approved
+  - Save approved_at timestamp
+  - Save approved_by admin ID
+  - Log admin action
+  - Send approval email
+  - Unlock user access
+
+Admin UX:
+- Toast: "User approved successfully"
+- Status badge updates to APPROVED
+
+==================================================
+4) REJECTION FLOW (MANDATORY POPUP)
+==================================================
+
+When Admin clicks "Reject":
+- Open modal popup (DO NOT reject immediately)
+
+Popup Requirements:
+- Title: "Reject Application"
+- Textarea: "Reason for Rejection" (REQUIRED)
+- Minimum 10 characters
+- Buttons: Cancel / Confirm Rejection
+- Confirm disabled until reason entered
+
+On Confirm:
+- Save rejection_reason
+- Save rejected_at timestamp
+- Set verification_status = rejected
+- Log admin action with remarks
+- Send rejection email with same remarks
+
+Admin UX:
+- Toast: "User rejected and email sent"
+- Status badge updates to REJECTED
+
+==================================================
+5) EMAIL SYSTEM (HTML – DESIGNER STYLE)
+==================================================
+
+Trigger emails AFTER DB update.
+
+A) APPROVAL EMAIL
+Subject:
+🎉 Your BoxCostPro Account Is Approved
+
+Content:
+- Warm greeting
+- Approval confirmation
+- CTA button to dashboard
+- BoxCostPro branding
+- Signature: Team BoxCostPro
+
+B) REJECTION EMAIL
+Subject:
+Action Required: BoxCostPro Account Verification Update
+
+Content:
+- Polite rejection message
+- Highlight rejection remarks in styled box
+- Clear next steps
+- Support email: aibuntysystems@gmail.com
+- Signature: Team BoxCostPro
+
+Email Rules:
+- Inject admin remarks exactly
+- Preserve line breaks
+- Email failure must NOT block approval/rejection
+
+==================================================
+6) BACKEND APIs
+==================================================
+
+Admin APIs:
+- GET /api/admin/verifications
+- GET /api/admin/user/:id
+- POST /api/admin/approve-user
+- POST /api/admin/reject-user
+
+Rules:
+- Admin role required
+- Input validation
+- Try/catch error handling
+
+==================================================
+7) ACCESS CONTROL MIDDLEWARE
+==================================================
+
+Create middleware:
+checkUserApproval
+
+Logic:
+- If verification_status !== approved
+  → block calculator, quotes, reports
+  → show status message
+
+Apply to:
+- /calculator
+- /quotes
+- /reports
+- pricing APIs
+
+==================================================
+8) USER DASHBOARD STATES
+==================================================
+
+User Sees:
+- Pending: "Your account is under review"
+- Rejected: Remarks shown + Edit & Resubmit button
+- Approved: Full access unlocked
+
+==================================================
+9) SECURITY & AUDIT
+==================================================
+
+Rules:
+- Only admins can approve/reject
+- Mandatory remarks for rejection
+- All actions logged
+- No URL or API bypass allowed
+
+==================================================
+DELIVERABLE
+==================================================
+
+- Fully functional Admin Control Panel
+- Approval & Rejection flows enforced
+- Designer emails sent automatically
+- Calculator unlocked ONLY after approval
+- Enterprise-grade BoxCostPro system

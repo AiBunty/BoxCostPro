@@ -1,0 +1,215 @@
+You are a senior ERP architect and full-stack engineer.
+
+GOAL:
+Implement the CORE FOUNDATION of BoxCostPro using ERP-grade practices,
+including database schema, folder structure, RBAC, email templates,
+and SLA-driven support analytics.
+
+====================================================
+1) DATABASE SCHEMA (SQL – FINAL)
+====================================================
+
+-- USERS
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT,
+  role TEXT CHECK (role IN (
+    'USER','SUPPORT_AGENT','SUPPORT_MANAGER','ADMIN','SUPER_ADMIN'
+  )),
+  status TEXT DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- BUSINESS PROFILE & VERIFICATION
+CREATE TABLE business_profiles (
+  id UUID PRIMARY KEY,
+  user_id UUID UNIQUE REFERENCES users(id),
+  business_name TEXT,
+  owner_name TEXT,
+  mobile TEXT,
+  gst_no TEXT,
+  verification_status TEXT CHECK (
+    verification_status IN ('pending','approved','rejected')
+  ) DEFAULT 'pending',
+  rejection_reason TEXT,
+  approved_at TIMESTAMP,
+  rejected_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ADMIN AUDIT LOG
+CREATE TABLE admin_actions (
+  id UUID PRIMARY KEY,
+  admin_user_id UUID REFERENCES users(id),
+  target_user_id UUID REFERENCES users(id),
+  action TEXT,
+  remarks TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- SUPPORT TICKETS
+CREATE TABLE support_tickets (
+  id UUID PRIMARY KEY,
+  ticket_no SERIAL,
+  user_id UUID REFERENCES users(id),
+  subject TEXT,
+  priority TEXT CHECK (priority IN ('low','medium','high')),
+  status TEXT CHECK (
+    status IN ('open','in_progress','waiting','closed')
+  ) DEFAULT 'open',
+  assigned_to UUID REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  closed_at TIMESTAMP
+);
+
+-- SUPPORT MESSAGES
+CREATE TABLE support_messages (
+  id UUID PRIMARY KEY,
+  ticket_id UUID REFERENCES support_tickets(id),
+  sender_type TEXT CHECK (sender_type IN ('user','support','admin')),
+  sender_id UUID REFERENCES users(id),
+  message TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+====================================================
+2) EXACT FOLDER STRUCTURE (MANDATORY)
+====================================================
+
+/apps
+ ├── user-app/
+ │   ├── pages/
+ │   ├── components/
+ │   └── routes.tsx
+ ├── admin-app/
+ │   ├── pages/
+ │   │   ├── dashboard.tsx
+ │   │   ├── verifications.tsx
+ │   │   └── user-details.tsx
+ ├── support-app/
+ │   ├── pages/
+ │   │   ├── tickets.tsx
+ │   │   └── ticket-details.tsx
+
+/backend
+ ├── api/
+ │   ├── admin/
+ │   ├── support/
+ │   └── user/
+ ├── middleware/
+ │   ├── auth.ts
+ │   └── rbac.ts
+ ├── services/
+ │   ├── emailService.ts
+ │   └── slaService.ts
+ ├── templates/
+ │   └── emails/
+ ├── db/
+ │   └── schema.sql
+ └── server.ts
+
+====================================================
+3) RBAC MIDDLEWARE (CODE)
+====================================================
+
+Create middleware/rbac.ts
+
+export const checkRole = (allowedRoles: string[]) => {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access Denied' });
+    }
+    next();
+  };
+};
+
+Usage:
+- User App → USER
+- Support Panel → SUPPORT_AGENT, SUPPORT_MANAGER
+- Admin Panel → ADMIN, SUPER_ADMIN
+
+====================================================
+4) EMAIL TEMPLATE LIBRARY (HTML)
+====================================================
+
+Create /backend/templates/emails/
+
+Templates:
+- approval.html
+- rejection.html
+- ticket-created.html
+- ticket-reply.html
+- ticket-closed.html
+- admin-notification.html
+
+Rules:
+- Use placeholders {{name}}, {{remarks}}, {{ticket_no}}
+- Inline CSS only
+- Brand header + footer in all templates
+- Logo + BoxCostPro colors
+
+EmailService must:
+- Load template
+- Replace placeholders
+- Send via SMTP
+- Fail silently (log error only)
+
+====================================================
+5) SLA & TICKET ANALYTICS
+====================================================
+
+Define SLA Rules:
+- High priority → first reply within 2 hours
+- Medium → 6 hours
+- Low → 24 hours
+
+Create service: slaService.ts
+
+Functions:
+- calculateFirstResponseTime(ticketId)
+- calculateResolutionTime(ticketId)
+- getSlaBreachTickets()
+
+Admin & Support Dashboards show:
+- Avg first response time
+- Avg resolution time
+- SLA breached tickets
+- Agent performance (tickets closed / avg time)
+
+====================================================
+6) ADMIN & SUPPORT ANALYTICS UI
+====================================================
+
+Admin Dashboard:
+- Total tickets
+- SLA breached count
+- Approval turnaround time
+- User lifecycle metrics
+
+Support Dashboard:
+- Assigned tickets
+- SLA countdown timers
+- Escalations
+- Agent workload
+
+====================================================
+7) SECURITY & QUALITY RULES
+====================================================
+
+- Strict RBAC on all APIs
+- No cross-panel access
+- Email failure never blocks logic
+- Ticket + admin actions fully audited
+- Code must be production-ready
+
+====================================================
+DELIVERABLE
+====================================================
+
+- ERP-grade DB schema
+- Clean folder structure
+- Secure RBAC middleware
+- Reusable email templates
+- SLA-driven support analytics
+- Scalable BoxCostPro core system

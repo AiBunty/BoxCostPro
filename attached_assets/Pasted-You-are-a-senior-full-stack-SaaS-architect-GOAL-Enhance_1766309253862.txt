@@ -1,0 +1,168 @@
+You are a senior full-stack SaaS architect.
+
+GOAL:
+Enhance Admin Panel to manage mandatory onboarding & verification
+AND automatically notify admin via email when a new user signs up.
+
+EXISTING SYSTEM:
+- Mandatory onboarding wizard exists
+- Admin approval gate exists
+- Calculator access is locked until approval
+
+--------------------------------------------------
+1) ADMIN PANEL – STRUCTURAL CHANGES
+--------------------------------------------------
+
+Update Admin Panel to support onboarding & verification lifecycle.
+
+Create / Update Admin Pages:
+
+A) Admin Dashboard
+client/src/pages/admin/dashboard.tsx
+
+Widgets:
+- Total users
+- Pending verification count
+- Approved users
+- Rejected users
+- New signups (last 7 days)
+
+B) Pending Verifications
+client/src/pages/admin/verifications.tsx
+
+Enhancements:
+- Status badges (Setup Incomplete / Pending / Approved / Rejected)
+- Filters by status
+- Search by business name / mobile / email
+
+--------------------------------------------------
+2) ADMIN USER DETAIL VIEW
+--------------------------------------------------
+
+Create:
+client/src/pages/admin/user-details.tsx
+
+Show:
+- Business Profile
+- Logo
+- Paper price settings
+- Flute settings
+- Tax & GST configuration
+- Payment terms
+- Delivery timeline
+- Onboarding step completion checklist
+
+Actions:
+- Approve
+- Reject (mandatory rejection reason)
+- Request Changes (optional future use)
+
+--------------------------------------------------
+3) ADMIN ACTION LOGGING
+--------------------------------------------------
+
+Create table:
+admin_actions
+
+Fields:
+- id
+- admin_user_id
+- target_user_id
+- action (approved / rejected)
+- reason
+- timestamp
+
+Log every admin decision.
+
+--------------------------------------------------
+4) EMAIL ALERT ON NEW USER SIGNUP
+--------------------------------------------------
+
+Trigger email when:
+- A new user successfully signs up (first login event)
+
+Recipient:
+aibuntysystems@gmail.com
+
+Email Content:
+Subject:
+🆕 New User Signup – Approval Required
+
+Body:
+- Business name (if available)
+- Owner name
+- Email
+- Mobile
+- Signup date
+- Link to Admin Verification Panel
+
+--------------------------------------------------
+5) EMAIL IMPLEMENTATION
+--------------------------------------------------
+
+Implement backend email service:
+
+- Use NodeMailer or existing email utility
+- SMTP via Gmail or configured provider
+- Environment variables for credentials
+
+Create function:
+sendNewUserSignupEmail(userData)
+
+Call this function:
+- Immediately after successful signup
+- Only once per user
+
+--------------------------------------------------
+6) FAILURE SAFETY
+--------------------------------------------------
+
+Rules:
+- Email failure must NOT block signup
+- Log email errors silently
+- Retry mechanism optional
+
+--------------------------------------------------
+7) ADMIN ACCESS CONTROL
+--------------------------------------------------
+
+Ensure:
+- Only admin role can access admin APIs
+- Protect routes:
+  /api/admin/*
+  /admin/*
+
+--------------------------------------------------
+8) UX MESSAGES
+--------------------------------------------------
+
+Admin:
+- Toast: “User approved successfully”
+- Toast: “User rejected with reason saved”
+
+User:
+- After signup:
+  “Complete setup and submit for approval”
+- While pending:
+  “Your account is under manual review”
+- After approval:
+  “Your account has been approved 🎉”
+
+--------------------------------------------------
+9) CONSTRAINTS
+--------------------------------------------------
+
+- Follow existing project structure
+- Do NOT break onboarding flow
+- Production-ready code only
+- Secure admin APIs
+
+--------------------------------------------------
+DELIVERABLE
+--------------------------------------------------
+
+- Admin panel fully supports onboarding lifecycle
+- Admin can review complete setup before approval
+- Email alert sent on every new signup
+- Calculator unlocked ONLY after admin approval
+- Enterprise-ready SaaS system

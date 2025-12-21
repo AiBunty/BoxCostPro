@@ -1,0 +1,261 @@
+You are a senior ERP and SaaS architect.
+
+GOAL:
+Implement an ERP-grade architecture for BoxCostPro with:
+- Clear separation of User App, Admin Panel, and Support Panel
+- Role-based access control (RBAC)
+- Reliable email system
+- Admin approval & compliance workflow
+- Professional support ticket system with multiple agents
+- Event-based admin notifications
+- Audit-safe, scalable design
+
+This system must follow how large ERPs operate (no shortcuts).
+
+====================================================
+1) OVERALL ARCHITECTURE (MANDATORY)
+====================================================
+
+Use ONE backend API + ONE database.
+Create THREE SEPARATE FRONTENDS:
+
+1. User Application
+   URL: app.boxcostpro.com
+
+2. Admin Panel
+   URL: admin.boxcostpro.com
+
+3. Support Panel
+   URL: support.boxcostpro.com
+
+All share the same backend but are separated by ROLE & ROUTE GUARDS.
+
+====================================================
+2) ROLE BASED ACCESS CONTROL (RBAC)
+====================================================
+
+Create roles:
+- USER
+- SUPPORT_AGENT
+- SUPPORT_MANAGER
+- ADMIN
+- SUPER_ADMIN
+
+Rules:
+- USER → User App + Support Panel (limited)
+- SUPPORT_AGENT → Support Panel only
+- SUPPORT_MANAGER → Support Panel + ticket escalation
+- ADMIN → Admin Panel only
+- SUPER_ADMIN → All panels
+
+Implement middleware:
+checkAuth
+checkRole(allowedRoles[])
+
+====================================================
+3) USER APP (app.boxcostpro.com)
+====================================================
+
+User Capabilities:
+- Mandatory onboarding wizard
+- Business profile setup
+- Paper / Flute / GST / Payment settings
+- Submit for verification
+- View approval status
+- Calculator (ONLY after approval)
+- Quotes & reports
+- Create & view support tickets
+
+Restrictions:
+- No admin or support controls
+- No approval access
+- Calculator locked until approved
+
+====================================================
+4) ADMIN PANEL (admin.boxcostpro.com)
+====================================================
+
+Admin Responsibilities (Compliance & Control):
+
+Admin Dashboard:
+- New signups
+- Pending verifications
+- Approved users
+- Rejected users
+- System activity log
+
+User Verification:
+- View full onboarding data
+- Approve user
+- Reject user (mandatory remarks popup)
+- Resubmission review
+
+Admin Actions:
+- Approval → unlock access + send email
+- Rejection → save remarks + send email
+
+Admin CANNOT:
+- Reply to tickets (except escalations)
+- Act as support agent
+
+====================================================
+5) SUPPORT PANEL (support.boxcostpro.com)
+====================================================
+
+Support Responsibilities (Customer Service):
+
+Support Dashboard:
+- Ticket queue
+- Assigned tickets
+- SLA status
+- Escalated tickets
+
+Support Agent Capabilities:
+- View assigned tickets
+- Reply to customers
+- Change ticket status
+- Add internal notes
+- Escalate to Admin
+
+Support Manager:
+- Assign tickets
+- Reassign tickets
+- View performance metrics
+
+Support CANNOT:
+- Approve or reject users
+- Change pricing or business data
+
+====================================================
+6) DATABASE DESIGN
+====================================================
+
+A) users
+- id
+- email
+- role
+- status
+
+B) business_profiles
+- user_id
+- verification_status (pending/approved/rejected)
+- rejection_reason
+- approved_at
+- rejected_at
+
+C) admin_actions
+- admin_user_id
+- target_user_id
+- action
+- remarks
+- timestamp
+
+D) support_tickets
+- id
+- ticket_no
+- user_id
+- subject
+- priority
+- status
+- assigned_to
+- created_at
+- closed_at
+
+E) support_messages
+- ticket_id
+- sender_type (user/support/admin)
+- message
+- created_at
+
+====================================================
+7) EMAIL SYSTEM (ERP STYLE)
+====================================================
+
+Create centralized emailService.
+
+Environment variables:
+- EMAIL_PROVIDER
+- SMTP_HOST
+- SMTP_PORT
+- SMTP_USER
+- SMTP_PASS
+- EMAIL_FROM_NAME = BoxCostPro
+- EMAIL_FROM_ADDRESS = noreply@boxcostpro.com
+- ADMIN_NOTIFICATION_EMAIL = aibuntysystems@gmail.com
+
+Email Rules:
+- HTML emails only
+- Event-based triggers
+- Email failures must NEVER block core logic
+
+====================================================
+8) EMAIL EVENTS (AUTOMATIC)
+====================================================
+
+Send ADMIN notification email on:
+- New user signup
+- Onboarding submission
+- User approval
+- User rejection
+- Quote created / updated / deleted
+- Ticket created
+- Ticket escalated
+- Ticket closed
+
+Send USER emails on:
+- Approval (welcome email)
+- Rejection (with remarks)
+- Ticket reply
+- Ticket closure
+
+====================================================
+9) APPROVAL & REJECTION FLOW
+====================================================
+
+Approval:
+- Admin confirms
+- verification_status = approved
+- Email user (welcome)
+- Notify admin
+- Unlock calculator
+
+Rejection:
+- Mandatory popup
+- Save remarks
+- verification_status = rejected
+- Email user with remarks
+- Allow resubmission
+
+====================================================
+10) SUPPORT TICKET WORKFLOW
+====================================================
+
+Lifecycle:
+OPEN → IN_PROGRESS → WAITING → CLOSED
+
+Rules:
+- User can reply until CLOSED
+- Support must add resolution note on close
+- High priority tickets notify admin
+- All messages logged
+
+====================================================
+11) SECURITY & AUDIT
+====================================================
+
+- Strict RBAC on all APIs
+- Separate route guards per panel
+- No URL bypass
+- Full admin & support action logs
+- Rate limit tickets & emails
+
+====================================================
+12) DELIVERABLE
+====================================================
+
+- ERP-grade separation of concerns
+- Secure Admin Panel
+- Scalable Support Desk
+- Reliable email notifications
+- Professional approval & ticket systems
+- Enterprise-ready BoxCostPro platform
