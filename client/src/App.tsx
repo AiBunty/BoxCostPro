@@ -15,6 +15,9 @@ import Masters from "@/pages/masters";
 import Account from "@/pages/account";
 import Landing from "@/pages/landing";
 import AdminPanel from "@/pages/admin";
+import AdminUsers from "@/pages/admin-users";
+import Onboarding from "@/pages/onboarding";
+import SupportPanel from "@/pages/support";
 import NotFound from "@/pages/not-found";
 
 // Wrapper components for routes
@@ -94,6 +97,9 @@ function AuthenticatedRouter() {
         <Route path="/masters" component={Masters} />
         <Route path="/account" component={Account} />
         <Route path="/admin" component={AdminPanel} />
+        <Route path="/admin/users" component={AdminUsers} />
+        <Route path="/onboarding" component={Onboarding} />
+        <Route path="/support" component={SupportPanel} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

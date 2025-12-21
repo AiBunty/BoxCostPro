@@ -15,6 +15,9 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  Headphones,
+  Shield,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -49,22 +52,42 @@ interface NavItem {
   subItems?: SubNavItem[];
 }
 
-const navItems: NavItem[] = [
-  { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { label: "Create Quote", path: "/create-quote", icon: FilePlus },
-  { 
-    label: "Quotes", 
-    path: "/quotes", 
-    icon: FileText,
-    subItems: [
-      { label: "All Quotes", path: "/quotes" },
-      { label: "Bulk Upload", path: "/bulk-upload" },
-    ]
-  },
-  { label: "Reports", path: "/reports", icon: BarChart3 },
-  { label: "Masters", path: "/masters", icon: Settings2 },
-  { label: "Account", path: "/account", icon: User },
-];
+const getNavItems = (userRole: string | null | undefined): NavItem[] => {
+  const baseItems: NavItem[] = [
+    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+    { label: "Create Quote", path: "/create-quote", icon: FilePlus },
+    { 
+      label: "Quotes", 
+      path: "/quotes", 
+      icon: FileText,
+      subItems: [
+        { label: "All Quotes", path: "/quotes" },
+        { label: "Bulk Upload", path: "/bulk-upload" },
+      ]
+    },
+    { label: "Reports", path: "/reports", icon: BarChart3 },
+    { label: "Masters", path: "/masters", icon: Settings2 },
+    { label: "Support", path: "/support", icon: Headphones },
+    { label: "Account", path: "/account", icon: User },
+  ];
+  
+  const adminRoles = ['admin', 'super_admin', 'owner'];
+  const supportRoles = ['support_agent', 'support_manager', ...adminRoles];
+  
+  if (adminRoles.includes(userRole || '')) {
+    baseItems.push({ 
+      label: "Admin", 
+      path: "/admin", 
+      icon: Shield,
+      subItems: [
+        { label: "Subscriptions", path: "/admin" },
+        { label: "User Management", path: "/admin/users" },
+      ]
+    });
+  }
+  
+  return baseItems;
+};
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -74,9 +97,13 @@ export function AppShell({ children }: AppShellProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const isMobile = useIsMobile();
+  const navItems = getNavItems(user?.role);
   const [quotesOpen, setQuotesOpen] = useState(() => {
     // Open the Quotes section by default if we're on a quotes-related page
     return location.startsWith("/quotes") || location.startsWith("/bulk-upload");
+  });
+  const [adminOpen, setAdminOpen] = useState(() => {
+    return location.startsWith("/admin");
   });
 
   const getInitials = () => {
@@ -196,11 +223,16 @@ export function AppShell({ children }: AppShellProps) {
             // Handle items with sub-items (collapsible)
             if (item.subItems && item.subItems.length > 0) {
               const hasActiveSubItem = item.subItems.some(sub => isActive(sub.path));
+              const isQuotesSection = item.label === "Quotes";
+              const isAdminSection = item.label === "Admin";
+              const isOpen = isQuotesSection ? quotesOpen : isAdminSection ? adminOpen : false;
+              const setIsOpen = isQuotesSection ? setQuotesOpen : isAdminSection ? setAdminOpen : () => {};
+              
               return (
                 <Collapsible 
                   key={item.path} 
-                  open={quotesOpen} 
-                  onOpenChange={setQuotesOpen}
+                  open={isOpen} 
+                  onOpenChange={setIsOpen}
                 >
                   <CollapsibleTrigger asChild>
                     <button
@@ -216,7 +248,7 @@ export function AppShell({ children }: AppShellProps) {
                         <Icon className="h-5 w-5 shrink-0" />
                         <span className="truncate">{item.label}</span>
                       </div>
-                      {quotesOpen ? (
+                      {isOpen ? (
                         <ChevronDown className="h-4 w-4" />
                       ) : (
                         <ChevronRight className="h-4 w-4" />
