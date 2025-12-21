@@ -373,6 +373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId,
           quoteNo,
           status: 'draft',
+          totalValue: 0, // Initial value, will be updated when version is created
         });
       }
       
