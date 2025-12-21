@@ -1,0 +1,135 @@
+You are a senior backend engineer performing a production-grade
+ROOT CAUSE ANALYSIS for a failing “Quote Save” feature in BoxCostPro.
+
+DO NOT add new features.
+DO NOT refactor unrelated code.
+ONLY debug and FIX quote save until it works 100%.
+
+==================================================
+PHASE 1: TRACE EXECUTION (MANDATORY)
+==================================================
+
+Add temporary logs to confirm EXACT execution order.
+
+In POST /api/quotes:
+
+1) Log at function entry:
+console.log("QUOTE SAVE HIT", req.body)
+
+2) Log after payload validation:
+console.log("QUOTE PAYLOAD VALID")
+
+3) Log before DB transaction:
+console.log("STARTING QUOTE TRANSACTION")
+
+4) Log after quote insert:
+console.log("QUOTE CREATED", quote.id)
+
+5) Log after version insert:
+console.log("VERSION CREATED", version.id)
+
+6) Log after items insert:
+console.log("ITEMS SAVED", items.length)
+
+7) Log after totals calculation:
+console.log("TOTALS", subtotal, gst, finalTotal)
+
+8) Log after quote update:
+console.log("QUOTE UPDATED WITH TOTAL")
+
+9) Log before response:
+console.log("QUOTE SAVE SUCCESS")
+
+If ANY log does not appear → STOP and fix that line.
+
+==================================================
+PHASE 2: HARD FAIL ON ERRORS (NO SILENT FAILURES)
+==================================================
+
+Wrap entire handler in try/catch.
+
+In catch block:
+- console.error("QUOTE SAVE ERROR", error)
+- return res.status(500).json({
+    success: false,
+    message: error.message
+  })
+
+Remove ALL empty catch blocks.
+
+==================================================
+PHASE 3: GUARANTEE DB WRITE (MOST COMMON FAILURE)
+==================================================
+
+VERIFY THESE ONE BY ONE:
+
+1) Confirm storage.createQuote() actually INSERTS
+   (not mocked, not stubbed, not returning undefined)
+
+2) Confirm DB client is CONNECTED
+   (log DB connection once at server start)
+
+3) Confirm transaction is COMMITTED
+   (no early return inside transaction)
+
+4) Confirm updateQuote() uses SAME quote.id
+
+5) Confirm no validation returns early without response
+
+==================================================
+PHASE 4: FRONTEND CONFIRMATION
+==================================================
+
+In frontend Save Quote handler:
+
+1) Log before API call:
+console.log("SENDING QUOTE", payload)
+
+2) Log response:
+console.log("QUOTE RESPONSE", response)
+
+3) If response.success !== true:
+   SHOW ERROR TO USER
+
+DO NOT swallow fetch errors.
+
+==================================================
+PHASE 5: FORCE A MINIMAL SAVE (ISOLATION TEST)
+==================================================
+
+Temporarily bypass complex logic.
+
+Replace save logic with:
+
+- Insert quote with fixed values
+- Insert ONE dummy item
+- Return success
+
+If THIS fails → DB / API wiring is broken.
+If THIS works → business logic is broken.
+
+Fix accordingly.
+
+==================================================
+PHASE 6: REMOVE LOGS AFTER FIX
+==================================================
+
+Once save works:
+- Remove debug logs
+- Keep error logging
+- Keep validation
+
+==================================================
+FINAL DELIVERABLE
+==================================================
+
+- Quote Save MUST:
+  ✔ Hit API
+  ✔ Insert quote row
+  ✔ Insert version
+  ✔ Insert items
+  ✔ Update totals
+  ✔ Return success = true
+- NO silent failures
+- NO assumptions
+- Verified by logs and DB data
