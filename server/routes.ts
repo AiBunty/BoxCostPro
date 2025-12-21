@@ -311,6 +311,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.userId;
       const { items, paymentTerms, deliveryDays, transportCharge, transportRemark, totalValue, boardThickness, partyId, ...quoteData } = req.body;
       
+      // VALIDATION: Ensure required fields exist
+      if (!partyId) {
+        return res.status(400).json({ error: "Party is required. Please select a customer." });
+      }
+      if (!items || items.length === 0) {
+        return res.status(400).json({ error: "At least one item is required." });
+      }
+      
+      // Validate items have valid qty and rate
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (typeof item.quantity !== 'number' || item.quantity <= 0) {
+          return res.status(400).json({ error: `Item ${i + 1}: Quantity must be a positive number.` });
+        }
+      }
+      
+      console.log("[Quote Save] Starting quote save for user:", userId);
+      console.log("[Quote Save] Party ID:", partyId);
+      console.log("[Quote Save] Items count:", items.length);
+      
       // Get flute settings for snapshot
       const fluteSettingsData = await storage.getFluteSettings(userId);
       const fluteFactors: Record<string, number> = {};
@@ -461,16 +481,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createQuoteItemVersions(itemVersions);
       }
       
-      // Update quote with active version ID
-      await storage.updateQuote(quote.id, { activeVersionId: version.id });
-      
-      // Return quote with version info
-      res.status(201).json({
-        ...quote,
+      // Update quote with active version ID AND calculated totalValue (CRITICAL FIX)
+      await storage.updateQuote(quote.id, { 
         activeVersionId: version.id,
+        totalValue: finalTotal  // This was missing - totalValue was always 0
+      });
+      
+      console.log("[Quote Save] Quote saved successfully:");
+      console.log("[Quote Save] - Quote ID:", quote.id);
+      console.log("[Quote Save] - Quote No:", quoteNo);
+      console.log("[Quote Save] - Version:", versionNo);
+      console.log("[Quote Save] - Subtotal:", subtotal);
+      console.log("[Quote Save] - GST Amount:", gstAmount);
+      console.log("[Quote Save] - Final Total:", finalTotal);
+      console.log("[Quote Save] - Is New Version:", isNewVersion);
+      
+      // Return clear success response with all info frontend needs
+      res.status(201).json({
+        success: true,
+        quoteId: quote.id,
         quoteNo,
         versionNo,
         isNewVersion, // True if this was added to an existing quote
+        totalValue: finalTotal,
+        activeVersionId: version.id,
       });
     } catch (error: any) {
       console.error("Failed to create quote:", error);
@@ -620,12 +654,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createQuoteItemVersions(itemVersions);
       }
       
-      // Update quote with new active version ID
-      await storage.updateQuote(quoteId, { activeVersionId: version.id });
+      // Update quote with new active version ID AND totalValue (CRITICAL FIX)
+      await storage.updateQuote(quoteId, { 
+        activeVersionId: version.id,
+        totalValue: finalTotal
+      });
+      
+      console.log("[Quote Version] Version created successfully:");
+      console.log("[Quote Version] - Quote ID:", quoteId);
+      console.log("[Quote Version] - Version No:", versionNo);
+      console.log("[Quote Version] - Final Total:", finalTotal);
       
       res.status(201).json({
-        ...version,
+        success: true,
+        quoteId,
         quoteNo: quote.quoteNo,
+        versionNo,
+        totalValue: finalTotal,
+        activeVersionId: version.id,
+        isNegotiated: isNegotiated || false,
       });
     } catch (error) {
       console.error("Failed to create quote version:", error);
@@ -798,14 +845,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createQuoteItemVersions(itemVersions);
       }
       
-      // Update quote with new active version ID
-      await storage.updateQuote(quoteId, { activeVersionId: newVersion.id });
+      // Update quote with new active version ID AND totalValue (CRITICAL FIX)
+      await storage.updateQuote(quoteId, { 
+        activeVersionId: newVersion.id,
+        totalValue: newVersion.finalTotal
+      });
+      
+      console.log("[Bulk Negotiate] Negotiation saved successfully:");
+      console.log("[Bulk Negotiate] - Quote ID:", quoteId);
+      console.log("[Bulk Negotiate] - Version No:", newVersion.versionNo);
+      console.log("[Bulk Negotiate] - Final Total:", newVersion.finalTotal);
       
       res.status(201).json({
         success: true,
         versionId: newVersion.id,
         versionNo: newVersion.versionNo,
         quoteNo: quote.quoteNo,
+        totalValue: newVersion.finalTotal,
       });
     } catch (error) {
       console.error("Failed to bulk negotiate:", error);

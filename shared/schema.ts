@@ -252,6 +252,7 @@ export const quotes = pgTable("quotes", {
   customerMobile: text("customer_mobile"),
   companyProfileId: varchar("company_profile_id"),
   activeVersionId: varchar("active_version_id"), // Points to current quote_versions record
+  totalValue: real("total_value").default(0), // Cached total from active version for quick reporting
   status: varchar("status").default("draft"), // 'draft', 'sent', 'accepted', 'rejected', 'expired'
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
