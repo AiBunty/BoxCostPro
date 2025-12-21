@@ -1,0 +1,186 @@
+You are a senior ERP backend engineer hardening the Quote system
+for BoxCostPro so that Quote Save can NEVER break again.
+
+This task includes:
+1) Migration-safe schema
+2) Automated tests to prevent regressions
+3) Cleanup script for legacy/broken quotes
+4) Final verified Quote Save handler
+
+DO NOT add new features.
+ONLY stabilize, harden, and verify.
+
+====================================================
+1) MIGRATION-SAFE SCHEMA (MANDATORY)
+====================================================
+
+Create proper migrations instead of destructive changes.
+
+A) SAFE MIGRATION – REMOVE items COLUMN
+------------------------------------------------
+If quotes.items exists:
+
+- Make it nullable first
+- Back up data if present
+- Then drop column safely
+
+SQL:
+ALTER TABLE quotes ALTER COLUMN items DROP NOT NULL;
+ALTER TABLE quotes DROP COLUMN IF EXISTS items;
+
+B) ENSURE FINAL ERP SCHEMA
+------------------------------------------------
+quotes (HEADER ONLY):
+- id (uuid)
+- quote_no
+- party_id
+- payment_terms
+- delivery_days
+- transport_charge
+- total_value
+- active_version_id
+- created_at
+
+quote_versions:
+- id
+- quote_id
+- version_no
+- created_at
+
+quote_version_items:
+- id
+- version_id
+- item_name
+- qty
+- rate
+- amount
+
+====================================================
+2) AUTOMATED TEST – NEVER BREAK QUOTE SAVE AGAIN
+====================================================
+
+Create test file:
+backend/tests/quote.save.spec.ts
+
+Tests to implement:
+
+TEST 1: Save Quote – Happy Path
+- Insert quote
+- Insert version
+- Insert items
+- Expect:
+  - quote row exists
+  - items exist
+  - total_value > 0
+
+TEST 2: No items column usage
+- Save quote
+- Assert:
+  - quotes table has NO items column
+  - items only exist in quote_version_items
+
+TEST 3: Transaction Rollback
+- Force item insert failure
+- Assert:
+  - quote NOT created
+  - version NOT created
+
+TEST 4: Versioning Integrity
+- Save same quote twice
+- Expect:
+  - version_no increments
+  - active_version_id updated
+
+Fail CI if ANY test fails.
+
+====================================================
+3) CLEANUP SCRIPT FOR OLD / BROKEN QUOTES
+====================================================
+
+Create script:
+backend/scripts/cleanupQuotes.ts
+
+Logic:
+- Find quotes with:
+  - total_value = 0
+  - OR active_version_id IS NULL
+- Recalculate totals from version items
+- Update quote header
+- Log:
+  - quote_id
+  - old total
+  - new total
+
+DO NOT DELETE DATA.
+ONLY FIX INCONSISTENCIES.
+
+====================================================
+4) FINAL VERIFIED QUOTE SAVE HANDLER
+====================================================
+
+Rewrite POST /api/quotes using this EXACT order:
+
+1) Validate request
+   - partyId exists
+   - items.length > 0
+
+2) Start DB transaction
+
+3) Insert quote HEADER ONLY
+   - DO NOT reference items
+
+4) Insert quote_version
+   - increment version_no correctly
+
+5) Insert quote_version_items
+   - map items cleanly
+
+6) Calculate totals SERVER-SIDE
+
+7) Update quotes:
+   - total_value
+   - active_version_id
+
+8) Commit transaction
+
+9) Return:
+{
+  success: true,
+  quoteId,
+  versionNo
+}
+
+ON ERROR:
+- Rollback transaction
+- Return 500 with message
+
+====================================================
+5) PERMANENT SAFETY GUARDS
+====================================================
+
+- Never add items column to quotes again
+- Add DB constraint:
+  CHECK (total_value >= 0)
+- Add NOT NULL on active_version_id after save
+
+====================================================
+FINAL VALIDATION CHECKLIST
+====================================================
+
+✔ quotes table has NO items column
+✔ Items stored ONLY in quote_version_items
+✔ Quote save works with 1 or many items
+✔ Rollback works on failure
+✔ Tests pass
+✔ Old data repaired
+✔ No silent failures
+
+====================================================
+DELIVERABLE
+====================================================
+
+- Migration-safe schema
+- Regression-proof tests
+- Clean legacy data
+- Verified, ERP-grade Quote Save handler
+- BoxCostPro quote system stabilized permanently

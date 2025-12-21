@@ -1,0 +1,128 @@
+You are a senior ERP backend engineer fixing a production-blocking
+Quote Save failure in BoxCostPro.
+
+DO NOT add new features.
+DO NOT refactor unrelated code.
+ONLY fix Quote Save so it works 100%.
+
+====================================================
+ROOT CAUSE (CONFIRMED BY DB ERROR)
+====================================================
+
+Error:
+"null value in column 'items' of relation 'quotes' violates not-null constraint"
+
+This means:
+- quotes table wrongly contains an `items` column
+- items are NOT being inserted there
+- ERP design requires items to live in quote_items / quote_versions
+
+====================================================
+TASK 1: FIX DATABASE SCHEMA (MANDATORY)
+====================================================
+
+Correct the schema to ERP-grade design.
+
+A) REMOVE items column from quotes table
+
+Run migration / SQL:
+ALTER TABLE quotes DROP COLUMN IF EXISTS items;
+
+OR (temporary safety):
+ALTER TABLE quotes ALTER COLUMN items DROP NOT NULL;
+
+Quotes table must ONLY store header data.
+
+====================================================
+TASK 2: VERIFY CORRECT TABLE RESPONSIBILITY
+====================================================
+
+Ensure:
+- quotes → header only
+- quote_versions → version metadata
+- quote_version_items (or quote_items) → line items
+
+DO NOT store items JSON in quotes table.
+
+====================================================
+TASK 3: FIX BACKEND INSERT LOGIC
+====================================================
+
+In POST /api/quotes:
+
+Ensure insert into quotes DOES NOT reference items:
+
+CORRECT:
+db.insert(quotes).values({
+  partyId,
+  paymentTerms,
+  deliveryDays,
+  transportCharge,
+  totalValue: 0,
+  activeVersionId: null
+});
+
+WRONG:
+db.insert(quotes).values({
+  ...,
+  items
+});
+
+====================================================
+TASK 4: ENSURE TRANSACTION ORDER (CRITICAL)
+====================================================
+
+Quote save must follow EXACT order:
+
+1) Insert quote (header only)
+2) Insert quote_version
+3) Insert quote_version_items
+4) Calculate totals
+5) Update quotes.totalValue + activeVersionId
+6) Commit transaction
+7) Return success
+
+NO early returns.
+NO silent catch blocks.
+
+====================================================
+TASK 5: HARD FAIL ON ERRORS
+====================================================
+
+Wrap route in try/catch.
+
+On error:
+- console.error full error
+- return 500 with message
+
+Never swallow DB errors.
+
+====================================================
+TASK 6: FRONTEND EXPECTATION
+====================================================
+
+Frontend must:
+- Send items in request
+- NOT expect items to be stored in quotes table
+- Show success only if API returns success = true
+
+====================================================
+FINAL VALIDATION (MANDATORY)
+====================================================
+
+After fix, ALL must pass:
+
+✔ Quote header row exists in quotes
+✔ Items exist in quote_version_items
+✔ quotes.items column DOES NOT exist
+✔ No NOT NULL violations
+✔ Save Quote succeeds every time
+
+====================================================
+DELIVERABLE
+====================================================
+
+- Quote Save fixed at schema level
+- ERP-grade data model enforced
+- No duplicate or null item storage
+- Production-safe fix applied
