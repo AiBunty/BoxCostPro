@@ -1,0 +1,131 @@
+You are a senior full-stack SaaS engineer working on BoxCostPro.
+
+GOAL:
+Fix the persistent “Quote Save” failure and make quote saving
+reliable, correct, and user-transparent.
+
+CURRENT PROBLEM:
+- Quote Save appears to fail or save incorrect data
+- Totals show as zero or missing
+- User does not get clear confirmation
+- Bug exists in backend route implementation
+
+--------------------------------------------------
+1) FIX BACKEND SYNTAX ERROR (BLOCKER)
+--------------------------------------------------
+
+In server/routes.ts, inside POST /api/quotes:
+
+REMOVE any invalid destructuring like:
+  transportCharge... totalValue
+
+This is invalid JavaScript and breaks the route.
+
+REPLACE with valid destructuring:
+{
+  items,
+  paymentTerms,
+  deliveryDays,
+  transportCharge,
+  transportRemark,
+  boardThickness,
+  partyId,
+  ...quoteData
+}
+
+Ensure no spread operator syntax errors exist.
+
+--------------------------------------------------
+2) FIX QUOTE TOTAL NOT SAVING (CRITICAL)
+--------------------------------------------------
+
+After calculating quote totals (subtotal, GST, transport, final total):
+
+- DO NOT leave totalValue as 0
+- Explicitly update the quote record with calculated totals
+
+Add immediately after version creation:
+
+updateQuote(quote.id, {
+  totalValue: finalTotal,
+  activeVersionId: version.id
+});
+
+Without this step, quotes appear unsaved or incorrect.
+
+--------------------------------------------------
+3) TRANSACTION SAFETY
+--------------------------------------------------
+
+Ensure quote save runs inside a database transaction:
+
+- Create quote
+- Create quote version
+- Create quote items
+- Calculate totals
+- Update quote totals
+
+If any step fails:
+- Roll back entire transaction
+- Return proper error
+
+--------------------------------------------------
+4) API RESPONSE CLARITY
+--------------------------------------------------
+
+Return a clear response:
+
+{
+  success: true,
+  quoteId,
+  versionNo,
+  isNewVersion
+}
+
+This prevents UI confusion when new versions are created.
+
+--------------------------------------------------
+5) FRONTEND HANDLING
+--------------------------------------------------
+
+On Save Quote success:
+- Show toast “Quote saved successfully”
+- If isNewVersion = true, show:
+  “New version created for existing quote”
+
+On failure:
+- Show backend error message
+- Do NOT silently fail
+
+--------------------------------------------------
+6) VALIDATION SAFETY
+--------------------------------------------------
+
+Before saving:
+- Ensure partyId exists
+- Ensure at least one item exists
+- Ensure quantities and rates are numbers
+
+Return 400 with message if invalid.
+
+--------------------------------------------------
+7) LOGGING (DEBUG SAFETY)
+--------------------------------------------------
+
+Add server-side logs for:
+- Request payload
+- Calculated totals
+- Final DB save
+
+Logs must not expose sensitive data.
+
+--------------------------------------------------
+DELIVERABLE
+--------------------------------------------------
+
+After implementation:
+- Quote Save works every time
+- Totals persist correctly
+- Versions behave predictably
+- User sees clear success/failure
+- No silent or partial saves
