@@ -180,7 +180,13 @@ export function AppShell({ children }: AppShellProps) {
 
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t safe-area-inset-bottom">
           <div className="flex items-center justify-around h-16 px-2">
-            {navItems.slice(0, 5).map((item) => {
+            {[
+              { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+              { label: "Quotes", path: "/quotes", icon: FileText },
+              { label: "Reports", path: "/reports", icon: BarChart3 },
+              { label: "Support", path: "/support", icon: Headphones },
+              { label: "Account", path: "/account", icon: User },
+            ].map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
               return (
