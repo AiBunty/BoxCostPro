@@ -49,6 +49,14 @@ import {
   type InsertUserProfile,
   type BusinessDefaults,
   type InsertBusinessDefaults,
+  type OnboardingStatus,
+  type InsertOnboardingStatus,
+  type AdminAction,
+  type InsertAdminAction,
+  type SupportTicket,
+  type InsertSupportTicket,
+  type SupportMessage,
+  type InsertSupportMessage,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -74,7 +82,11 @@ import {
   boxSpecifications,
   boxSpecVersions,
   userProfiles,
-  businessDefaults
+  businessDefaults,
+  onboardingStatus,
+  adminActions,
+  supportTickets,
+  supportMessages
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, sql } from "drizzle-orm";
@@ -231,6 +243,46 @@ export interface IStorage {
   getBoxSpecVersions(specId: string): Promise<BoxSpecVersion[]>;
   getBoxSpecVersion(specId: string, versionNumber: number): Promise<BoxSpecVersion | undefined>;
   createBoxSpecVersion(version: InsertBoxSpecVersion): Promise<BoxSpecVersion>;
+  
+  // Onboarding Status (admin verification)
+  getOnboardingStatus(userId: string): Promise<OnboardingStatus | undefined>;
+  createOnboardingStatus(status: InsertOnboardingStatus): Promise<OnboardingStatus>;
+  updateOnboardingStatus(userId: string, updates: Partial<InsertOnboardingStatus>): Promise<OnboardingStatus | undefined>;
+  submitForVerification(userId: string): Promise<OnboardingStatus | undefined>;
+  approveUser(userId: string, adminUserId: string): Promise<OnboardingStatus | undefined>;
+  rejectUser(userId: string, adminUserId: string, reason: string): Promise<OnboardingStatus | undefined>;
+  getPendingVerifications(): Promise<OnboardingStatus[]>;
+  getAllOnboardingStatuses(): Promise<OnboardingStatus[]>;
+  
+  // Admin Actions (audit log)
+  createAdminAction(action: InsertAdminAction): Promise<AdminAction>;
+  getAdminActions(targetUserId?: string): Promise<AdminAction[]>;
+  
+  // Support Tickets
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  getSupportTicket(id: string): Promise<SupportTicket | undefined>;
+  getSupportTickets(userId?: string, status?: string): Promise<SupportTicket[]>;
+  updateSupportTicket(id: string, updates: Partial<InsertSupportTicket>): Promise<SupportTicket | undefined>;
+  assignSupportTicket(ticketId: string, assignedTo: string): Promise<SupportTicket | undefined>;
+  closeSupportTicket(ticketId: string, closedBy: string, resolutionNote: string): Promise<SupportTicket | undefined>;
+  escalateSupportTicket(ticketId: string, escalatedTo: string): Promise<SupportTicket | undefined>;
+  generateTicketNumber(): Promise<string>;
+  
+  // Support Messages
+  createSupportMessage(message: InsertSupportMessage): Promise<SupportMessage>;
+  getSupportMessages(ticketId: string, includeInternal?: boolean): Promise<SupportMessage[]>;
+  
+  // Admin Stats
+  getAdminStats(): Promise<{
+    totalUsers: number;
+    pendingVerifications: number;
+    approvedUsers: number;
+    rejectedUsers: number;
+    newSignupsLast7Days: number;
+  }>;
+  
+  // All Users (for admin)
+  getAllUsers(): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1237,6 +1289,251 @@ export class DatabaseStorage implements IStorage {
   async createBoxSpecVersion(version: InsertBoxSpecVersion): Promise<BoxSpecVersion> {
     const [created] = await db.insert(boxSpecVersions).values(version).returning();
     return created;
+  }
+  
+  // ========== ONBOARDING STATUS (Admin Verification) ==========
+  async getOnboardingStatus(userId: string): Promise<OnboardingStatus | undefined> {
+    const [status] = await db.select().from(onboardingStatus).where(eq(onboardingStatus.userId, userId));
+    return status;
+  }
+  
+  async createOnboardingStatus(status: InsertOnboardingStatus): Promise<OnboardingStatus> {
+    const [created] = await db.insert(onboardingStatus).values(status).returning();
+    return created;
+  }
+  
+  async updateOnboardingStatus(userId: string, updates: Partial<InsertOnboardingStatus>): Promise<OnboardingStatus | undefined> {
+    const [updated] = await db.update(onboardingStatus)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(onboardingStatus.userId, userId))
+      .returning();
+    return updated;
+  }
+  
+  async submitForVerification(userId: string): Promise<OnboardingStatus | undefined> {
+    const [updated] = await db.update(onboardingStatus)
+      .set({ 
+        submittedForVerification: true,
+        verificationStatus: 'pending',
+        submittedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(onboardingStatus.userId, userId))
+      .returning();
+    return updated;
+  }
+  
+  async approveUser(userId: string, adminUserId: string): Promise<OnboardingStatus | undefined> {
+    const [updated] = await db.update(onboardingStatus)
+      .set({
+        verificationStatus: 'approved',
+        approvedAt: new Date(),
+        approvedBy: adminUserId,
+        rejectionReason: null,
+        rejectedAt: null,
+        updatedAt: new Date()
+      })
+      .where(eq(onboardingStatus.userId, userId))
+      .returning();
+    
+    // Log the admin action
+    await this.createAdminAction({
+      adminUserId,
+      targetUserId: userId,
+      action: 'approved',
+      remarks: 'User approved'
+    });
+    
+    return updated;
+  }
+  
+  async rejectUser(userId: string, adminUserId: string, reason: string): Promise<OnboardingStatus | undefined> {
+    const [updated] = await db.update(onboardingStatus)
+      .set({
+        verificationStatus: 'rejected',
+        rejectedAt: new Date(),
+        rejectionReason: reason,
+        approvedAt: null,
+        approvedBy: null,
+        updatedAt: new Date()
+      })
+      .where(eq(onboardingStatus.userId, userId))
+      .returning();
+    
+    // Log the admin action
+    await this.createAdminAction({
+      adminUserId,
+      targetUserId: userId,
+      action: 'rejected',
+      remarks: reason
+    });
+    
+    return updated;
+  }
+  
+  async getPendingVerifications(): Promise<OnboardingStatus[]> {
+    return await db.select().from(onboardingStatus)
+      .where(
+        and(
+          eq(onboardingStatus.submittedForVerification, true),
+          eq(onboardingStatus.verificationStatus, 'pending')
+        )
+      );
+  }
+  
+  async getAllOnboardingStatuses(): Promise<OnboardingStatus[]> {
+    return await db.select().from(onboardingStatus);
+  }
+  
+  // ========== ADMIN ACTIONS (Audit Log) ==========
+  async createAdminAction(action: InsertAdminAction): Promise<AdminAction> {
+    const [created] = await db.insert(adminActions).values(action).returning();
+    return created;
+  }
+  
+  async getAdminActions(targetUserId?: string): Promise<AdminAction[]> {
+    if (targetUserId) {
+      return await db.select().from(adminActions)
+        .where(eq(adminActions.targetUserId, targetUserId))
+        .orderBy(adminActions.createdAt);
+    }
+    return await db.select().from(adminActions).orderBy(adminActions.createdAt);
+  }
+  
+  // ========== SUPPORT TICKETS ==========
+  async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
+    const ticketNo = await this.generateTicketNumber();
+    const [created] = await db.insert(supportTickets).values({ ...ticket, ticketNo }).returning();
+    return created;
+  }
+  
+  async getSupportTicket(id: string): Promise<SupportTicket | undefined> {
+    const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+    return ticket;
+  }
+  
+  async getSupportTickets(userId?: string, status?: string): Promise<SupportTicket[]> {
+    const conditions = [];
+    if (userId) conditions.push(eq(supportTickets.userId, userId));
+    if (status) conditions.push(eq(supportTickets.status, status));
+    
+    if (conditions.length > 0) {
+      return await db.select().from(supportTickets).where(and(...conditions));
+    }
+    return await db.select().from(supportTickets);
+  }
+  
+  async updateSupportTicket(id: string, updates: Partial<InsertSupportTicket>): Promise<SupportTicket | undefined> {
+    const [updated] = await db.update(supportTickets)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(supportTickets.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async assignSupportTicket(ticketId: string, assignedTo: string): Promise<SupportTicket | undefined> {
+    const [updated] = await db.update(supportTickets)
+      .set({ 
+        assignedTo, 
+        status: 'in_progress',
+        updatedAt: new Date() 
+      })
+      .where(eq(supportTickets.id, ticketId))
+      .returning();
+    return updated;
+  }
+  
+  async closeSupportTicket(ticketId: string, closedBy: string, resolutionNote: string): Promise<SupportTicket | undefined> {
+    const [updated] = await db.update(supportTickets)
+      .set({
+        status: 'closed',
+        closedBy,
+        closedAt: new Date(),
+        resolutionNote,
+        updatedAt: new Date()
+      })
+      .where(eq(supportTickets.id, ticketId))
+      .returning();
+    return updated;
+  }
+  
+  async escalateSupportTicket(ticketId: string, escalatedTo: string): Promise<SupportTicket | undefined> {
+    const [updated] = await db.update(supportTickets)
+      .set({
+        isEscalated: true,
+        escalatedTo,
+        updatedAt: new Date()
+      })
+      .where(eq(supportTickets.id, ticketId))
+      .returning();
+    return updated;
+  }
+  
+  async generateTicketNumber(): Promise<string> {
+    const result = await db.select({ count: sql`count(*)` }).from(supportTickets);
+    const count = Number(result[0]?.count || 0);
+    const ticketNo = `TKT-${String(count + 1).padStart(6, '0')}`;
+    return ticketNo;
+  }
+  
+  // ========== SUPPORT MESSAGES ==========
+  async createSupportMessage(message: InsertSupportMessage): Promise<SupportMessage> {
+    const [created] = await db.insert(supportMessages).values(message).returning();
+    return created;
+  }
+  
+  async getSupportMessages(ticketId: string, includeInternal: boolean = false): Promise<SupportMessage[]> {
+    if (includeInternal) {
+      return await db.select().from(supportMessages)
+        .where(eq(supportMessages.ticketId, ticketId))
+        .orderBy(supportMessages.createdAt);
+    }
+    return await db.select().from(supportMessages)
+      .where(
+        and(
+          eq(supportMessages.ticketId, ticketId),
+          eq(supportMessages.isInternal, false)
+        )
+      )
+      .orderBy(supportMessages.createdAt);
+  }
+  
+  // ========== ADMIN STATS ==========
+  async getAdminStats(): Promise<{
+    totalUsers: number;
+    pendingVerifications: number;
+    approvedUsers: number;
+    rejectedUsers: number;
+    newSignupsLast7Days: number;
+  }> {
+    const allUsers = await db.select({ count: sql`count(*)` }).from(users);
+    const pendingResult = await db.select({ count: sql`count(*)` }).from(onboardingStatus)
+      .where(and(
+        eq(onboardingStatus.submittedForVerification, true),
+        eq(onboardingStatus.verificationStatus, 'pending')
+      ));
+    const approvedResult = await db.select({ count: sql`count(*)` }).from(onboardingStatus)
+      .where(eq(onboardingStatus.verificationStatus, 'approved'));
+    const rejectedResult = await db.select({ count: sql`count(*)` }).from(onboardingStatus)
+      .where(eq(onboardingStatus.verificationStatus, 'rejected'));
+    
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const newSignupsResult = await db.select({ count: sql`count(*)` }).from(users)
+      .where(sql`${users.createdAt} >= ${sevenDaysAgo}`);
+    
+    return {
+      totalUsers: Number(allUsers[0]?.count || 0),
+      pendingVerifications: Number(pendingResult[0]?.count || 0),
+      approvedUsers: Number(approvedResult[0]?.count || 0),
+      rejectedUsers: Number(rejectedResult[0]?.count || 0),
+      newSignupsLast7Days: Number(newSignupsResult[0]?.count || 0)
+    };
+  }
+  
+  // ========== ALL USERS (Admin) ==========
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(users.createdAt);
   }
 }
 

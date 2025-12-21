@@ -677,3 +677,96 @@ export const transportSnapshotSchema = z.object({
 });
 
 export type TransportSnapshot = z.infer<typeof transportSnapshotSchema>;
+
+// ========== ADMIN VERIFICATION & ONBOARDING SYSTEM ==========
+
+// Onboarding Status - tracks user's onboarding steps and verification
+export const onboardingStatus = pgTable("onboarding_status", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  
+  // Onboarding step completion flags
+  businessProfileDone: boolean("business_profile_done").default(false),
+  paperSetupDone: boolean("paper_setup_done").default(false),
+  fluteSetupDone: boolean("flute_setup_done").default(false),
+  taxSetupDone: boolean("tax_setup_done").default(false),
+  termsSetupDone: boolean("terms_setup_done").default(false),
+  
+  // Verification status
+  submittedForVerification: boolean("submitted_for_verification").default(false),
+  verificationStatus: varchar("verification_status").default("pending"), // 'pending', 'approved', 'rejected'
+  rejectionReason: text("rejection_reason"),
+  
+  // Timestamps
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  rejectedAt: timestamp("rejected_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOnboardingStatusSchema = createInsertSchema(onboardingStatus).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOnboardingStatus = z.infer<typeof insertOnboardingStatusSchema>;
+export type OnboardingStatus = typeof onboardingStatus.$inferSelect;
+
+// Admin Actions - audit log for admin decisions
+export const adminActions = pgTable("admin_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminUserId: varchar("admin_user_id").references(() => users.id).notNull(),
+  targetUserId: varchar("target_user_id").references(() => users.id).notNull(),
+  action: varchar("action").notNull(), // 'approved', 'rejected', 'request_changes'
+  remarks: text("remarks"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAdminActionSchema = createInsertSchema(adminActions).omit({ id: true, createdAt: true });
+export type InsertAdminAction = z.infer<typeof insertAdminActionSchema>;
+export type AdminAction = typeof adminActions.$inferSelect;
+
+// ========== SUPPORT TICKET SYSTEM ==========
+
+// Support Tickets - customer support request tracking
+export const supportTickets = pgTable("support_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketNo: varchar("ticket_no").notNull().unique(), // Auto-generated ticket number
+  userId: varchar("user_id").references(() => users.id).notNull(), // Customer who created ticket
+  subject: text("subject").notNull(),
+  description: text("description"),
+  priority: varchar("priority").default("medium"), // 'low', 'medium', 'high', 'urgent'
+  status: varchar("status").default("open"), // 'open', 'in_progress', 'waiting', 'closed'
+  category: varchar("category"), // 'billing', 'technical', 'feature_request', 'other'
+  
+  // Assignment
+  assignedTo: varchar("assigned_to").references(() => users.id), // Support agent
+  escalatedTo: varchar("escalated_to").references(() => users.id), // Admin (if escalated)
+  isEscalated: boolean("is_escalated").default(false),
+  
+  // Resolution
+  resolutionNote: text("resolution_note"),
+  closedAt: timestamp("closed_at"),
+  closedBy: varchar("closed_by").references(() => users.id),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({ id: true, ticketNo: true, createdAt: true, updatedAt: true });
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+export type SupportTicket = typeof supportTickets.$inferSelect;
+
+// Support Messages - conversation within a ticket
+export const supportMessages = pgTable("support_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").references(() => supportTickets.id).notNull(),
+  senderId: varchar("sender_id").references(() => users.id).notNull(),
+  senderType: varchar("sender_type").notNull(), // 'user', 'support', 'admin'
+  message: text("message").notNull(),
+  isInternal: boolean("is_internal").default(false), // Internal notes (not visible to user)
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSupportMessageSchema = createInsertSchema(supportMessages).omit({ id: true, createdAt: true });
+export type InsertSupportMessage = z.infer<typeof insertSupportMessageSchema>;
+export type SupportMessage = typeof supportMessages.$inferSelect;
