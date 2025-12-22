@@ -205,11 +205,13 @@ export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id),
   companyName: text("company_name").notNull(),
+  ownerName: text("owner_name"), // Owner/Contact person name for templates
   gstNo: text("gst_no"),
   address: text("address"),
   phone: text("phone"),
   email: text("email"),
   website: text("website"),
+  mapLink: text("map_link"), // Google Maps link for templates
   socialMedia: text("social_media"),
   googleLocation: text("google_location"),
   paymentTerms: text("payment_terms").default("100% Advance"),
@@ -373,6 +375,15 @@ export const businessDefaults = pgTable("business_defaults", {
   gstNumber: varchar("gst_number"),
   igstApplicable: boolean("igst_applicable").default(false),
   roundOffEnabled: boolean("round_off_enabled").default(true), // Round grand total to nearest rupee
+  // Show Columns configuration for WhatsApp/Email templates (single source of truth)
+  showColumnBoxSize: boolean("show_column_box_size").default(true),
+  showColumnBoard: boolean("show_column_board").default(true),
+  showColumnFlute: boolean("show_column_flute").default(true),
+  showColumnPaper: boolean("show_column_paper").default(true),
+  showColumnPrinting: boolean("show_column_printing").default(false),
+  showColumnLamination: boolean("show_column_lamination").default(false),
+  showColumnVarnish: boolean("show_column_varnish").default(true),
+  showColumnWeight: boolean("show_column_weight").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -774,3 +785,43 @@ export const supportMessages = pgTable("support_messages", {
 export const insertSupportMessageSchema = createInsertSchema(supportMessages).omit({ id: true, createdAt: true });
 export type InsertSupportMessage = z.infer<typeof insertSupportMessageSchema>;
 export type SupportMessage = typeof supportMessages.$inferSelect;
+
+// ========== QUOTE TEMPLATES SYSTEM ==========
+
+// Quote Templates - WhatsApp and Email templates for sending quotes
+export const quoteTemplates = pgTable("quote_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id), // null for system templates
+  name: text("name").notNull(),
+  channel: varchar("channel").notNull(), // 'whatsapp' or 'email'
+  templateType: varchar("template_type").notNull().default("custom"), // 'system' or 'custom'
+  content: text("content").notNull(), // Template content with placeholders
+  description: text("description"), // Description of what this template is for
+  isDefault: boolean("is_default").default(false), // Default template for this channel
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertQuoteTemplateSchema = createInsertSchema(quoteTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertQuoteTemplate = z.infer<typeof insertQuoteTemplateSchema>;
+export type QuoteTemplate = typeof quoteTemplates.$inferSelect;
+
+// Quote Send Log - audit trail for quote sends
+export const quoteSendLogs = pgTable("quote_send_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id).notNull(),
+  quoteVersionId: varchar("quote_version_id").references(() => quoteVersions.id),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  channel: varchar("channel").notNull(), // 'whatsapp' or 'email'
+  templateId: varchar("template_id").references(() => quoteTemplates.id),
+  recipientInfo: text("recipient_info"), // Phone number or email
+  renderedContent: text("rendered_content"), // The actual sent content (for audit)
+  status: varchar("status").default("sent"), // 'sent', 'failed'
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertQuoteSendLogSchema = createInsertSchema(quoteSendLogs).omit({ id: true, createdAt: true });
+export type InsertQuoteSendLog = z.infer<typeof insertQuoteSendLogSchema>;
+export type QuoteSendLog = typeof quoteSendLogs.$inferSelect;

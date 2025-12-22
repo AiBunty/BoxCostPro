@@ -57,6 +57,10 @@ import {
   type InsertSupportTicket,
   type SupportMessage,
   type InsertSupportMessage,
+  type QuoteTemplate,
+  type InsertQuoteTemplate,
+  type QuoteSendLog,
+  type InsertQuoteSendLog,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -86,7 +90,9 @@ import {
   onboardingStatus,
   adminActions,
   supportTickets,
-  supportMessages
+  supportMessages,
+  quoteTemplates,
+  quoteSendLogs
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, sql } from "drizzle-orm";
@@ -283,6 +289,19 @@ export interface IStorage {
   
   // All Users (for admin)
   getAllUsers(): Promise<User[]>;
+  
+  // Quote Templates
+  getQuoteTemplates(userId: string, channel?: string): Promise<QuoteTemplate[]>;
+  getQuoteTemplate(id: string): Promise<QuoteTemplate | undefined>;
+  createQuoteTemplate(template: InsertQuoteTemplate): Promise<QuoteTemplate>;
+  updateQuoteTemplate(id: string, updates: Partial<InsertQuoteTemplate>): Promise<QuoteTemplate | undefined>;
+  deleteQuoteTemplate(id: string): Promise<boolean>;
+  getDefaultTemplate(userId: string, channel: string): Promise<QuoteTemplate | undefined>;
+  setDefaultTemplate(userId: string, templateId: string, channel: string): Promise<void>;
+  
+  // Quote Send Logs
+  createQuoteSendLog(log: InsertQuoteSendLog): Promise<QuoteSendLog>;
+  getQuoteSendLogs(quoteId?: string, userId?: string): Promise<QuoteSendLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1534,6 +1553,111 @@ export class DatabaseStorage implements IStorage {
   // ========== ALL USERS (Admin) ==========
   async getAllUsers(): Promise<User[]> {
     return await db.select().from(users).orderBy(users.createdAt);
+  }
+  
+  // ========== QUOTE TEMPLATES ==========
+  async getQuoteTemplates(userId: string, channel?: string): Promise<QuoteTemplate[]> {
+    // Get system templates (userId is null) and user's custom templates
+    const conditions = [
+      or(
+        sql`${quoteTemplates.userId} IS NULL`,
+        eq(quoteTemplates.userId, userId)
+      )
+    ];
+    
+    if (channel) {
+      conditions.push(eq(quoteTemplates.channel, channel));
+    }
+    
+    return await db.select().from(quoteTemplates)
+      .where(and(...conditions))
+      .orderBy(quoteTemplates.templateType, quoteTemplates.name);
+  }
+  
+  async getQuoteTemplate(id: string): Promise<QuoteTemplate | undefined> {
+    const [template] = await db.select().from(quoteTemplates)
+      .where(eq(quoteTemplates.id, id));
+    return template;
+  }
+  
+  async createQuoteTemplate(template: InsertQuoteTemplate): Promise<QuoteTemplate> {
+    const [created] = await db.insert(quoteTemplates).values(template).returning();
+    return created;
+  }
+  
+  async updateQuoteTemplate(id: string, updates: Partial<InsertQuoteTemplate>): Promise<QuoteTemplate | undefined> {
+    const [updated] = await db.update(quoteTemplates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(quoteTemplates.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteQuoteTemplate(id: string): Promise<boolean> {
+    const result = await db.delete(quoteTemplates)
+      .where(and(
+        eq(quoteTemplates.id, id),
+        eq(quoteTemplates.templateType, 'custom') // Can only delete custom templates
+      ))
+      .returning();
+    return result.length > 0;
+  }
+  
+  async getDefaultTemplate(userId: string, channel: string): Promise<QuoteTemplate | undefined> {
+    // First try to find user's default for this channel
+    const [userDefault] = await db.select().from(quoteTemplates)
+      .where(and(
+        eq(quoteTemplates.userId, userId),
+        eq(quoteTemplates.channel, channel),
+        eq(quoteTemplates.isDefault, true)
+      ));
+    
+    if (userDefault) return userDefault;
+    
+    // Fall back to system default for this channel
+    const [systemDefault] = await db.select().from(quoteTemplates)
+      .where(and(
+        sql`${quoteTemplates.userId} IS NULL`,
+        eq(quoteTemplates.channel, channel),
+        eq(quoteTemplates.isDefault, true)
+      ));
+    
+    return systemDefault;
+  }
+  
+  async setDefaultTemplate(userId: string, templateId: string, channel: string): Promise<void> {
+    // Clear existing default for this user and channel
+    await db.update(quoteTemplates)
+      .set({ isDefault: false })
+      .where(and(
+        eq(quoteTemplates.userId, userId),
+        eq(quoteTemplates.channel, channel)
+      ));
+    
+    // Set new default
+    await db.update(quoteTemplates)
+      .set({ isDefault: true })
+      .where(eq(quoteTemplates.id, templateId));
+  }
+  
+  // ========== QUOTE SEND LOGS ==========
+  async createQuoteSendLog(log: InsertQuoteSendLog): Promise<QuoteSendLog> {
+    const [created] = await db.insert(quoteSendLogs).values(log).returning();
+    return created;
+  }
+  
+  async getQuoteSendLogs(quoteId?: string, userId?: string): Promise<QuoteSendLog[]> {
+    const conditions = [];
+    if (quoteId) conditions.push(eq(quoteSendLogs.quoteId, quoteId));
+    if (userId) conditions.push(eq(quoteSendLogs.userId, userId));
+    
+    if (conditions.length === 0) {
+      return await db.select().from(quoteSendLogs).orderBy(sql`${quoteSendLogs.createdAt} DESC`);
+    }
+    
+    return await db.select().from(quoteSendLogs)
+      .where(and(...conditions))
+      .orderBy(sql`${quoteSendLogs.createdAt} DESC`);
   }
 }
 

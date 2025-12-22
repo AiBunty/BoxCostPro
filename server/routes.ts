@@ -2776,6 +2776,527 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // QUOTE TEMPLATES ROUTES
+  // ============================================
+  
+  // Get all templates (system + user's custom)
+  app.get("/api/quote-templates", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const channel = req.query.channel as string | undefined;
+      const templates = await storage.getQuoteTemplates(userId, channel);
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      res.status(500).json({ error: "Failed to fetch templates" });
+    }
+  });
+  
+  // Get single template
+  app.get("/api/quote-templates/:id", combinedAuth, async (req: any, res) => {
+    try {
+      const template = await storage.getQuoteTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch template" });
+    }
+  });
+  
+  // Create custom template
+  app.post("/api/quote-templates", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { name, channel, content, description } = req.body;
+      
+      if (!name || !channel || !content) {
+        return res.status(400).json({ error: "Name, channel, and content are required" });
+      }
+      
+      const template = await storage.createQuoteTemplate({
+        userId,
+        name,
+        channel,
+        templateType: 'custom',
+        content,
+        description,
+        isDefault: false,
+        isActive: true
+      });
+      
+      res.json(template);
+    } catch (error) {
+      console.error("Error creating template:", error);
+      res.status(500).json({ error: "Failed to create template" });
+    }
+  });
+  
+  // Update template (only custom templates)
+  app.patch("/api/quote-templates/:id", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const template = await storage.getQuoteTemplate(req.params.id);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      // Can't edit system templates directly (but can duplicate)
+      if (template.templateType === 'system') {
+        return res.status(403).json({ error: "Cannot edit system templates. Duplicate to customize." });
+      }
+      
+      // Can only edit own templates
+      if (template.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const updated = await storage.updateQuoteTemplate(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update template" });
+    }
+  });
+  
+  // Duplicate template (works for system templates too)
+  app.post("/api/quote-templates/:id/duplicate", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const original = await storage.getQuoteTemplate(req.params.id);
+      
+      if (!original) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      const newTemplate = await storage.createQuoteTemplate({
+        userId,
+        name: `${original.name} (Copy)`,
+        channel: original.channel,
+        templateType: 'custom',
+        content: original.content,
+        description: original.description,
+        isDefault: false,
+        isActive: true
+      });
+      
+      res.json(newTemplate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to duplicate template" });
+    }
+  });
+  
+  // Delete template (only custom)
+  app.delete("/api/quote-templates/:id", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const template = await storage.getQuoteTemplate(req.params.id);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      if (template.templateType === 'system') {
+        return res.status(403).json({ error: "Cannot delete system templates" });
+      }
+      
+      if (template.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      await storage.deleteQuoteTemplate(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete template" });
+    }
+  });
+  
+  // Set default template for channel
+  app.post("/api/quote-templates/:id/set-default", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const template = await storage.getQuoteTemplate(req.params.id);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      await storage.setDefaultTemplate(userId, req.params.id, template.channel);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to set default template" });
+    }
+  });
+  
+  // Get show columns config
+  app.get("/api/show-columns", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const defaults = await storage.getBusinessDefaults(userId);
+      
+      const showColumns = {
+        boxSize: defaults?.showColumnBoxSize ?? true,
+        board: defaults?.showColumnBoard ?? true,
+        flute: defaults?.showColumnFlute ?? true,
+        paper: defaults?.showColumnPaper ?? true,
+        printing: defaults?.showColumnPrinting ?? false,
+        lamination: defaults?.showColumnLamination ?? false,
+        varnish: defaults?.showColumnVarnish ?? true,
+        weight: defaults?.showColumnWeight ?? true
+      };
+      
+      res.json(showColumns);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch show columns config" });
+    }
+  });
+  
+  // Update show columns config
+  app.post("/api/show-columns", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { boxSize, board, flute, paper, printing, lamination, varnish, weight } = req.body;
+      
+      const updates: any = {};
+      if (boxSize !== undefined) updates.showColumnBoxSize = boxSize;
+      if (board !== undefined) updates.showColumnBoard = board;
+      if (flute !== undefined) updates.showColumnFlute = flute;
+      if (paper !== undefined) updates.showColumnPaper = paper;
+      if (printing !== undefined) updates.showColumnPrinting = printing;
+      if (lamination !== undefined) updates.showColumnLamination = lamination;
+      if (varnish !== undefined) updates.showColumnVarnish = varnish;
+      if (weight !== undefined) updates.showColumnWeight = weight;
+      
+      const defaults = await storage.saveBusinessDefaults({
+        userId,
+        defaultGstPercent: 5,
+        ...updates
+      });
+      
+      res.json({
+        boxSize: defaults.showColumnBoxSize,
+        board: defaults.showColumnBoard,
+        flute: defaults.showColumnFlute,
+        paper: defaults.showColumnPaper,
+        printing: defaults.showColumnPrinting,
+        lamination: defaults.showColumnLamination,
+        varnish: defaults.showColumnVarnish,
+        weight: defaults.showColumnWeight
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update show columns config" });
+    }
+  });
+  
+  // Preview template with quote data
+  app.post("/api/quote-templates/:id/preview", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { quoteId } = req.body;
+      
+      const template = await storage.getQuoteTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      // Get quote data
+      const quoteData = await storage.getQuoteWithActiveVersion(quoteId);
+      if (!quoteData || !quoteData.version) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      
+      // Get company profile
+      const companyProfile = await storage.getDefaultCompanyProfile(userId);
+      
+      // Get party info
+      const party = quoteData.quote.partyId ? await storage.getPartyProfile(quoteData.quote.partyId) : null;
+      
+      // Get show columns config
+      const defaults = await storage.getBusinessDefaults(userId);
+      const showColumns = {
+        boxSize: defaults?.showColumnBoxSize ?? true,
+        board: defaults?.showColumnBoard ?? true,
+        flute: defaults?.showColumnFlute ?? true,
+        paper: defaults?.showColumnPaper ?? true,
+        printing: defaults?.showColumnPrinting ?? false,
+        lamination: defaults?.showColumnLamination ?? false,
+        varnish: defaults?.showColumnVarnish ?? true,
+        weight: defaults?.showColumnWeight ?? true
+      };
+      
+      // Render template
+      const rendered = renderQuoteTemplate(template.content, {
+        quote: quoteData.quote,
+        version: quoteData.version,
+        items: quoteData.items,
+        companyProfile,
+        party,
+        showColumns,
+        channel: template.channel
+      });
+      
+      res.json({ rendered, template });
+    } catch (error) {
+      console.error("Error previewing template:", error);
+      res.status(500).json({ error: "Failed to preview template" });
+    }
+  });
+  
+  // Send quote via WhatsApp/Email
+  app.post("/api/quotes/:id/send", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const quoteId = req.params.id;
+      const { channel, templateId, recipientInfo } = req.body;
+      
+      if (!channel || !['whatsapp', 'email'].includes(channel)) {
+        return res.status(400).json({ error: "Invalid channel. Use 'whatsapp' or 'email'" });
+      }
+      
+      // Validate business profile completeness
+      const companyProfile = await storage.getDefaultCompanyProfile(userId);
+      if (!companyProfile) {
+        return res.status(400).json({ 
+          error: "Business profile not found",
+          validation: { businessProfile: false }
+        });
+      }
+      
+      const missingFields: string[] = [];
+      if (!companyProfile.companyName) missingFields.push('Company Name');
+      if (!companyProfile.phone) missingFields.push('Phone');
+      if (!companyProfile.email) missingFields.push('Email');
+      if (!companyProfile.gstNo) missingFields.push('GST Number');
+      
+      if (missingFields.length > 0) {
+        return res.status(400).json({ 
+          error: `Business profile incomplete. Missing: ${missingFields.join(', ')}`,
+          validation: { businessProfile: false, missingFields }
+        });
+      }
+      
+      // Get quote with items
+      const quoteData = await storage.getQuoteWithActiveVersion(quoteId);
+      if (!quoteData || !quoteData.version) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      
+      if (!quoteData.items || quoteData.items.length === 0) {
+        return res.status(400).json({ 
+          error: "Quote has no items",
+          validation: { hasItems: false }
+        });
+      }
+      
+      // Get template
+      let template;
+      if (templateId) {
+        template = await storage.getQuoteTemplate(templateId);
+      } else {
+        template = await storage.getDefaultTemplate(userId, channel);
+      }
+      
+      if (!template) {
+        return res.status(400).json({ error: "No template found for this channel" });
+      }
+      
+      // Get show columns and party
+      const defaults = await storage.getBusinessDefaults(userId);
+      const showColumns = {
+        boxSize: defaults?.showColumnBoxSize ?? true,
+        board: defaults?.showColumnBoard ?? true,
+        flute: defaults?.showColumnFlute ?? true,
+        paper: defaults?.showColumnPaper ?? true,
+        printing: defaults?.showColumnPrinting ?? false,
+        lamination: defaults?.showColumnLamination ?? false,
+        varnish: defaults?.showColumnVarnish ?? true,
+        weight: defaults?.showColumnWeight ?? true
+      };
+      
+      const party = quoteData.quote.partyId ? await storage.getPartyProfile(quoteData.quote.partyId) : null;
+      
+      // Render template
+      const renderedContent = renderQuoteTemplate(template.content, {
+        quote: quoteData.quote,
+        version: quoteData.version,
+        items: quoteData.items,
+        companyProfile,
+        party,
+        showColumns,
+        channel
+      });
+      
+      // Log the send
+      const sendLog = await storage.createQuoteSendLog({
+        quoteId,
+        quoteVersionId: quoteData.version.id,
+        userId,
+        channel,
+        templateId: template.id,
+        recipientInfo: recipientInfo || party?.mobileNo || party?.email,
+        renderedContent,
+        status: 'sent'
+      });
+      
+      // For WhatsApp, return URL to open WhatsApp with message
+      if (channel === 'whatsapp') {
+        const phoneNumber = recipientInfo || party?.mobileNo || '';
+        const encodedMessage = encodeURIComponent(renderedContent);
+        const whatsappUrl = phoneNumber 
+          ? `https://wa.me/${phoneNumber.replace(/\D/g, '')}?text=${encodedMessage}`
+          : `https://wa.me/?text=${encodedMessage}`;
+        
+        res.json({ 
+          success: true, 
+          sendLog,
+          whatsappUrl,
+          renderedContent 
+        });
+      } else {
+        // For email, return rendered content (email sending handled client-side or via email service)
+        res.json({ 
+          success: true, 
+          sendLog,
+          renderedContent,
+          subject: `Quote ${quoteData.quote.quoteNo} from ${companyProfile.companyName}`
+        });
+      }
+    } catch (error) {
+      console.error("Error sending quote:", error);
+      res.status(500).json({ error: "Failed to send quote" });
+    }
+  });
+  
+  // Get send history for a quote
+  app.get("/api/quotes/:id/send-history", combinedAuth, async (req: any, res) => {
+    try {
+      const logs = await storage.getQuoteSendLogs(req.params.id);
+      res.json(logs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch send history" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
+}
+
+// Helper function to render quote templates
+function renderQuoteTemplate(
+  template: string,
+  data: {
+    quote: any;
+    version: any;
+    items: any[];
+    companyProfile: any;
+    party: any;
+    showColumns: Record<string, boolean>;
+    channel: string;
+  }
+): string {
+  const { quote, version, items, companyProfile, party, showColumns, channel } = data;
+  
+  // Build filtered items list based on showColumns
+  const itemLines = items.map((item: any, idx: number) => {
+    const snapshot = item.itemDataSnapshot || item;
+    const lines: string[] = [];
+    
+    const itemName = snapshot.boxName || `Item ${idx + 1}`;
+    const qty = snapshot.quantity || item.quantity || 0;
+    const rate = item.finalCostPerBox || snapshot.totalCostPerBox || 0;
+    const total = item.finalTotalCost || (rate * qty);
+    
+    if (channel === 'whatsapp') {
+      lines.push(`*${idx + 1}. ${itemName}*`);
+      if (showColumns.boxSize && snapshot.length && snapshot.width) {
+        const size = snapshot.height 
+          ? `${snapshot.length} x ${snapshot.width} x ${snapshot.height} mm`
+          : `${snapshot.length} x ${snapshot.width} mm`;
+        lines.push(`   Size: ${size}`);
+      }
+      if (showColumns.board && snapshot.ply) {
+        lines.push(`   Board: ${snapshot.ply} Ply`);
+      }
+      if (showColumns.flute && snapshot.fluteType) {
+        lines.push(`   Flute: ${snapshot.fluteType}`);
+      }
+      if (showColumns.weight && snapshot.sheetWeight) {
+        lines.push(`   Weight: ${snapshot.sheetWeight.toFixed(2)} kg`);
+      }
+      lines.push(`   Qty: ${qty} | Rate: ₹${rate.toFixed(2)} | Total: ₹${total.toFixed(2)}`);
+    } else {
+      // For email, build table row data structure
+      lines.push(`<tr>
+        <td>${itemName}</td>
+        ${showColumns.boxSize ? `<td>${snapshot.length || ''} x ${snapshot.width || ''}${snapshot.height ? ' x ' + snapshot.height : ''} mm</td>` : ''}
+        ${showColumns.board ? `<td>${snapshot.ply || ''} Ply</td>` : ''}
+        ${showColumns.flute ? `<td>${snapshot.fluteType || ''}</td>` : ''}
+        ${showColumns.weight ? `<td>${snapshot.sheetWeight ? snapshot.sheetWeight.toFixed(2) + ' kg' : ''}</td>` : ''}
+        <td>${qty}</td>
+        <td>₹${rate.toFixed(2)}</td>
+        <td>₹${total.toFixed(2)}</td>
+      </tr>`);
+    }
+    
+    return lines.join('\n');
+  }).join(channel === 'whatsapp' ? '\n\n' : '');
+  
+  // Build dynamic headers for email
+  const dynamicHeaders = channel === 'email' ? [
+    showColumns.boxSize ? '<th>Size</th>' : '',
+    showColumns.board ? '<th>Board</th>' : '',
+    showColumns.flute ? '<th>Flute</th>' : '',
+    showColumns.weight ? '<th>Weight</th>' : ''
+  ].filter(Boolean).join('') : '';
+  
+  // Format date
+  const quoteDate = version.createdAt 
+    ? new Date(version.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : new Date().toLocaleDateString('en-IN');
+  
+  // Replace placeholders
+  let rendered = template
+    // Business placeholders
+    .replace(/\{\{BusinessName\}\}/g, companyProfile?.companyName || '')
+    .replace(/\{\{OwnerName\}\}/g, companyProfile?.ownerName || companyProfile?.companyName || '')
+    .replace(/\{\{BusinessPhone\}\}/g, companyProfile?.phone || '')
+    .replace(/\{\{BusinessEmail\}\}/g, companyProfile?.email || '')
+    .replace(/\{\{GSTNo\}\}/g, companyProfile?.gstNo || '')
+    .replace(/\{\{Website\}\}/g, companyProfile?.website || '')
+    .replace(/\{\{MapLink\}\}/g, companyProfile?.mapLink || companyProfile?.googleLocation || '')
+    .replace(/\{\{LogoUrl\}\}/g, companyProfile?.logoUrl || '')
+    // Party placeholders
+    .replace(/\{\{PartyName\}\}/g, party?.personName || party?.companyName || 'Customer')
+    // Quote placeholders
+    .replace(/\{\{QuoteNo\}\}/g, quote.quoteNo || '')
+    .replace(/\{\{QuoteDate\}\}/g, quoteDate)
+    .replace(/\{\{Subtotal\}\}/g, (version.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 }))
+    .replace(/\{\{GST\}\}/g, String(version.gstPercent || 5))
+    .replace(/\{\{GSTAmount\}\}/g, (version.gstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 }))
+    .replace(/\{\{GrandTotal\}\}/g, (version.finalTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 }))
+    .replace(/\{\{PaymentTerms\}\}/g, version.paymentTerms || companyProfile?.paymentTerms || '100% Advance')
+    .replace(/\{\{DeliveryTimeline\}\}/g, version.deliveryDays ? `${version.deliveryDays} days` : companyProfile?.deliveryTime || '10 days')
+    // Items placeholders
+    .replace(/\{\{ItemsList\}\}/g, itemLines)
+    .replace(/\{\{ItemRows\}\}/g, itemLines)
+    .replace(/\{\{DynamicHeaders\}\}/g, dynamicHeaders);
+  
+  // Handle conditional blocks like {{#if Website}}...{{/if}}
+  rendered = rendered.replace(/\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (match, field, content) => {
+    const fieldMap: Record<string, any> = {
+      'Website': companyProfile?.website,
+      'MapLink': companyProfile?.mapLink || companyProfile?.googleLocation,
+      'LogoUrl': companyProfile?.logoUrl
+    };
+    return fieldMap[field] ? content : '';
+  });
+  
+  // Clean up any remaining empty lines (for WhatsApp)
+  if (channel === 'whatsapp') {
+    rendered = rendered.replace(/\n{3,}/g, '\n\n');
+  }
+  
+  return rendered;
 }
