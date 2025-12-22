@@ -1,0 +1,213 @@
+You are a senior SaaS security architect and full-stack engineer.
+I already have Supabase connected with OAuth keys configured.
+Refine, harden, and upgrade the entire authentication system to ENTERPRISE-GRADE standards.
+
+========================================
+AUTHENTICATION & IDENTITY REQUIREMENTS
+========================================
+
+1. MANDATORY USER DATA (NO EXCEPTIONS)
+-------------------------------------
+Every user must provide:
+- Email address (mandatory)
+- Mobile number with country code (mandatory)
+
+Rules:
+- No account can be created without BOTH email + mobile number
+- OAuth logins must also collect missing email/mobile after first login
+- Block access until both fields are verified
+
+Store in:
+- auth.users (email)
+- public.profiles (mobile, country_code, verified flags)
+
+========================================
+LOGIN & SIGNUP METHODS (BEST PRACTICE)
+========================================
+
+Enable the following login methods:
+
+A. EMAIL METHODS
+----------------
+1. Email + Password
+2. Email OTP (passwordless login)
+3. Magic Link login
+
+B. MOBILE METHODS
+-----------------
+4. Mobile Number + OTP (SMS based)
+
+C. OAUTH / SOCIAL LOGIN
+-----------------------
+5. Google OAuth
+6. Microsoft OAuth
+7. LinkedIn OAuth
+8. Apple Sign-In (if supported)
+
+Rules for OAuth:
+- If OAuth does not return mobile number → redirect to "Complete Profile" screen
+- Do not allow dashboard access until:
+  - Email is verified
+  - Mobile is verified
+
+========================================
+VERIFICATION & SECURITY FLOW
+========================================
+
+EMAIL VERIFICATION
+------------------
+- Automatically send verification email on signup
+- Verification email must include:
+  - Secure, time-bound verification link
+- User status remains "UNVERIFIED" until clicked
+
+MOBILE VERIFICATION
+-------------------
+- Send OTP to mobile number
+- OTP expires in 5 minutes
+- Max 3 retries
+- Lock verification for 15 minutes after failed attempts
+
+========================================
+POST-SIGNUP AUTOMATION
+========================================
+
+ON SUCCESSFUL SIGNUP (ANY METHOD):
+----------------------------------
+
+1. SEND EMAIL TO ADMIN
+----------------------
+Trigger an email to admin immediately:
+Subject: New User Registered – {{business_name}}
+
+Email body includes:
+- User Name
+- Email
+- Mobile Number
+- Signup Method (Email / OTP / Google / etc.)
+- Date & Time
+- IP address (if available)
+
+Admin email should be configurable from ENV:
+ADMIN_NOTIFICATION_EMAIL
+
+2. SEND WELCOME EMAIL TO USER
+-----------------------------
+Send branded welcome email:
+- Greeting with user name
+- Confirmation that account is created
+- Verification CTA (if not verified)
+- Security note (ignore if not you)
+- Support contact details
+
+========================================
+ACCOUNT STATES & ACCESS CONTROL
+========================================
+
+Define clear user states:
+
+- NEW_USER
+- EMAIL_VERIFIED
+- MOBILE_VERIFIED
+- FULLY_VERIFIED
+- SUSPENDED
+- DELETED
+
+Rules:
+- Only FULLY_VERIFIED users can access the app
+- Unverified users see only verification screens
+- Suspended users see contact admin message
+
+========================================
+DATABASE & SCHEMA REQUIREMENTS
+========================================
+
+Create / update tables:
+
+public.profiles
+----------------
+- id (uuid, FK to auth.users)
+- full_name
+- email
+- mobile_number
+- country_code
+- email_verified (boolean)
+- mobile_verified (boolean)
+- signup_method
+- created_at
+- last_login_at
+
+public.audit_logs
+-----------------
+- id
+- user_id
+- action (LOGIN, SIGNUP, VERIFY_EMAIL, VERIFY_MOBILE)
+- ip_address
+- user_agent
+- created_at
+
+========================================
+SECURITY HARDENING
+========================================
+
+Implement:
+- Rate limiting on OTP & login attempts
+- CAPTCHA after 3 failed attempts
+- Session timeout (configurable)
+- Refresh token rotation
+- Logout from all devices option
+- Password strength enforcement
+- Block disposable emails
+- Device fingerprinting (optional)
+
+========================================
+UX / FLOW REQUIREMENTS
+========================================
+
+Screens to implement:
+- Login
+- Signup
+- OTP Verification
+- Complete Profile
+- Email Verification Pending
+- Account Suspended
+- Password Reset
+
+Rules:
+- Clean SaaS UX
+- Clear error messages
+- No vague failures
+- Accessibility friendly
+
+========================================
+TECHNICAL REQUIREMENTS
+========================================
+
+- Use Supabase Auth
+- Use Supabase Edge Functions for:
+  - Admin email notifications
+  - Welcome email
+- Environment variables only (no hardcoding secrets)
+- Production-ready code
+- Modular & scalable
+- Add comments for clarity
+
+========================================
+DELIVERABLES
+========================================
+
+Provide:
+1. Auth flow architecture
+2. Supabase SQL schema
+3. Edge Functions code
+4. Frontend auth logic
+5. Middleware for route protection
+6. ENV variable list
+7. Security checklist
+
+DO NOT PROVIDE:
+- Demo-only shortcuts
+- Weak validation
+- Hardcoded credentials
+
+Build this as a REAL enterprise SaaS authentication system.

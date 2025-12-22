@@ -1,0 +1,218 @@
+You are a senior SaaS security architect and full-stack engineer.
+Build and refine a COMPLETE ENTERPRISE-GRADE authentication system using Supabase.
+
+STACK:
+- Frontend: Web App (React / Next.js compatible)
+- Backend: Supabase (Auth + Database + Edge Functions)
+- Email: SMTP / Resend / SendGrid
+- Sender Email: noreply@paperboxerp.com
+
+================================================
+GLOBAL HARD RULES (NON-NEGOTIABLE)
+================================================
+
+1. Supabase is already connected.
+2. Admin notification email is HARD-SET and IMMUTABLE:
+   saas@aibunty.com
+3. Admin email must never be editable from UI or DB.
+4. Every authentication event must notify admin.
+5. Every user must provide BOTH:
+   - Email (mandatory)
+   - Mobile number with country code (mandatory)
+
+================================================
+AUTH METHODS TO IMPLEMENT
+================================================
+
+Enable:
+- Email + Password
+- Email OTP (passwordless)
+- Magic Link
+- Mobile OTP
+- OAuth (Google, Microsoft, LinkedIn, Apple)
+
+OAuth rule:
+If OAuth does not return mobile number →
+Redirect to Complete Profile →
+Block dashboard access until verified.
+
+================================================
+PASSWORD RECOVERY SYSTEM (CRITICAL)
+================================================
+
+Implement a SECURE, ENTERPRISE-GRADE password recovery flow.
+
+A. FORGOT PASSWORD
+------------------
+- User enters registered email
+- System sends password reset email
+- Email contains:
+  - Secure, time-bound reset link (15 minutes)
+  - Clear security warning
+  - Support contact
+- Do NOT reveal if email exists (anti-enumeration)
+
+B. RESET PASSWORD
+-----------------
+- User lands on reset password page
+- Must:
+  - Set strong password
+  - Confirm password
+- Enforce password rules:
+  - Min 8 chars
+  - Uppercase, lowercase
+  - Number
+  - Special character
+
+C. SECURITY RULES
+----------------
+- Reset link usable only once
+- Expire after use or time
+- Invalidate all sessions after reset
+- Force re-login on all devices
+
+================================================
+EMAIL RULES (PASSWORD RECOVERY)
+================================================
+
+- All recovery emails must be sent from:
+  noreply@paperboxerp.com
+- Email subject:
+  "Reset Your PaperBox ERP Password"
+- Include:
+  - Reset CTA
+  - IP & device info (if available)
+  - "If this wasn’t you" message
+
+================================================
+ADMIN NOTIFICATIONS (PASSWORD EVENTS)
+================================================
+
+Notify admin (saas@aibunty.com) when:
+- Password reset requested
+- Password successfully changed
+
+Admin email includes:
+- User email
+- Mobile number
+- Event type
+- Timestamp
+- IP address
+
+================================================
+EMAIL VERIFICATION FLOW
+================================================
+
+- Verification email sent on signup
+- User cannot access app until verified
+- Verification link expires after time
+
+================================================
+SUPABASE EDGE FUNCTIONS (MANDATORY)
+================================================
+
+Create Edge Functions:
+1. send-welcome-email
+2. notify-admin-auth-event
+3. send-password-reset-email
+
+All emails must:
+- Use FROM_EMAIL = noreply@paperboxerp.com
+- Use ADMIN_NOTIFICATION_EMAIL = saas@aibunty.com
+- Never expose secrets
+
+================================================
+ENVIRONMENT VARIABLES
+================================================
+
+ADMIN_NOTIFICATION_EMAIL=saas@aibunty.com
+FROM_EMAIL=noreply@paperboxerp.com
+APP_NAME=PaperBox ERP
+SMTP_HOST / RESEND_API_KEY
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+
+================================================
+DATABASE STRUCTURE
+================================================
+
+public.profiles
+- id (uuid, FK auth.users)
+- full_name
+- email
+- mobile_number
+- country_code
+- email_verified (boolean)
+- mobile_verified (boolean)
+- signup_method
+- created_at
+- last_login_at
+
+public.audit_logs
+- id
+- user_id
+- action
+- ip_address
+- metadata
+- created_at
+
+================================================
+ACCESS CONTROL
+================================================
+
+User states:
+- NEW_USER
+- EMAIL_VERIFIED
+- MOBILE_VERIFIED
+- FULLY_VERIFIED
+- PASSWORD_RESET_REQUIRED
+
+Rules:
+- Only FULLY_VERIFIED users access dashboard
+- PASSWORD_RESET_REQUIRED forces reset screen
+
+================================================
+SECURITY HARDENING
+================================================
+
+Implement:
+- Rate limiting on login & reset
+- CAPTCHA after failures
+- Token rotation
+- Session expiration
+- Logout all devices on password change
+- Audit logging for all auth actions
+
+================================================
+UX SCREENS
+================================================
+
+Create:
+- Login
+- Signup
+- Forgot Password
+- Reset Password
+- Email Verification Pending
+- Mobile OTP Verification
+- Complete Profile
+- Account Suspended
+
+================================================
+DELIVERABLES
+================================================
+
+Provide:
+1. Supabase SQL schema
+2. Edge Function code
+3. Frontend auth flow logic
+4. Password recovery flow
+5. Email templates (welcome, reset, admin)
+6. Middleware & guards
+7. Security checklist
+
+DO NOT:
+- Skip verification
+- Expose admin email
+- Hardcode secrets
+
+Build this as a REAL enterprise SaaS authentication system.
