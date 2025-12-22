@@ -3399,6 +3399,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastVerifiedAt: new Date()
       });
       
+      // Send confirmation email asynchronously (non-blocking)
+      const { sendEmailConfigurationConfirmation } = await import('./services/emailService');
+      const userProfile = await storage.getUserProfile(userId);
+      const providerName = settings.oauthProvider === 'google' ? 'Google OAuth' : (settings.provider || 'SMTP');
+      
+      sendEmailConfigurationConfirmation(
+        userId, 
+        settings.emailAddress, 
+        userProfile?.ownerName || '', 
+        providerName
+      ).catch(err => console.error('CONFIRMATION_EMAIL_FAILED:', err));
+      
       res.json({ success: true, message: "Email configuration verified successfully!" });
     } catch (error: any) {
       console.error("Email verification failed:", error);
@@ -3537,6 +3549,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error disconnecting Google:", error);
       res.status(500).json({ error: "Failed to disconnect Google account" });
+    }
+  });
+
+  // ========== EMAIL ANALYTICS ENDPOINTS ==========
+  
+  // Get email delivery stats
+  app.get("/api/email-analytics/stats", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { startDate, endDate } = req.query;
+      
+      const stats = await storage.getEmailStats(
+        userId, 
+        startDate ? new Date(startDate as string) : undefined,
+        endDate ? new Date(endDate as string) : undefined
+      );
+      
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching email stats:", error);
+      res.status(500).json({ error: "Failed to fetch email statistics" });
+    }
+  });
+  
+  // Get email logs with filters
+  app.get("/api/email-analytics/logs", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { status, channel, startDate, endDate } = req.query;
+      
+      const logs = await storage.getEmailLogs(userId, {
+        status: status as string | undefined,
+        channel: channel as string | undefined,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined
+      });
+      
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching email logs:", error);
+      res.status(500).json({ error: "Failed to fetch email logs" });
+    }
+  });
+  
+  // Get email bounces
+  app.get("/api/email-analytics/bounces", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const bounces = await storage.getEmailBounces(userId);
+      res.json(bounces);
+    } catch (error) {
+      console.error("Error fetching bounces:", error);
+      res.status(500).json({ error: "Failed to fetch bounce data" });
+    }
+  });
+  
+  // Get bounced recipients (unique list of hard-bounced email addresses)
+  app.get("/api/email-analytics/bounced-recipients", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const recipients = await storage.getBouncedRecipients(userId);
+      res.json(recipients);
+    } catch (error) {
+      console.error("Error fetching bounced recipients:", error);
+      res.status(500).json({ error: "Failed to fetch bounced recipients" });
     }
   });
 
