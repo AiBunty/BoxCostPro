@@ -25,8 +25,11 @@ import {
   ChevronRight,
   Eye,
   Edit,
-  ArrowLeft
+  ArrowLeft,
+  Columns,
+  Check
 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { downloadGenericExcel } from "@/lib/excelExport";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -142,7 +145,78 @@ export default function Reports() {
   const [auditBoxSizeFilter, setAuditBoxSizeFilter] = useState("");
   const [negotiatedInputs, setNegotiatedInputs] = useState<Record<string, string>>({});
   
+  // Column visibility for Quote Register
+  const [columnVisibility, setColumnVisibility] = useState({
+    quoteNo: true,
+    date: true,
+    party: true,
+    company: true,
+    items: true,
+    status: true,
+    value: true,
+    actions: true
+  });
+  
+  // Quick date presets helper
+  const applyDatePreset = useCallback((preset: string) => {
+    const today = new Date();
+    let startDate = '';
+    let endDate = '';
+    
+    switch(preset) {
+      case 'today':
+        startDate = endDate = today.toISOString().split('T')[0];
+        break;
+      case 'yesterday':
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        startDate = endDate = yesterday.toISOString().split('T')[0];
+        break;
+      case 'thisWeek':
+        const weekStart = new Date(today);
+        // Use Monday as week start (ISO week standard)
+        const dayOfWeek = today.getDay();
+        const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday=0, Monday=1, etc.
+        weekStart.setDate(today.getDate() - mondayOffset);
+        startDate = weekStart.toISOString().split('T')[0];
+        endDate = today.toISOString().split('T')[0];
+        break;
+      case 'thisMonth':
+        startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+        endDate = today.toISOString().split('T')[0];
+        break;
+      case 'lastMonth':
+        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+        startDate = lastMonth.toISOString().split('T')[0];
+        endDate = lastMonthEnd.toISOString().split('T')[0];
+        break;
+      case 'thisYear':
+        startDate = new Date(today.getFullYear(), 0, 1).toISOString().split('T')[0];
+        endDate = today.toISOString().split('T')[0];
+        break;
+    }
+    
+    updateState({ startDate, endDate });
+  }, [updateState]);
+  
   const printRef = useRef<HTMLDivElement>(null);
+
+  // Audit log: Track report tab views
+  useEffect(() => {
+    if (state.tab) {
+      console.log("[Audit] Report viewed:", {
+        action: "REPORT_VIEW",
+        reportType: state.tab,
+        filters: {
+          party: state.party || 'all',
+          search: state.search || null,
+          dateRange: state.startDate && state.endDate ? `${state.startDate} to ${state.endDate}` : null
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [state.tab, state.party, state.startDate, state.endDate]);
 
   const { data: partyProfiles = [], isLoading: isLoadingParties } = useQuery<PartyProfile[]>({
     queryKey: ['/api/party-profiles'],
@@ -520,11 +594,26 @@ export default function Reports() {
   };
 
   const handleExportPDF = () => {
+    // Audit log: PDF export
+    console.log("[Audit] Report export:", {
+      action: "REPORT_EXPORT_PDF",
+      reportType: "party-audit",
+      partyName: auditPartyName,
+      timestamp: new Date().toISOString()
+    });
     handlePrint();
   };
 
   const exportPartyAuditToExcel = () => {
     if (!auditPartyName) return;
+    
+    // Audit log: Excel export
+    console.log("[Audit] Report export:", {
+      action: "REPORT_EXPORT_EXCEL",
+      reportType: "party-audit",
+      partyName: auditPartyName,
+      timestamp: new Date().toISOString()
+    });
     
     const exportData: any[] = [];
     const partyGst = auditPartyProfile?.gstNo || '-';
@@ -868,6 +957,13 @@ export default function Reports() {
                   <Calendar className="w-4 h-4" />
                   Date Range
                 </Label>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('today')} data-testid="btn-preset-today">Today</Button>
+                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('yesterday')} data-testid="btn-preset-yesterday">Yest</Button>
+                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('thisWeek')} data-testid="btn-preset-week">Week</Button>
+                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('thisMonth')} data-testid="btn-preset-month">Month</Button>
+                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('lastMonth')} data-testid="btn-preset-lastmonth">Prev</Button>
+                </div>
                 <Input 
                   type="date"
                   value={state.startDate}
@@ -915,25 +1011,87 @@ export default function Reports() {
               {/* Quote Register - Actionable Rows */}
               <TabsContent value="quote-register" className="space-y-4">
                 <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Quote Register</CardTitle>
-                    <CardDescription>
-                      Complete list of all quotes ({filteredQuotes.length} records) - Click quote number to edit
-                    </CardDescription>
+                  <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4">
+                    <div>
+                      <CardTitle className="text-base">Quote Register</CardTitle>
+                      <CardDescription>
+                        Complete list of all quotes ({filteredQuotes.length} records) - Click quote number to edit
+                      </CardDescription>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" data-testid="button-column-chooser">
+                          <Columns className="w-4 h-4 mr-2" />
+                          Columns
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.quoteNo}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, quoteNo: checked }))}
+                        >
+                          Quote No
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.date}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, date: checked }))}
+                        >
+                          Date
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.party}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, party: checked }))}
+                        >
+                          Party
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.company}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, company: checked }))}
+                        >
+                          Company
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.items}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, items: checked }))}
+                        >
+                          Items
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.status}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, status: checked }))}
+                        >
+                          Status
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.value}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, value: checked }))}
+                        >
+                          Value
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={columnVisibility.actions}
+                          onCheckedChange={(checked) => setColumnVisibility(prev => ({ ...prev, actions: checked }))}
+                        >
+                          Actions
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </CardHeader>
                   <CardContent>
-                    <div className="rounded-md border overflow-x-auto">
+                    <div className="rounded-md border max-h-[600px] overflow-auto">
                       <Table>
-                        <TableHeader>
+                        <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
                           <TableRow>
-                            <TableHead>Quote No</TableHead>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Party</TableHead>
-                            <TableHead>Company</TableHead>
-                            <TableHead className="text-center">Items</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Value</TableHead>
-                            <TableHead className="text-center">Actions</TableHead>
+                            {columnVisibility.quoteNo && <TableHead>Quote No</TableHead>}
+                            {columnVisibility.date && <TableHead>Date</TableHead>}
+                            {columnVisibility.party && <TableHead>Party</TableHead>}
+                            {columnVisibility.company && <TableHead>Company</TableHead>}
+                            {columnVisibility.items && <TableHead className="text-center">Items</TableHead>}
+                            {columnVisibility.status && <TableHead>Status</TableHead>}
+                            {columnVisibility.value && <TableHead className="text-right">Value</TableHead>}
+                            {columnVisibility.actions && <TableHead className="text-center">Actions</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -956,45 +1114,61 @@ export default function Reports() {
                                   className="cursor-pointer hover:bg-muted/50 transition-colors"
                                   data-testid={`quote-row-${quote.id}`}
                                 >
-                                  <TableCell 
-                                    className="font-mono text-sm text-primary cursor-pointer hover:underline"
-                                    onClick={() => navigateToQuoteEdit(quote.id)}
-                                  >
-                                    {quote.quoteNo || "-"}
-                                  </TableCell>
-                                  <TableCell className="text-sm">
-                                    {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : "-"}
-                                  </TableCell>
-                                  <TableCell 
-                                    className="font-medium text-primary cursor-pointer hover:underline"
-                                    onClick={() => navigateToPartyDetail(quote.partyName)}
-                                  >
-                                    {quote.partyName}
-                                  </TableCell>
-                                  <TableCell className="text-muted-foreground">{quote.customerCompany}</TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant="outline">{items.length}</Badge>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant={quote.status === 'confirmed' ? 'default' : 'secondary'}>
-                                      {quote.status || 'Draft'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right font-mono">
-                                    ₹{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <Button 
-                                        size="icon" 
-                                        variant="ghost"
-                                        onClick={() => navigateToQuoteEdit(quote.id)}
-                                        data-testid={`button-edit-quote-${quote.id}`}
-                                      >
-                                        <Edit className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                  </TableCell>
+                                  {columnVisibility.quoteNo && (
+                                    <TableCell 
+                                      className="font-mono text-sm text-primary cursor-pointer hover:underline"
+                                      onClick={() => navigateToQuoteEdit(quote.id)}
+                                    >
+                                      {quote.quoteNo || "-"}
+                                    </TableCell>
+                                  )}
+                                  {columnVisibility.date && (
+                                    <TableCell className="text-sm">
+                                      {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : "-"}
+                                    </TableCell>
+                                  )}
+                                  {columnVisibility.party && (
+                                    <TableCell 
+                                      className="font-medium text-primary cursor-pointer hover:underline"
+                                      onClick={() => navigateToPartyDetail(quote.partyName)}
+                                    >
+                                      {quote.partyName}
+                                    </TableCell>
+                                  )}
+                                  {columnVisibility.company && (
+                                    <TableCell className="text-muted-foreground">{quote.customerCompany}</TableCell>
+                                  )}
+                                  {columnVisibility.items && (
+                                    <TableCell className="text-center">
+                                      <Badge variant="outline">{items.length}</Badge>
+                                    </TableCell>
+                                  )}
+                                  {columnVisibility.status && (
+                                    <TableCell>
+                                      <Badge variant={quote.status === 'confirmed' ? 'default' : 'secondary'}>
+                                        {quote.status || 'Draft'}
+                                      </Badge>
+                                    </TableCell>
+                                  )}
+                                  {columnVisibility.value && (
+                                    <TableCell className="text-right font-mono">
+                                      ₹{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                    </TableCell>
+                                  )}
+                                  {columnVisibility.actions && (
+                                    <TableCell className="text-center">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <Button 
+                                          size="icon" 
+                                          variant="ghost"
+                                          onClick={() => navigateToQuoteEdit(quote.id)}
+                                          data-testid={`button-edit-quote-${quote.id}`}
+                                        >
+                                          <Edit className="w-4 h-4" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  )}
                                 </TableRow>
                               );
                             })

@@ -816,6 +816,15 @@ export class DatabaseStorage implements IStorage {
     return versions.length > 0 ? Math.max(...versions.map(v => v.versionNo)) + 1 : 1;
   }
 
+  // Archive a quote version (mark as archived when superseded by newer version)
+  async archiveQuoteVersion(versionId: string): Promise<QuoteVersion | undefined> {
+    const [updated] = await db.update(quoteVersions)
+      .set({ isArchived: true })
+      .where(eq(quoteVersions.id, versionId))
+      .returning();
+    return updated;
+  }
+
   // Quote Item Versions
   async createQuoteItemVersions(items: InsertQuoteItemVersion[]): Promise<QuoteItemVersion[]> {
     if (items.length === 0) return [];

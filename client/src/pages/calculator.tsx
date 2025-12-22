@@ -242,7 +242,10 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   
   // Track if we're in edit mode (from reports)
   const isEditMode = !!urlParams.quoteId;
+  const isFromReports = urlParams.from === 'reports';
   const [loadingQuoteFromUrl, setLoadingQuoteFromUrl] = useState(!!urlParams.quoteId);
+  const [isPreviewMode, setIsPreviewMode] = useState(isFromReports && !!urlParams.quoteId);
+  const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(urlParams.quoteId);
   const [ply, setPly] = useState<string>("5");
   const [fluteCombination, setFluteCombination] = useState<string>("BC");
   const [fluteSettings, setFluteSettings] = useState<Record<string, number>>({
@@ -1696,6 +1699,53 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
       <FlutingOnboarding onComplete={() => {
         queryClient.invalidateQueries({ queryKey: ['/api/fluting-settings'] });
       }} />
+      
+      {/* Preview Mode Banner - Shown when quote is opened from reports */}
+      {isPreviewMode && isEditMode && (
+        <div className="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800">
+          <div className="container mx-auto px-4 py-3">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-amber-600 dark:text-amber-300" />
+                </div>
+                <div>
+                  <p className="font-medium text-amber-800 dark:text-amber-200">Quote Preview Mode</p>
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    This quote is in read-only mode. Click "Update Quote" to create a new version for editing.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReturnToReports}
+                  data-testid="button-preview-back"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Reports
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setIsPreviewMode(false);
+                    toast({
+                      title: "Edit mode enabled",
+                      description: "You can now modify this quote. Saving will create a new version.",
+                    });
+                  }}
+                  data-testid="button-update-quote"
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Update Quote
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <header className="border-b">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">

@@ -790,10 +790,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createQuoteItemVersions(itemVersions);
       }
       
+      // Archive previous version if one exists
+      if (quote.activeVersionId) {
+        await storage.archiveQuoteVersion(quote.activeVersionId);
+      }
+      
       // Update quote with new active version ID AND totalValue (CRITICAL FIX)
       await storage.updateQuote(quoteId, { 
         activeVersionId: version.id,
         totalValue: finalTotal
+      });
+      
+      // Log version creation for audit trail
+      console.log("[Audit] Quote version created:", {
+        action: "QUOTE_VERSION_CREATED",
+        quoteId,
+        quoteNo: quote.quoteNo,
+        versionNo,
+        previousVersionId: quote.activeVersionId,
+        newVersionId: version.id,
+        userId,
+        timestamp: new Date().toISOString()
       });
       
       console.log("[Quote Version] Version created successfully:");
