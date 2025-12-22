@@ -47,10 +47,34 @@ The frontend is built with React and TypeScript using Vite, featuring a modern U
     - **Audit Logging**: quote_send_logs table captures template used, channel, recipient, rendered content, and timestamp for compliance
     - **Pre-Send Validation**: Ensures Business Profile is complete (companyName, phone, email, gstNo) and quote has items before allowing sends
 
+### Multi-Tenant Architecture
+This application implements enterprise-grade multi-tenancy with strict data isolation:
+
+*   **Tenant Model**: Each organization is a "tenant" with its own isolated data. A `tenants` table stores organization info (name, subdomain), and `tenant_users` maps users to tenants with roles (owner, admin, member).
+*   **Data Isolation Strategy**: 
+    - All business tables have a `tenant_id` foreign key column
+    - RLS (Row Level Security) policies enforce tenant isolation at the database level
+    - Backend middleware resolves tenant context from authenticated user's membership
+    - API routes NEVER accept tenant_id from frontend - it's always resolved server-side
+*   **Table Classification**:
+    - **System Tables (NO tenant_id)**: `users`, `user_profiles`, `user_email_settings`, `auth_audit_logs`, `subscription_plans`, `sessions`
+    - **Business Tables (WITH tenant_id)**: `quotes`, `quote_items`, `parties`, `company_profiles`, `flute_settings`, `paper_bf_prices`, `box_specifications`, `support_tickets`, `email_logs`, `rate_memory`, `app_settings`, `quote_templates`, `business_defaults`, `saved_reports`, `calculations`, and more
+*   **Tenant Provisioning**: A database trigger `create_tenant_for_new_user` automatically creates a personal tenant and owner membership when a new user signs up
+*   **Key Files**:
+    - `server/tenantContext.ts`: Resolves tenant_id from authenticated user's active tenant membership
+    - `server/supabaseAuth.ts`: `combinedAuth` middleware injects `req.tenantId` and `req.tenantContext` on every authenticated request
+    - `server/storage.ts`: All storage methods accept optional `tenantId` parameter and include it in queries/inserts
+    - `shared/schema.ts`: Defines `tenants` and `tenant_users` tables with all tenant_id foreign keys
+*   **Security Guarantees**:
+    - RLS policies use `user_has_tenant_access(tenant_id, auth.uid())` function to verify access
+    - Backend validates tenant membership before every data operation
+    - Cross-tenant data access is impossible at both application and database levels
+
 ### System Design Choices
 *   **Modularity**: Clear separation of concerns between frontend and backend, with distinct modules for routing, storage, and business logic.
 *   **Type Safety**: Extensive use of TypeScript and Zod for robust type checking and validation.
 *   **Scalability**: Designed with a swappable storage layer and PostgreSQL for future growth.
+*   **Multi-Tenancy**: True data isolation using tenant_id filtering + RLS policies for enterprise-grade security.
 *   **User Experience**: Focus on intuitive interfaces, real-time feedback, and features that minimize manual data entry.
 
 ## External Dependencies
