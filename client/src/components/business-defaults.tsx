@@ -17,15 +17,17 @@ interface BusinessDefaults {
   gstRegistered: boolean;
   gstNumber: string | null;
   igstApplicable: boolean;
+  roundOffEnabled: boolean;
 }
 
 export default function BusinessDefaultsSettings() {
   const { toast } = useToast();
   const [formData, setFormData] = useState<BusinessDefaults>({
-    defaultGstPercent: 18,
+    defaultGstPercent: 5,
     gstRegistered: true,
     gstNumber: null,
     igstApplicable: false,
+    roundOffEnabled: true,
   });
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -169,6 +171,21 @@ export default function BusinessDefaultsSettings() {
                   checked={formData.igstApplicable}
                   onCheckedChange={(checked) => handleChange('igstApplicable', checked)}
                   data-testid="switch-igst-applicable"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="roundOffEnabled">Round Off Totals</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Round grand total to nearest rupee for cleaner invoices
+                  </p>
+                </div>
+                <Switch
+                  id="roundOffEnabled"
+                  checked={formData.roundOffEnabled}
+                  onCheckedChange={(checked) => handleChange('roundOffEnabled', checked)}
+                  data-testid="switch-round-off-enabled"
                 />
               </div>
             </div>
