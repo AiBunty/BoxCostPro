@@ -49,6 +49,39 @@ export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ i
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UserProfile = typeof userProfiles.$inferSelect;
 
+// Email Provider enum for user email settings
+export const emailProviderEnum = z.enum(['gmail', 'google_oauth', 'outlook', 'yahoo', 'zoho', 'titan', 'custom']);
+export type EmailProvider = z.infer<typeof emailProviderEnum>;
+
+// User Email Settings - allows users to send emails from their own email address
+export const userEmailSettings = pgTable("user_email_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  provider: varchar("provider").notNull(), // 'gmail', 'google_oauth', 'outlook', 'yahoo', 'zoho', 'titan', 'custom'
+  emailAddress: varchar("email_address").notNull(),
+  // SMTP Configuration
+  smtpHost: varchar("smtp_host"),
+  smtpPort: integer("smtp_port"),
+  smtpSecure: boolean("smtp_secure").default(false), // TLS/SSL
+  smtpUsername: varchar("smtp_username"),
+  smtpPasswordEncrypted: text("smtp_password_encrypted"), // Encrypted password
+  // OAuth Configuration (Google)
+  oauthProvider: varchar("oauth_provider"), // 'google' | null
+  oauthAccessTokenEncrypted: text("oauth_access_token_encrypted"),
+  oauthRefreshTokenEncrypted: text("oauth_refresh_token_encrypted"),
+  oauthTokenExpiresAt: timestamp("oauth_token_expires_at"),
+  // Status
+  isVerified: boolean("is_verified").default(false),
+  isActive: boolean("is_active").default(true),
+  lastVerifiedAt: timestamp("last_verified_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserEmailSettingsSchema = createInsertSchema(userEmailSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserEmailSettings = z.infer<typeof insertUserEmailSettingsSchema>;
+export type UserEmailSettings = typeof userEmailSettings.$inferSelect;
+
 // Subscription Plans (managed by owner)
 export const subscriptionPlans = pgTable("subscription_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

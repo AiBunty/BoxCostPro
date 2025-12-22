@@ -61,6 +61,8 @@ import {
   type InsertQuoteTemplate,
   type QuoteSendLog,
   type InsertQuoteSendLog,
+  type UserEmailSettings,
+  type InsertUserEmailSettings,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -94,6 +96,7 @@ import {
   quoteTemplates,
   templateVersions,
   quoteSendLogs,
+  userEmailSettings,
   InsertTemplateVersion,
   TemplateVersion
 } from "@shared/schema";
@@ -305,6 +308,12 @@ export interface IStorage {
   // Quote Send Logs
   createQuoteSendLog(log: InsertQuoteSendLog): Promise<QuoteSendLog>;
   getQuoteSendLogs(quoteId?: string, userId?: string): Promise<QuoteSendLog[]>;
+  
+  // User Email Settings
+  getUserEmailSettings(userId: string): Promise<UserEmailSettings | undefined>;
+  createUserEmailSettings(settings: InsertUserEmailSettings): Promise<UserEmailSettings>;
+  updateUserEmailSettings(userId: string, updates: Partial<InsertUserEmailSettings>): Promise<UserEmailSettings | undefined>;
+  deleteUserEmailSettings(userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1711,6 +1720,32 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(quoteSendLogs)
       .where(and(...conditions))
       .orderBy(sql`${quoteSendLogs.createdAt} DESC`);
+  }
+  
+  // ========== USER EMAIL SETTINGS ==========
+  async getUserEmailSettings(userId: string): Promise<UserEmailSettings | undefined> {
+    const [settings] = await db.select().from(userEmailSettings)
+      .where(eq(userEmailSettings.userId, userId));
+    return settings;
+  }
+  
+  async createUserEmailSettings(settings: InsertUserEmailSettings): Promise<UserEmailSettings> {
+    const [created] = await db.insert(userEmailSettings).values(settings).returning();
+    return created;
+  }
+  
+  async updateUserEmailSettings(userId: string, updates: Partial<InsertUserEmailSettings>): Promise<UserEmailSettings | undefined> {
+    const [updated] = await db.update(userEmailSettings)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userEmailSettings.userId, userId))
+      .returning();
+    return updated;
+  }
+  
+  async deleteUserEmailSettings(userId: string): Promise<boolean> {
+    const result = await db.delete(userEmailSettings)
+      .where(eq(userEmailSettings.userId, userId));
+    return true;
   }
 }
 
