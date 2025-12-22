@@ -48,6 +48,68 @@ export async function signInWithOTP(email: string) {
   return { data, error };
 }
 
+export async function signInWithMagicLink(email: string) {
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not configured') };
+  }
+  const { data, error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+  return { data, error };
+}
+
+export async function signInWithPassword(email: string, password: string) {
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not configured') };
+  }
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  return { data, error };
+}
+
+export async function signUpWithPassword(email: string, password: string, metadata?: { fullName?: string }) {
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not configured') };
+  }
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: metadata?.fullName,
+      },
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+  return { data, error };
+}
+
+export async function resetPassword(email: string) {
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not configured') };
+  }
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/auth/reset-password`,
+  });
+  return { data, error };
+}
+
+export async function updatePassword(newPassword: string) {
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not configured') };
+  }
+  const { data, error } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+  return { data, error };
+}
+
 export async function verifyOTP(email: string, token: string) {
   if (!supabase) {
     return { data: null, error: new Error('Supabase not configured') };

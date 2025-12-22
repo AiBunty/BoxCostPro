@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { createClient } from '@supabase/supabase-js';
 import { storage } from "./storage";
+import { logAuthEventAsync, notifyAdminAsync, sendWelcomeEmail, extractClientInfo } from './services/authService';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -61,16 +62,99 @@ export async function supabaseAuthMiddleware(
     }
 
     let appUser = await storage.getUserBySupabaseId(supabaseUser.id);
+    const { ipAddress, userAgent } = extractClientInfo(req);
+    const isNewUser = !appUser;
 
     if (!appUser) {
+      const signupMethod = supabaseUser.app_metadata?.provider || 'email';
       appUser = await storage.upsertUser({
         supabaseUserId: supabaseUser.id,
         email: supabaseUser.email || undefined,
         firstName: supabaseUser.user_metadata?.first_name || supabaseUser.user_metadata?.full_name?.split(' ')[0] || null,
         lastName: supabaseUser.user_metadata?.last_name || supabaseUser.user_metadata?.full_name?.split(' ').slice(1).join(' ') || null,
         profileImageUrl: supabaseUser.user_metadata?.avatar_url || null,
-        authProvider: supabaseUser.app_metadata?.provider || 'supabase',
+        authProvider: signupMethod,
+        signupMethod: signupMethod,
+        emailVerified: supabaseUser.email_confirmed_at ? true : false,
+        accountStatus: 'new_user',
       });
+
+      const userName = appUser.firstName && appUser.lastName 
+        ? `${appUser.firstName} ${appUser.lastName}`.trim() 
+        : appUser.firstName || 'Unknown';
+
+      logAuthEventAsync({
+        userId: appUser.id,
+        email: appUser.email || undefined,
+        action: 'SIGNUP',
+        status: 'success',
+        ipAddress,
+        userAgent,
+        metadata: { signupMethod, provider: supabaseUser.app_metadata?.provider },
+      });
+
+      notifyAdminAsync({
+        subject: 'New User Signup',
+        eventType: 'SIGNUP',
+        userEmail: appUser.email || undefined,
+        userName,
+        signupMethod,
+        ipAddress,
+        additionalInfo: {
+          'Provider': supabaseUser.app_metadata?.provider || 'email',
+          'Email Verified': supabaseUser.email_confirmed_at ? 'Yes' : 'No',
+        },
+      });
+
+      if (appUser.email) {
+        sendWelcomeEmail({
+          email: appUser.email,
+          userName,
+          signupMethod,
+        });
+      }
+    } else {
+      // Check if account is suspended or deleted
+      if (appUser.accountStatus === 'suspended' || appUser.accountStatus === 'deleted') {
+        logAuthEventAsync({
+          userId: appUser.id,
+          email: appUser.email || undefined,
+          action: 'LOGIN',
+          status: 'failed',
+          ipAddress,
+          userAgent,
+          metadata: { reason: 'account_' + appUser.accountStatus, provider: supabaseUser.app_metadata?.provider },
+        });
+        return next();
+      }
+      
+      // Check if account is locked due to failed login attempts
+      const isLocked = await storage.isAccountLocked(appUser.id);
+      if (isLocked) {
+        logAuthEventAsync({
+          userId: appUser.id,
+          email: appUser.email || undefined,
+          action: 'LOGIN',
+          status: 'failed',
+          ipAddress,
+          userAgent,
+          metadata: { reason: 'account_locked', provider: supabaseUser.app_metadata?.provider },
+        });
+        // Don't set user - they're locked out
+        return next();
+      }
+      
+      logAuthEventAsync({
+        userId: appUser.id,
+        email: appUser.email || undefined,
+        action: 'LOGIN',
+        status: 'success',
+        ipAddress,
+        userAgent,
+        metadata: { provider: supabaseUser.app_metadata?.provider },
+      });
+
+      await storage.resetFailedLoginAttempts(appUser.id);
     }
 
     req.supabaseUser = {
@@ -81,6 +165,9 @@ export async function supabaseAuthMiddleware(
       lastName: appUser.lastName,
       role: appUser.role,
     };
+    
+    // Also set req.userId for combinedAuth middleware compatibility
+    (req as any).userId = appUser.id;
 
     next();
   } catch (error) {

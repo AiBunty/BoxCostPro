@@ -14,6 +14,9 @@ import Reports from "@/pages/reports";
 import Masters from "@/pages/masters";
 import Account from "@/pages/account";
 import Landing from "@/pages/landing";
+import AuthPage from "@/pages/auth";
+import ResetPasswordPage from "@/pages/reset-password";
+import CompleteProfilePage from "@/pages/complete-profile";
 import AdminPanel from "@/pages/admin";
 import AdminUsers from "@/pages/admin-users";
 import Onboarding from "@/pages/onboarding";
@@ -64,11 +67,15 @@ interface PaperSetupStatus {
 function AuthenticatedRouter() {
   const [location] = useLocation();
 
+  const { data: user, isLoading: userLoading } = useQuery<any>({
+    queryKey: ["/api/auth/user"],
+  });
+
   const { data: paperSetupStatus, isLoading: setupLoading } = useQuery<PaperSetupStatus>({
     queryKey: ["/api/paper-setup-status"],
   });
 
-  if (setupLoading) {
+  if (userLoading || setupLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -76,12 +83,24 @@ function AuthenticatedRouter() {
     );
   }
 
-  const isPaperSetupComplete = paperSetupStatus?.completed ?? false;
-  const isOnMasters = location.startsWith("/masters");
+  const isProfileComplete = user?.mobileNo && user?.firstName;
+  const isOnCompleteProfile = location === "/complete-profile";
   const isOnAdmin = location === "/admin";
   const isOnAccount = location === "/account";
 
-  if (!isPaperSetupComplete && !isOnMasters && !isOnAdmin && !isOnAccount) {
+  if (!isProfileComplete && !isOnCompleteProfile && !isOnAdmin && !isOnAccount) {
+    return (
+      <Switch>
+        <Route path="/complete-profile" component={CompleteProfilePage} />
+        <Redirect to="/complete-profile" />
+      </Switch>
+    );
+  }
+
+  const isPaperSetupComplete = paperSetupStatus?.completed ?? false;
+  const isOnMasters = location.startsWith("/masters");
+
+  if (!isPaperSetupComplete && !isOnMasters && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
     return <Redirect to="/masters" />;
   }
 
@@ -100,6 +119,7 @@ function AuthenticatedRouter() {
         <Route path="/admin/users" component={AdminUsers} />
         <Route path="/onboarding" component={Onboarding} />
         <Route path="/support" component={SupportPanel} />
+        <Route path="/complete-profile" component={CompleteProfilePage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>
@@ -121,7 +141,9 @@ function Router() {
     return (
       <Switch>
         <Route path="/" component={Landing} />
+        <Route path="/auth" component={AuthPage} />
         <Route path="/auth/callback" component={AuthCallback} />
+        <Route path="/auth/reset-password" component={ResetPasswordPage} />
         <Route component={NotFound} />
       </Switch>
     );

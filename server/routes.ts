@@ -134,6 +134,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  const completeProfileSchema = z.object({
+    firstName: z.string().min(2),
+    lastName: z.string().min(1),
+    companyName: z.string().optional(),
+    countryCode: z.string().min(1),
+    mobileNumber: z.string().min(8).max(12),
+  });
+
+  app.post('/api/user/complete-profile', combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const data = completeProfileSchema.parse(req.body);
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const updatedUser = await storage.updateUser(userId, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        mobileNo: data.mobileNumber,
+        countryCode: data.countryCode,
+        companyName: data.companyName || undefined,
+        accountStatus: user.emailVerified ? 'email_verified' : 'new_user',
+      });
+      
+      let profile = await storage.getUserProfile(userId);
+      if (!profile) {
+        profile = await storage.createUserProfile({ userId });
+      }
+      
+      res.json({ user: updatedUser, profile });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid profile data", errors: error.errors });
+      }
+      console.error("Error completing profile:", error);
+      res.status(500).json({ message: "Failed to complete profile" });
+    }
+  });
+
   // Company Profiles (protected, user-scoped)
   app.get("/api/company-profiles", combinedAuth, async (req: any, res) => {
     try {

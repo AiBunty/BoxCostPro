@@ -23,7 +23,20 @@ The frontend is built with React and TypeScript using Vite, featuring a modern U
 *   **Admin & Settings**: Subscription, pricing, coupon, trial, payment history, and general owner settings management. User-configurable machine-specific fluting factors, fluting combination selector, and a first-time user onboarding for fluting setup.
 *   **Reporting**: Comprehensive reports section with 8 report types: Quote Register, Party Summary, Item Prices, Date-wise Sales, Cost Breakdown, Paper Consumption, GST & Tax, and Saved Reports. Reports read from active quote versions via `/api/quotes?include=items` endpoint.
 *   **Paper Pricing System**: Customizable BF-based paper pricing, GSM adjustment rules, shade premiums, and global market adjustment, integrated into the calculator. Paper Price Settings serve as the single source of truth for layer pricing, with optional manual override capability per layer. When editing a layer, users see a detailed price breakdown (BF base price, GSM adjustment, shade premium, market adjustment) and can toggle to enter a manual rate. Manual overrides are preserved in quote snapshots for immutability. Visual indicators (*) show which layers use manual rates.
-*   **Authentication**: Supabase Auth with Email OTP (6-digit code, 10-minute expiry) as the primary login method and Google OAuth as secondary. The authentication flow uses JWT tokens verified server-side via `supabaseAuthMiddleware`. Local user records are auto-created/linked via `supabaseUserId`. Legacy session-based auth is maintained for backward compatibility via `combinedAuth` middleware that accepts both Supabase JWT and session auth. First-login setup enforcement (paper setup → terms setup → dashboard) tracks progress via `user_profiles` table.
+*   **Authentication**: Enterprise-grade multi-method authentication system with:
+    - **Login Methods**: Email+Password, Email OTP (6-digit code, 10-minute expiry), Magic Link, and Google OAuth
+    - **Login UI**: Tabbed interface at `/auth` with Password, OTP, and Magic Link tabs, plus Google OAuth button
+    - **Password Requirements**: Minimum 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special character
+    - **Password Recovery**: Forgot password flow with secure reset links at `/auth/reset-password`
+    - **Profile Completion**: Mandatory mobile number collection after signup at `/complete-profile` before accessing dashboard
+    - **Account States**: new_user, email_verified, mobile_verified, fully_verified, suspended, deleted
+    - **Security Features**: Account lockout after 5 failed login attempts (15-minute lockout), audit logging of all auth events
+    - **Audit Logging**: All auth events (LOGIN, SIGNUP, PASSWORD_RESET, VERIFY_EMAIL) logged with IP address and user agent to `auth_audit_logs` table
+    - **Admin Notifications**: Automatic emails to saas@aibunty.com on new signups, suspicious activities (never configurable from UI)
+    - **Welcome Emails**: Branded welcome email from noreply@paperboxerp.com on successful signup
+    - **Auth Service**: `server/services/authService.ts` handles audit logging, admin notifications, welcome emails using fire-and-forget pattern
+    - **JWT Verification**: Server-side via `supabaseAuthMiddleware` with auto-creation of local user records linked via `supabaseUserId`
+    - **Legacy Support**: `combinedAuth` middleware accepts both Supabase JWT and session auth for backward compatibility
 *   **Unified Settings Page**: A centralized settings page at /settings with four tabs: Personal Details (read-only user info), Business Details (company profile management), Branding (logo upload with base64 storage, max 500KB), and Templates (WhatsApp/Email quote template management).
 *   **WhatsApp/Email Quote Template System**: A comprehensive quote sharing system with:
     - **Show Columns Configuration**: Single source of truth for which data columns appear in quote outputs (boxSize, board, flute, paper, printing, lamination, varnish, weight toggles)
