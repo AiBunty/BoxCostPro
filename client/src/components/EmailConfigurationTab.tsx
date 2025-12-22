@@ -87,6 +87,19 @@ export default function EmailConfigurationTab() {
     queryKey: ["/api/email-settings"],
   });
 
+  // Check if Google OAuth is available (server has proper credentials configured)
+  const { data: googleStatus } = useQuery<{ available: boolean }>({
+    queryKey: ["/api/email-settings/google/status"],
+  });
+  
+  // Filter providers - hide Gmail OAuth if Google OAuth is not configured on server
+  const availableProviders = providers.filter(p => {
+    if (p.id === 'google_oauth' && !googleStatus?.available) {
+      return false;
+    }
+    return true;
+  });
+
   const smtpForm = useForm({
     defaultValues: {
       emailAddress: "",
@@ -365,7 +378,7 @@ export default function EmailConfigurationTab() {
             <div className="space-y-4">
               <Label>Select Email Provider</Label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {providers.map((provider) => (
+                {availableProviders.map((provider) => (
                   <button
                     key={provider.id}
                     onClick={() => handleProviderSelect(provider.id)}

@@ -3433,13 +3433,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Check if Google OAuth is available (for frontend to conditionally show option)
+  app.get("/api/email-settings/google/status", (req, res) => {
+    const isConfigured = !!(
+      process.env.GOOGLE_CLIENT_ID && 
+      process.env.GOOGLE_CLIENT_SECRET && 
+      process.env.GOOGLE_OAUTH_REDIRECT_URL
+    );
+    res.json({ available: isConfigured });
+  });
+  
   // Google OAuth initiation
   app.get("/api/email-settings/google/connect", combinedAuth, async (req: any, res) => {
     try {
       const clientId = process.env.GOOGLE_CLIENT_ID;
-      const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.REPLIT_URL || 'https://' + process.env.REPL_SLUG + '.' + process.env.REPL_OWNER + '.repl.co'}/api/email-settings/google/callback`;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URL;
       
-      if (!clientId) {
+      if (!clientId || !clientSecret || !redirectUri) {
         return res.status(400).json({ error: "Google OAuth is not configured. Please contact support." });
       }
       
@@ -3473,9 +3484,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const clientId = process.env.GOOGLE_CLIENT_ID;
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-      const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.REPLIT_URL || 'https://' + process.env.REPL_SLUG + '.' + process.env.REPL_OWNER + '.repl.co'}/api/email-settings/google/callback`;
+      const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URL;
       
-      if (!clientId || !clientSecret) {
+      if (!clientId || !clientSecret || !redirectUri) {
         return res.redirect('/settings?tab=email&error=oauth_not_configured');
       }
       

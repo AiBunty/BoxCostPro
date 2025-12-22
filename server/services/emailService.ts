@@ -9,12 +9,16 @@ import { storage } from '../storage';
 import { decrypt } from '../utils/encryption';
 import type { InsertEmailLog, InsertEmailBounce } from '@shared/schema';
 
-// Debug: Log Google OAuth environment variable status on startup
-console.log("Google OAuth Loaded:", {
-  clientId: !!process.env.GOOGLE_CLIENT_ID,
-  secret: !!process.env.GOOGLE_CLIENT_SECRET,
-  redirect: process.env.GOOGLE_OAUTH_REDIRECT_URL
-});
+// Check Google OAuth configuration (never log actual secret values)
+const GOOGLE_OAUTH_CONFIGURED = !!(
+  process.env.GOOGLE_CLIENT_ID && 
+  process.env.GOOGLE_CLIENT_SECRET && 
+  process.env.GOOGLE_OAUTH_REDIRECT_URL
+);
+
+if (!GOOGLE_OAUTH_CONFIGURED) {
+  console.warn("Google OAuth: Missing required environment variables. Gmail OAuth will be disabled.");
+}
 
 // SMTP bounce error codes for detection
 const HARD_BOUNCE_CODES = [
