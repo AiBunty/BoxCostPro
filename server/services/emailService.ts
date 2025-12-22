@@ -1,6 +1,6 @@
 /**
  * Email Sending Service
- * Smart Routing: User OAuth → User SMTP → System SMTP → Error
+ * Smart Routing: User OAuth → User SMTP → Error
  * Centralized email service for BoxCostPro
  */
 
@@ -37,10 +37,18 @@ interface SendUserEmailParams extends SendEmailParams {
   userId: string;
 }
 
+interface TransporterResult {
+  transporter: nodemailer.Transporter | null;
+  fromAddress: string | null;
+  error?: string;
+  needsReauth?: boolean;
+}
+
 /**
  * Create a transporter for a specific user based on their email settings
+ * @param requireVerified - if true, only returns transporter for verified settings
  */
-async function getUserTransporter(userId: string): Promise<{ transporter: nodemailer.Transporter | null; fromAddress: string | null; error?: string }> {
+async function getUserTransporter(userId: string, requireVerified: boolean = true): Promise<TransporterResult> {
   try {
     const settings = await storage.getUserEmailSettings(userId);
     
@@ -48,8 +56,8 @@ async function getUserTransporter(userId: string): Promise<{ transporter: nodema
       return { transporter: null, fromAddress: null, error: 'No email settings configured' };
     }
     
-    if (!settings.isVerified) {
-      return { transporter: null, fromAddress: null, error: 'Email settings not verified' };
+    if (requireVerified && !settings.isVerified) {
+      return { transporter: null, fromAddress: null, error: 'Email settings not verified. Please verify your email configuration in Settings.' };
     }
     
     if (!settings.isActive) {
@@ -59,23 +67,29 @@ async function getUserTransporter(userId: string): Promise<{ transporter: nodema
     let transportConfig: any;
     
     // OAuth configuration (Google)
+    // Nodemailer automatically handles token refresh when refresh token is provided
     if (settings.oauthProvider === 'google' && settings.oauthAccessTokenEncrypted) {
       const accessToken = decrypt(settings.oauthAccessTokenEncrypted);
       const refreshToken = settings.oauthRefreshTokenEncrypted ? decrypt(settings.oauthRefreshTokenEncrypted) : undefined;
       
       if (!accessToken) {
-        return { transporter: null, fromAddress: null, error: 'Failed to decrypt OAuth tokens' };
+        return { transporter: null, fromAddress: null, error: 'Failed to decrypt OAuth tokens', needsReauth: true };
       }
       
+      if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        return { transporter: null, fromAddress: null, error: 'Google OAuth not configured on server' };
+      }
+      
+      // Nodemailer OAuth2 transport - automatically refreshes tokens when refreshToken is provided
       transportConfig = {
         service: 'gmail',
         auth: {
           type: 'OAuth2',
           user: settings.emailAddress,
-          accessToken,
-          refreshToken,
           clientId: process.env.GOOGLE_CLIENT_ID,
           clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          accessToken,
+          refreshToken,
         }
       };
     } 
@@ -110,16 +124,18 @@ async function getUserTransporter(userId: string): Promise<{ transporter: nodema
 
 /**
  * Send email from USER's configured email address (Smart Routing)
- * Priority: User OAuth → User SMTP → Error (no fallback to system for user quotes)
+ * Priority: User OAuth → User SMTP → Error
+ * For user-initiated quote emails - no fallback to system email (quotes must come from user's address)
  */
-export async function sendUserEmail({ userId, to, subject, html, text, replyTo }: SendUserEmailParams): Promise<{ success: boolean; fromAddress?: string; error?: string }> {
-  // Get user's transporter
-  const { transporter, fromAddress, error } = await getUserTransporter(userId);
+export async function sendUserEmail({ userId, to, subject, html, text, replyTo }: SendUserEmailParams): Promise<{ success: boolean; fromAddress?: string; error?: string; needsReauth?: boolean }> {
+  // Get user's transporter (must be verified)
+  const { transporter, fromAddress, error, needsReauth } = await getUserTransporter(userId, true);
   
   if (!transporter || !fromAddress) {
     return { 
       success: false, 
-      error: error || 'Email not configured. Please set up your email in Settings → Email.' 
+      error: error || 'Email not configured. Please set up your email in Settings → Email.',
+      needsReauth
     };
   }
   
@@ -145,11 +161,17 @@ export async function sendUserEmail({ userId, to, subject, html, text, replyTo }
   } catch (err: any) {
     console.error('USER_EMAIL_SEND_FAILED:', err);
     
-    // Check for OAuth token expiry
-    if (err.responseCode === 401 || err.message?.includes('invalid_grant')) {
+    // Check for OAuth token expiry or auth errors
+    const authErrors = ['invalid_grant', 'Invalid Credentials', 'Unauthorized', 'EAUTH'];
+    const isAuthError = err.responseCode === 401 || 
+                        err.code === 'EAUTH' ||
+                        authErrors.some(e => err.message?.includes(e));
+    
+    if (isAuthError) {
       return { 
         success: false, 
-        error: 'Your email authorization has expired. Please reconnect your email in Settings.' 
+        error: 'Your email authorization has expired. Please reconnect your email in Settings.',
+        needsReauth: true
       };
     }
     
@@ -232,18 +254,27 @@ export function isSystemEmailConfigured(): boolean {
 
 /**
  * Verify user's email connection
+ * This can be called for unverified settings to test and verify them
  */
-export async function verifyUserEmailConnection(userId: string): Promise<{ success: boolean; error?: string }> {
-  const { transporter, error } = await getUserTransporter(userId);
+export async function verifyUserEmailConnection(userId: string): Promise<{ success: boolean; error?: string; needsReauth?: boolean }> {
+  // Allow verification for unverified settings (requireVerified = false)
+  const { transporter, error, needsReauth } = await getUserTransporter(userId, false);
   
   if (!transporter) {
-    return { success: false, error: error || 'Failed to create transporter' };
+    return { success: false, error: error || 'Failed to create transporter', needsReauth };
   }
   
   try {
     await transporter.verify();
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || String(err) };
+    const authErrors = ['invalid_grant', 'Invalid Credentials', 'Unauthorized', 'EAUTH'];
+    const isAuthError = err.code === 'EAUTH' || authErrors.some(e => err.message?.includes(e));
+    
+    return { 
+      success: false, 
+      error: err.message || String(err),
+      needsReauth: isAuthError
+    };
   }
 }

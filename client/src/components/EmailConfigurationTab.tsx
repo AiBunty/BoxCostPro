@@ -8,11 +8,9 @@ import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Mail, Shield, CheckCircle2, XCircle, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, Mail, Shield, CheckCircle2, XCircle, ExternalLink, RefreshCw, Trash2, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Switch } from "@/components/ui/switch";
 import { SiGoogle } from "react-icons/si";
 
 interface EmailProvider {
@@ -47,6 +45,39 @@ export default function EmailConfigurationTab() {
   const { toast } = useToast();
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [showSmtpForm, setShowSmtpForm] = useState(false);
+  const [oauthMessage, setOauthMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Handle OAuth callback messages from URL parameters
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const emailSuccess = params.get('emailSuccess');
+    const emailError = params.get('emailError');
+    
+    if (emailSuccess === 'true') {
+      setOauthMessage({ type: 'success', text: 'Google account connected successfully! Your email is ready to send quotes.' });
+      toast({
+        title: "Email Connected",
+        description: "Your Google account has been connected successfully.",
+      });
+      // Clean up URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete('emailSuccess');
+      url.searchParams.delete('tab');
+      window.history.replaceState({}, '', url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : ''));
+    } else if (emailError) {
+      setOauthMessage({ type: 'error', text: decodeURIComponent(emailError) });
+      toast({
+        title: "Connection Failed",
+        description: decodeURIComponent(emailError),
+        variant: "destructive",
+      });
+      // Clean up URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete('emailError');
+      url.searchParams.delete('tab');
+      window.history.replaceState({}, '', url.pathname);
+    }
+  }, [toast]);
 
   const { data: providers = [], isLoading: providersLoading } = useQuery<EmailProvider[]>({
     queryKey: ["/api/email-providers"],
@@ -242,6 +273,19 @@ export default function EmailConfigurationTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {oauthMessage && (
+            <Alert className={oauthMessage.type === 'success' ? 'border-green-500/50 bg-green-500/10' : 'border-destructive/50 bg-destructive/10'}>
+              {oauthMessage.type === 'success' ? (
+                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-destructive" />
+              )}
+              <AlertDescription className={oauthMessage.type === 'success' ? 'text-green-700 dark:text-green-300' : 'text-destructive'}>
+                {oauthMessage.text}
+              </AlertDescription>
+            </Alert>
+          )}
+          
           {settings?.configured ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/50">
