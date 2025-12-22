@@ -1,0 +1,209 @@
+You are a senior ERP & SaaS architect enhancing
+the Email System of BoxCostPro.
+
+GOAL:
+1) Track email delivery analytics
+2) Handle bounces & failures safely
+3) Notify user automatically when email setup is successful
+4) Maintain ERP-grade reliability and auditability
+
+====================================================
+1) EMAIL DELIVERY ANALYTICS (MANDATORY)
+====================================================
+
+Create table: email_logs
+
+Columns:
+- id
+- user_id
+- recipient_email
+- sender_email
+- provider (smtp / google-oauth / ses)
+- subject
+- channel (quote / followup / system)
+- status (sent / delivered / bounced / failed)
+- failure_reason (nullable)
+- message_id (provider reference)
+- sent_at
+- updated_at
+
+----------------------------------------------------
+LOGGING RULE
+----------------------------------------------------
+
+Every email attempt MUST:
+- Create a log entry
+- Update status asynchronously
+- NEVER block the main business flow
+
+====================================================
+2) EMAIL STATUS TRACKING
+====================================================
+
+Statuses:
+- sent → mail accepted by provider
+- delivered → confirmed delivered (if supported)
+- bounced → hard or soft bounce
+- failed → authentication / SMTP / network failure
+
+----------------------------------------------------
+PROVIDER BEHAVIOR
+----------------------------------------------------
+
+SMTP:
+- Log sent / failed
+- Mark bounce if SMTP error code indicates rejection
+
+GMAIL (OAuth):
+- Log sent
+- Mark failed on API error
+
+SES (future-ready):
+- Support delivered / bounced / complained
+
+====================================================
+3) BOUNCE HANDLING (CRITICAL)
+====================================================
+
+Create table: email_bounces
+
+Columns:
+- id
+- email_log_id
+- recipient_email
+- bounce_type (hard / soft)
+- bounce_reason
+- provider
+- occurred_at
+
+----------------------------------------------------
+BOUNCE RULES
+----------------------------------------------------
+
+Hard Bounce:
+- Invalid email
+- Domain not found
+→ Mark recipient as invalid
+→ Warn user
+
+Soft Bounce:
+- Mailbox full
+- Temporary issue
+→ Retry allowed
+
+====================================================
+4) USER ALERTS ON BOUNCES
+====================================================
+
+If bounce detected:
+- Show warning badge in UI
+- Tooltip:
+  “Email delivery failed for this recipient”
+- Do NOT block future sends automatically
+- Allow user to retry or edit email
+
+====================================================
+5) EMAIL DELIVERY ANALYTICS DASHBOARD
+====================================================
+
+Create UI:
+Settings → Email Analytics
+
+Show:
+- Total emails sent
+- Delivered count
+- Failed count
+- Bounce count
+- Provider-wise stats
+- Recent failures with reason
+
+Filters:
+- Date range
+- Channel (Quote / Follow-up)
+- Status
+
+====================================================
+6) EMAIL CONFIGURATION SUCCESS CONFIRMATION (MANDATORY)
+====================================================
+
+When user:
+- Successfully configures email (SMTP or OAuth)
+- Clicks “Save” and test passes
+
+Automatically send a SYSTEM email from:
+→ BoxCostPro system email (NOT user email)
+
+----------------------------------------------------
+CONFIRMATION EMAIL CONTENT
+----------------------------------------------------
+
+To: User’s configured email address  
+From: BoxCostPro <noreply@boxcostpro.com>
+
+Subject:
+✅ Your Email Has Been Successfully Configured – BoxCostPro
+
+Body:
+- Greet user by OwnerName
+- Confirm email address saved
+- Mention provider name
+- Inform they can now send Quotes & Follow-ups
+- Support contact
+
+----------------------------------------------------
+SAMPLE CONTENT
+----------------------------------------------------
+
+Hello {{OwnerName}},
+
+Your email address {{UserEmail}} has been
+successfully configured in BoxCostPro.
+
+Provider: {{ProviderName}}
+
+You can now send quotations and follow-ups
+directly from your email account.
+
+If you did not perform this action, please
+contact our support team immediately.
+
+Warm regards,
+BoxCostPro Team
+
+====================================================
+7) FAILURE SAFETY
+====================================================
+
+- If confirmation email fails:
+  → Log failure
+  → DO NOT rollback configuration
+- User config remains active
+
+====================================================
+8) SECURITY & COMPLIANCE
+====================================================
+
+- Do NOT expose delivery logs to customers
+- Encrypt sensitive data
+- Mask recipient emails in UI (partial)
+- Retain logs for audit
+
+====================================================
+9) FUTURE-READY DESIGN
+====================================================
+
+Design analytics so later you can add:
+- Open tracking
+- Click tracking
+- Spam complaint tracking
+- Reputation scoring
+
+====================================================
+DELIVERABLE
+====================================================
+
+- Full email delivery analytics
+- Bounce handling with visibility
+- Auto confirmation email on setup success
+- No disruption to quote flow
+- ERP-grade email reliability for BoxCostPro
