@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import EmailConfigurationTab from "@/components/EmailConfigurationTab";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -284,7 +285,7 @@ export default function Settings() {
 
       <main className="container mx-auto px-4 py-8 max-w-3xl">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4" data-testid="settings-tabs">
+          <TabsList className="grid w-full grid-cols-5" data-testid="settings-tabs">
             <TabsTrigger value="personal" className="gap-2" data-testid="tab-personal">
               <User className="h-4 w-4" />
               <span className="hidden sm:inline">Personal</span>
@@ -296,6 +297,10 @@ export default function Settings() {
             <TabsTrigger value="branding" className="gap-2" data-testid="tab-branding">
               <ImageIcon className="h-4 w-4" />
               <span className="hidden sm:inline">Branding</span>
+            </TabsTrigger>
+            <TabsTrigger value="email" className="gap-2" data-testid="tab-email">
+              <Mail className="h-4 w-4" />
+              <span className="hidden sm:inline">Email</span>
             </TabsTrigger>
             <TabsTrigger value="templates" className="gap-2" data-testid="tab-templates">
               <MessageSquare className="h-4 w-4" />
@@ -623,6 +628,10 @@ export default function Settings() {
                 </Button>
               </CardContent>
             </Card>
+          </TabsContent>
+          
+          <TabsContent value="email" className="mt-6">
+            <EmailConfigurationTab />
           </TabsContent>
           
           <TabsContent value="templates" className="mt-6 space-y-4">
