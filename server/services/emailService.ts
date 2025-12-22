@@ -9,6 +9,13 @@ import { storage } from '../storage';
 import { decrypt } from '../utils/encryption';
 import type { InsertEmailLog, InsertEmailBounce } from '@shared/schema';
 
+// Debug: Log Google OAuth environment variable status on startup
+console.log("Google OAuth Loaded:", {
+  clientId: !!process.env.GOOGLE_CLIENT_ID,
+  secret: !!process.env.GOOGLE_CLIENT_SECRET,
+  redirect: process.env.GOOGLE_OAUTH_REDIRECT_URL
+});
+
 // SMTP bounce error codes for detection
 const HARD_BOUNCE_CODES = [
   '550', '551', '552', '553', '554', // Permanent failures
