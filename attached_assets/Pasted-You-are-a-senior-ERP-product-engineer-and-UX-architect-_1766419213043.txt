@@ -1,0 +1,134 @@
+You are a senior ERP product engineer and UX architect.
+
+IMPORTANT CONTEXT:
+- This is a multi-tenant ERP SaaS (PaperBox ERP / AiBunty)
+- Reports currently exist but are READ-ONLY
+- This is NOT acceptable for enterprise usage
+- There is NO production data yet, so refactors are safe
+
+================================================
+GLOBAL REPORT DESIGN RULES (MANDATORY)
+================================================
+
+1. NO report is read-only.
+2. Every report row MUST be actionable.
+3. Every report MUST allow:
+   - View
+   - Edit
+   - Update
+   - Return to same report with filters preserved
+4. Reports act as navigation hubs, not dead ends.
+5. All navigation must remain tenant-safe.
+
+================================================
+STANDARD REPORT BEHAVIOR (APPLY TO ALL)
+================================================
+
+For EVERY report table:
+- Make primary identifier clickable
+- Add explicit action buttons:
+  - View
+  - Edit
+- On click → navigate to source module
+- On save → return back to report automatically
+
+Preserve:
+- Filters
+- Date range
+- Search query
+- Pagination state
+
+================================================
+QUOTE REPORTS (CRITICAL)
+================================================
+
+From ANY quote-related report:
+- Clicking quote number opens Quote Edit screen
+- Quote opens in EDIT MODE (not read-only)
+- After Save:
+  - Redirect back to report
+  - Show success toast
+  - Maintain same filters
+
+================================================
+PARTY SUMMARY REPORT (VERY IMPORTANT)
+================================================
+
+Fix Party Summary report to behave as follows:
+
+When user clicks on a Party:
+1. Navigate to Party Detail View
+2. Show FULL list of:
+   - All quotes created for that party
+   - Quote number
+   - Date
+   - Amount
+   - Status
+3. Each quote row must be clickable
+4. Clicking a quote:
+   - Opens Quote Edit screen
+   - Allows edit/update
+   - Returns back to Party → Quotes view
+
+This is a DRILL-DOWN REPORT, not a static summary.
+
+================================================
+ALL REPORT TYPES TO FIX
+================================================
+
+Apply this behavior to ALL reports, including but not limited to:
+- Party Summary
+- Quote Register
+- Date Range Reports
+- Item-wise Reports
+- Party-wise Quote Reports
+- Sales Summary
+- Any future report added
+
+================================================
+TECHNICAL IMPLEMENTATION RULES
+================================================
+
+- Reports should not duplicate business logic
+- Reports must use record IDs for navigation
+- Editing must happen ONLY in source modules
+- Reports only redirect, never edit directly
+- Use query params or state to preserve report context
+
+================================================
+UX REQUIREMENTS
+================================================
+
+- Cursor pointer on clickable rows
+- Hover highlight on rows
+- Clear “Edit” icon/button
+- Breadcrumb navigation:
+  Reports → Party Summary → Quotes → Edit Quote
+
+================================================
+SECURITY & TENANT SAFETY
+================================================
+
+- All report queries must respect tenant_id
+- No cross-tenant data exposure
+- Editing permissions must respect user role
+- Staff users see edit only if allowed by permission
+
+================================================
+DELIVERABLES REQUIRED
+================================================
+
+1. Refactor ALL report components to be editable
+2. Implement drill-down navigation for Party Summary
+3. Add edit routing for Quote from reports
+4. Preserve report filter context on return
+5. Ensure tenant-safe queries
+6. Clean, commented, production-ready code
+
+DO NOT:
+- Leave any report read-only
+- Duplicate edit forms inside reports
+- Break navigation context
+- Bypass permission checks
+
+Build reports as ENTERPRISE-GRADE, ACTIONABLE modules.

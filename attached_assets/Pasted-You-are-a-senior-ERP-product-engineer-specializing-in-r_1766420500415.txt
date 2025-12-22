@@ -1,0 +1,179 @@
+You are a senior ERP product engineer specializing in reports, data UX, and Supabase-backed SaaS systems.
+
+CONTEXT:
+- This is PaperBox ERP (Corrugated Box ERP).
+- Reports currently exist but are READ-ONLY and disconnected.
+- No production data risk.
+- Reports must be actionable, editable, and drill-down enabled.
+
+================================================
+PART 1: REMOVE UNWANTED REPORTS (CLEANUP)
+================================================
+
+REMOVE the following report tabs completely (UI + logic):
+- Cost Breakdown
+- GST & TAX
+- Date Wise Sales
+
+Ensure:
+- No dead routes
+- No unused queries
+- Sidebar updated cleanly
+
+================================================
+PART 2: GLOBAL REPORT BEHAVIOR (MANDATORY)
+================================================
+
+ALL report sections must support:
+
+1. Row Click → Edit Source Record
+--------------------------------
+- Clicking any row opens the ORIGINAL source screen
+  (Quote / Party / Item / Purchase etc.)
+- Open in EDIT mode
+- After Save → Return user to SAME report with filters preserved
+
+Implement:
+- route state preservation
+- back navigation without data loss
+
+Example:
+Report → Click Quote → Edit Quote → Save → Back to Report
+
+================================================
+PART 3: PARTY SUMMARY REPORT (CRITICAL FIX)
+================================================
+
+Current Issue:
+- Party Summary shows only party-level totals
+- No drill-down
+
+Required Behavior:
+------------------
+1. Party Summary shows:
+   - Party Name
+   - Total Quotes
+   - Total Amount
+
+2. On clicking a Party row:
+   - Open Party Detail View
+   - Show ALL quotes made for that party
+   - Each quote row clickable → opens Quote Edit screen
+
+Query Rule:
+- Filter quotes strictly by:
+  party_id + tenant_id
+
+================================================
+PART 4: PAPER AUDIT REPORT FIX
+================================================
+
+Current Issue:
+- Paper Audit exists but:
+  - Report is not editable
+  - Paper Specs column is BLANK
+
+Fix Requirements:
+-----------------
+- Make rows clickable
+- Paper Specs must display correctly
+- Editing redirects to source item / quote
+
+================================================
+PART 5: PAPER SPECS DISPLAY LOGIC (VERY IMPORTANT)
+================================================
+
+Paper Specs must be shown as SINGLE-LINE, LAYER-WISE FORMAT.
+
+RULES:
+------
+
+1. DO NOT show word "Flute"
+2. BF means "Bursting Factor" (short form BF)
+3. Each layer shown in sequence
+4. Format per layer:
+   <SHADE_SHORT><GSM>/<BF>
+
+5. Combine all layers with comma (,)
+
+------------------------------------------------
+SHADE SHORT RULES:
+------------------------------------------------
+Kraft → Kra
+Golden Kraft → GOL
+Virgin Kraft Liner → VKL
+Duplex → DUP
+White Kraft → WHI
+
+(Use first 3 letters unless explicitly mapped)
+
+------------------------------------------------
+EXAMPLES:
+------------------------------------------------
+
+Layer data:
+- Layer 1: Golden Kraft – 180 GSM
+- Layer 2: Kraft – 150 GSM
+- Layer 3: Duplex – 230 GSM
+BFs:
+- 24 / 18 / 14
+
+DISPLAY AS:
+GOL180/24,Kra150/18,DUP230/14
+
+------------------------------------------------
+ANOTHER EXAMPLE:
+------------------------------------------------
+Kra120/32
+(Meaning Kraft 120 GSM with BF 32)
+
+================================================
+PART 6: IMPLEMENTATION DETAILS
+================================================
+
+- Paper specs logic must be computed from:
+  - paper_layers table
+  - gsm value
+  - bf value
+
+- DO NOT hardcode strings
+- Create a reusable utility:
+  formatPaperSpecs(layers[])
+
+================================================
+PART 7: EDIT FLOW CONSISTENCY
+================================================
+
+Ensure:
+- All reports behave consistently
+- All rows clickable
+- All edits routed to original module
+- All saves return to originating report
+
+================================================
+PART 8: SAFETY RULES
+================================================
+
+- Enforce tenant isolation in all report queries
+- Never expose other tenant data
+- Never use service role in frontend
+
+================================================
+DELIVERABLES
+================================================
+
+Provide:
+1. Updated report components
+2. Corrected queries
+3. Paper Specs formatter function
+4. Navigation flow logic
+5. List of removed reports
+6. Comments explaining logic
+
+DO NOT:
+- Create new report tabs
+- Leave reports read-only
+- Show blank paper specs
+- Break navigation state
+
+This must behave like a real ERP used daily by operators.

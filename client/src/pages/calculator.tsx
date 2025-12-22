@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw, Menu, Palette, Eye, EyeOff } from "lucide-react";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw, Menu, Palette, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   DropdownMenu,
@@ -210,7 +211,31 @@ interface CalculatorProps {
 export default function Calculator({ initialShowBulkUpload = false }: CalculatorProps = {}) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"rsc" | "sheet">("rsc");
+  
+  // URL-based quote loading for editing from reports
+  // Parse URL params on each render to handle navigation changes
+  const getUrlParams = () => {
+    if (typeof window === 'undefined') return { quoteId: null, from: null, state: null };
+    const params = new URLSearchParams(window.location.search);
+    return {
+      quoteId: params.get('quoteId'),
+      from: params.get('from'),
+      state: params.get('state'),
+    };
+  };
+  
+  const [urlParams, setUrlParams] = useState(getUrlParams);
+  
+  // Update URL params when location changes
+  useEffect(() => {
+    setUrlParams(getUrlParams());
+  }, []);
+  
+  // Track if we're in edit mode (from reports)
+  const isEditMode = !!urlParams.quoteId;
+  const [loadingQuoteFromUrl, setLoadingQuoteFromUrl] = useState(!!urlParams.quoteId);
   const [ply, setPly] = useState<string>("5");
   const [fluteCombination, setFluteCombination] = useState<string>("BC");
   const [fluteSettings, setFluteSettings] = useState<Record<string, number>>({
@@ -417,10 +442,71 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   
   const companyProfile = allCompanyProfiles.find(p => p.id === selectedCompanyProfileId) || allCompanyProfiles[0];
   
-  // Fetch all quotes
+  // Fetch all quotes with items for editing
+  // Use queryKey array format for proper cache normalization
   const { data: savedQuotes = [], isLoading: isLoadingQuotes } = useQuery<Quote[]>({
-    queryKey: ["/api/quotes"],
+    queryKey: ["/api/quotes?include=items"],
   });
+  
+  // Load quote from URL parameter (for editing from reports)
+  useEffect(() => {
+    if (urlParams.quoteId && savedQuotes.length > 0 && loadingQuoteFromUrl) {
+      const quoteToEdit = savedQuotes.find((q: any) => q.id === urlParams.quoteId) as any;
+      if (quoteToEdit) {
+        // Load the quote data into the form (cast to any to access extended properties)
+        setQuoteItems(quoteToEdit.items || []);
+        setPartyName(quoteToEdit.partyName || "");
+        setCustomerCompany(quoteToEdit.customerCompany || "");
+        setCustomerEmail(quoteToEdit.customerEmail || "");
+        setCustomerMobile(quoteToEdit.customerMobile || "");
+        // These fields may come from version data or be extended properties
+        if (quoteToEdit.paymentTerms) setPaymentTerms(quoteToEdit.paymentTerms);
+        if (quoteToEdit.deliveryDays) setDeliveryDays(quoteToEdit.deliveryDays);
+        if (quoteToEdit.transportCharge) {
+          setTransportCharge(quoteToEdit.transportCharge.toString());
+        }
+        if (quoteToEdit.transportRemark) {
+          setTransportRemark(quoteToEdit.transportRemark);
+        }
+        
+        setLoadingQuoteFromUrl(false);
+        toast({
+          title: "Quote loaded for editing",
+          description: `Quote for ${quoteToEdit.partyName} loaded successfully.`,
+        });
+      } else {
+        setLoadingQuoteFromUrl(false);
+        toast({
+          title: "Quote not found",
+          description: "The requested quote could not be found.",
+          variant: "destructive",
+        });
+      }
+    }
+  }, [urlParams.quoteId, savedQuotes, loadingQuoteFromUrl]);
+  
+  // Return to reports with preserved filter state
+  const handleReturnToReports = () => {
+    if (urlParams.state) {
+      try {
+        const decodedState = JSON.parse(decodeURIComponent(urlParams.state));
+        const params = new URLSearchParams();
+        if (decodedState.tab) params.set('tab', decodedState.tab);
+        if (decodedState.party) params.set('party', decodedState.party);
+        if (decodedState.search) params.set('search', decodedState.search);
+        if (decodedState.startDate) params.set('startDate', decodedState.startDate);
+        if (decodedState.endDate) params.set('endDate', decodedState.endDate);
+        if (decodedState.page > 1) params.set('page', decodedState.page.toString());
+        
+        const queryString = params.toString();
+        setLocation(queryString ? `/reports?${queryString}` : '/reports');
+      } catch {
+        setLocation('/reports');
+      }
+    } else {
+      setLocation('/reports');
+    }
+  };
   
   // Fetch app settings
   const { data: appSettings } = useQuery<AppSettings>({
@@ -611,7 +697,9 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
     },
     onSuccess: (response: any) => {
       console.log("QUOTE SAVE FRONTEND - onSuccess triggered:", response);
+      // Invalidate all quotes queries including those with query params
       queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/quotes?include=items"] });
       const isNewVersion = response?.isNewVersion;
       toast({
         title: isNewVersion ? "New version created" : "Quote saved",
@@ -1617,6 +1705,19 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Return to Reports button when editing from reports */}
+              {isEditMode && urlParams.from === 'reports' && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleReturnToReports}
+                  data-testid="button-return-to-reports"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Reports
+                </Button>
+              )}
+              
               {selectedPartyProfileId && (
                 <Badge variant="secondary" className="text-sm py-1 px-3">
                   <Users className="w-3 h-3 mr-1" />
