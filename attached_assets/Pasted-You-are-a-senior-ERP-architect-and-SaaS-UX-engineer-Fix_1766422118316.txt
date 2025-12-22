@@ -1,0 +1,167 @@
+You are a senior ERP architect and SaaS UX engineer.
+Fix and redesign the REPORTS MODULE to enterprise-grade standards.
+
+================================================
+STEP 1: REMOVE UNUSED REPORTS
+================================================
+
+Completely remove the following report tabs:
+- Cost Breakdown
+- GST & Tax
+- Date Wise Sales
+
+Remove UI, routes, queries, and permissions.
+
+================================================
+STEP 2: REPORTS MUST BE DRILL-DOWN ENABLED
+================================================
+
+For ALL reports:
+- Each row must be clickable
+- Clicking opens related entity (Quote / Party)
+- Reports are NOT read-only dead ends
+
+================================================
+STEP 3: PARTY SUMMARY FIX
+================================================
+
+When clicking a Party in Party Summary:
+- Show ALL quotes created for that party
+- Include:
+  - Quote No
+  - Date
+  - Amount
+  - Status
+  - Latest Version only
+
+================================================
+STEP 4: QUOTE OPEN FROM REPORT (CRITICAL)
+================================================
+
+Current issue:
+- Quotes open in greyed, non-editable state
+
+Fix:
+- Quotes open in READ-ONLY preview
+- Show clear CTA button: "Update Quote"
+
+When "Update Quote" is clicked:
+1. Clone existing quote
+2. Increment version_number
+3. Mark previous quote as is_archived = true
+4. New quote becomes editable
+5. Save audit log entry
+
+================================================
+STEP 5: QUOTE VERSIONING MODEL
+================================================
+
+Ensure quotes table supports:
+- id
+- parent_quote_id
+- version_number
+- is_latest
+- is_archived
+
+Reports must show ONLY is_latest = true
+
+================================================
+STEP 6: PAPER SPEC FIX (MANDATORY)
+================================================
+
+Paper Specs are currently BLANK.
+
+Fix:
+- Derive Paper Specs dynamically from quote_layers table
+- DO NOT store paper spec as text
+
+Layer display format:
+- Kra120
+- VKL150
+- DUP230
+- GOL180
+
+Final joined format:
+GOL180/24,Kra150/18,DUP230/14
+
+Rules:
+- BF = Bursting Factor (numeric only)
+- No word "Flute"
+- Single-line compact string
+
+================================================
+STEP 7: APPLY PAPER SPEC EVERYWHERE
+================================================
+
+Paper Spec must appear correctly in:
+- Reports
+- Paper Audit
+- Quote Preview
+- Exports
+
+================================================
+STEP 8: REPORT UX REDESIGN
+================================================
+
+Implement:
+- Sticky table headers
+- Column chooser
+- Saved Filters per user
+- Quick date presets
+- Clear CTA buttons
+
+================================================
+STEP 9: EXPORTS
+================================================
+
+Allow export:
+- CSV
+- Excel
+
+Export respects:
+- Active filters
+- Tenant isolation
+
+Log export action in audit_logs.
+
+================================================
+STEP 10: PERFORMANCE OPTIMIZATION
+================================================
+
+- Server-side pagination
+- Indexed queries
+- Lazy drill-down loading
+- No full-table scans
+
+================================================
+STEP 11: AUDIT TRAIL
+================================================
+
+Log:
+- Report views
+- Filters applied
+- Exports
+- Quote opened from report
+- Quote version created
+
+================================================
+STEP 12: SECURITY & DATA SAFETY
+================================================
+
+- Enforce tenant_id in all queries
+- RLS remains ON
+- No service role in frontend
+
+================================================
+DELIVERABLES
+================================================
+
+Provide:
+1. Updated report queries
+2. Quote versioning logic
+3. Paper spec derivation function
+4. UI behavior changes
+5. Audit log entries
+6. Performance notes
+
+Build this as a REAL ERP reporting system.
