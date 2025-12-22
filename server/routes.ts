@@ -3401,13 +3401,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Send confirmation email asynchronously (non-blocking)
       const { sendEmailConfigurationConfirmation } = await import('./services/emailService');
-      const userProfile = await storage.getUserProfile(userId);
+      const companyProfile = await storage.getDefaultCompanyProfile(userId);
       const providerName = settings.oauthProvider === 'google' ? 'Google OAuth' : (settings.provider || 'SMTP');
       
       sendEmailConfigurationConfirmation(
         userId, 
         settings.emailAddress, 
-        userProfile?.ownerName || '', 
+        companyProfile?.ownerName || '', 
         providerName
       ).catch(err => console.error('CONFIRMATION_EMAIL_FAILED:', err));
       

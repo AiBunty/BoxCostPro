@@ -10,7 +10,7 @@ import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ArrowLeft, User, Building2, ImageIcon, Upload, Loader2, Save, MessageSquare, Mail, Copy, Star, Trash2, Eye, Edit2, Check, Columns3, AlertCircle } from "lucide-react";
+import { ArrowLeft, User, Building2, ImageIcon, Upload, Loader2, Save, MessageSquare, Mail, Copy, Star, Trash2, Eye, Edit2, Check, Columns3, AlertCircle, TrendingUp } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Link } from "wouter";
 import type { User as UserType, CompanyProfile, QuoteTemplate } from "@shared/schema";
@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import EmailConfigurationTab from "@/components/EmailConfigurationTab";
+import EmailAnalyticsTab from "@/components/EmailAnalyticsTab";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -631,7 +632,24 @@ export default function Settings() {
           </TabsContent>
           
           <TabsContent value="email" className="mt-6">
-            <EmailConfigurationTab />
+            <Tabs defaultValue="config" className="w-full">
+              <TabsList className="w-full justify-start mb-4">
+                <TabsTrigger value="config" className="gap-2" data-testid="tab-email-config">
+                  <Mail className="h-4 w-4" />
+                  Configuration
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="gap-2" data-testid="tab-email-analytics">
+                  <TrendingUp className="h-4 w-4" />
+                  Analytics
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="config">
+                <EmailConfigurationTab />
+              </TabsContent>
+              <TabsContent value="analytics">
+                <EmailAnalyticsTab />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
           
           <TabsContent value="templates" className="mt-6 space-y-4">
