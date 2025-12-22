@@ -238,7 +238,7 @@ export function QuoteVersionHistory({ quoteId, currentVersionId, onVersionSelect
                 </p>
               </div>
               <div className="p-3 bg-muted rounded-lg">
-                <p className="text-xs text-muted-foreground">GST ({selectedVersion?.gstPercent || 18}%)</p>
+                <p className="text-xs text-muted-foreground">GST ({selectedVersion?.gstPercent || 5}%)</p>
                 <p className="font-medium" data-testid="text-snapshot-gst">
                   {formatCurrency(selectedVersion?.gstAmount || 0)}
                 </p>
@@ -249,6 +249,14 @@ export function QuoteVersionHistory({ quoteId, currentVersionId, onVersionSelect
                   {formatCurrency(selectedVersion?.transportCharge || 0)}
                 </p>
               </div>
+              {selectedVersion?.roundOffEnabled && selectedVersion?.roundOffValue !== null && selectedVersion?.roundOffValue !== undefined && (
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-xs text-muted-foreground">Round Off</p>
+                  <p className="font-medium" data-testid="text-snapshot-roundoff">
+                    {(selectedVersion.roundOffValue >= 0 ? '+' : '') + formatCurrency(selectedVersion.roundOffValue)}
+                  </p>
+                </div>
+              )}
               <div className="p-3 bg-primary/10 rounded-lg border border-primary">
                 <p className="text-xs text-primary">Final Total</p>
                 <p className="font-bold text-primary" data-testid="text-snapshot-final">
@@ -342,6 +350,12 @@ export function QuoteVersionHistory({ quoteId, currentVersionId, onVersionSelect
                     <span className="text-muted-foreground">Transport:</span>
                     <span>{formatCurrency(compareVersions.left?.transportCharge || 0)}</span>
                   </div>
+                  {compareVersions.left?.roundOffEnabled && compareVersions.left?.roundOffValue != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Round Off:</span>
+                      <span>{(compareVersions.left.roundOffValue >= 0 ? '+' : '') + formatCurrency(compareVersions.left.roundOffValue)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold pt-2 border-t">
                     <span>Total:</span>
                     <span>{formatCurrency(compareVersions.left?.finalTotal || 0)}</span>
@@ -374,6 +388,12 @@ export function QuoteVersionHistory({ quoteId, currentVersionId, onVersionSelect
                     <span className="text-muted-foreground">Transport:</span>
                     <span>{formatCurrency(compareVersions.right?.transportCharge || 0)}</span>
                   </div>
+                  {compareVersions.right?.roundOffEnabled && compareVersions.right?.roundOffValue != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Round Off:</span>
+                      <span>{(compareVersions.right.roundOffValue >= 0 ? '+' : '') + formatCurrency(compareVersions.right.roundOffValue)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold pt-2 border-t">
                     <span>Total:</span>
                     <span>{formatCurrency(compareVersions.right?.finalTotal || 0)}</span>
