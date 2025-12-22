@@ -38,12 +38,16 @@ import {
   MessageCircle,
   Package,
   Filter,
+  Send,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
+import { SendQuoteDialog } from "@/components/send-quote-dialog";
 
 interface Quote {
   id: string;
   partyName: string;
+  partyPhone?: string;
+  partyEmail?: string;
   totalAmount: number;
   createdAt: string;
   status: string;
@@ -115,7 +119,7 @@ function ShareDropdown() {
   );
 }
 
-function QuoteCard({ quote }: { quote: Quote }) {
+function QuoteCard({ quote, onSend }: { quote: Quote; onSend: (quoteId: string) => void }) {
   const itemCount = quote.items?.length || 0;
 
   return (
@@ -147,6 +151,10 @@ function QuoteCard({ quote }: { quote: Quote }) {
                 <Pencil className="h-4 w-4" />
                 Edit
               </DropdownMenuItem>
+              <DropdownMenuItem className="gap-2" onClick={() => onSend(quote.id)}>
+                <Send className="h-4 w-4" />
+                Send Quote
+              </DropdownMenuItem>
               <DropdownMenuItem className="gap-2">
                 <Copy className="h-4 w-4" />
                 Duplicate
@@ -175,7 +183,7 @@ function QuoteCard({ quote }: { quote: Quote }) {
   );
 }
 
-function QuoteTableRow({ quote }: { quote: Quote }) {
+function QuoteTableRow({ quote, onSend }: { quote: Quote; onSend: (quoteId: string) => void }) {
   const itemCount = quote.items?.length || 0;
 
   return (
@@ -196,11 +204,18 @@ function QuoteTableRow({ quote }: { quote: Quote }) {
       </TableCell>
       <TableCell>
         <div className="flex items-center justify-end gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
+          <Button variant="ghost" size="icon" className="h-8 w-8" title="View">
             <Eye className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Pencil className="h-4 w-4" />
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-8 w-8" 
+            title="Send"
+            onClick={() => onSend(quote.id)}
+            data-testid={`button-send-${quote.id}`}
+          >
+            <Send className="h-4 w-4" />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -209,6 +224,10 @@ function QuoteTableRow({ quote }: { quote: Quote }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem className="gap-2">
+                <Pencil className="h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
               <DropdownMenuItem className="gap-2">
                 <Copy className="h-4 w-4" />
                 Duplicate
@@ -229,6 +248,7 @@ function QuoteTableRow({ quote }: { quote: Quote }) {
 export default function Quotes() {
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
+  const [sendDialogQuoteId, setSendDialogQuoteId] = useState<string | null>(null);
 
   const { data: quotes, isLoading } = useQuery<Quote[]>({
     queryKey: ["/api/quotes"],
@@ -237,6 +257,8 @@ export default function Quotes() {
   const filteredQuotes = quotes?.filter((q) =>
     q.partyName?.toLowerCase().includes(searchQuery.toLowerCase())
   ) || [];
+  
+  const selectedQuoteForSend = quotes?.find(q => q.id === sendDialogQuoteId);
 
   return (
     <div className="flex flex-col min-h-full">
@@ -287,7 +309,7 @@ export default function Quotes() {
         ) : isMobile ? (
           <div className="grid gap-3">
             {filteredQuotes.map((quote) => (
-              <QuoteCard key={quote.id} quote={quote} />
+              <QuoteCard key={quote.id} quote={quote} onSend={setSendDialogQuoteId} />
             ))}
           </div>
         ) : (
@@ -304,7 +326,7 @@ export default function Quotes() {
               </TableHeader>
               <TableBody>
                 {filteredQuotes.map((quote) => (
-                  <QuoteTableRow key={quote.id} quote={quote} />
+                  <QuoteTableRow key={quote.id} quote={quote} onSend={setSendDialogQuoteId} />
                 ))}
               </TableBody>
             </Table>
@@ -332,6 +354,16 @@ export default function Quotes() {
             </div>
           </div>
         </div>
+      )}
+      
+      {sendDialogQuoteId && (
+        <SendQuoteDialog
+          quoteId={sendDialogQuoteId}
+          partyPhone={selectedQuoteForSend?.partyPhone}
+          partyEmail={selectedQuoteForSend?.partyEmail}
+          isOpen={!!sendDialogQuoteId}
+          onClose={() => setSendDialogQuoteId(null)}
+        />
       )}
     </div>
   );
