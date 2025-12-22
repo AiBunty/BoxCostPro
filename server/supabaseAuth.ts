@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { createClient } from '@supabase/supabase-js';
 import { storage } from "./storage";
 import { logAuthEventAsync, notifyAdminAsync, sendWelcomeEmail, extractClientInfo } from './services/authService';
+import { ensureTenantContext, TenantContext } from './tenantContext';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -31,6 +32,8 @@ declare global {
   namespace Express {
     interface Request {
       supabaseUser?: SupabaseUser;
+      tenantId?: string;
+      tenantContext?: TenantContext;
     }
   }
 }
@@ -168,6 +171,16 @@ export async function supabaseAuthMiddleware(
     
     // Also set req.userId for combinedAuth middleware compatibility
     (req as any).userId = appUser.id;
+    
+    // Resolve tenant context for multi-tenant data isolation
+    try {
+      const tenantContext = await ensureTenantContext(appUser.id);
+      req.tenantId = tenantContext.tenantId;
+      req.tenantContext = tenantContext;
+    } catch (tenantError) {
+      console.error('Failed to establish tenant context:', tenantError);
+      // Continue without tenant context - some routes may not need it
+    }
 
     next();
   } catch (error) {
