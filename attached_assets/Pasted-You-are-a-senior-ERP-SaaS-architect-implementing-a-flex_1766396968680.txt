@@ -1,0 +1,161 @@
+You are a senior ERP & SaaS architect implementing
+a flexible, secure, user-controlled Email Configuration System
+for BoxCostPro.
+
+GOAL:
+Allow each user to send emails from THEIR OWN email address
+using either:
+1) Google OAuth (Gmail users – recommended)
+2) Manual SMTP configuration
+3) Pre-configured presets for common providers
+
+System must be secure, reliable, and enterprise-grade.
+
+====================================================
+1) CORE DESIGN PRINCIPLES (NON-NEGOTIABLE)
+====================================================
+
+- Email must be sent FROM the user’s email
+- Credentials must be stored securely (encrypted)
+- Gmail users should NOT enter SMTP details manually
+- OAuth tokens must auto-refresh
+- System must support multiple providers
+- Admin / system emails are separate from user emails
+
+====================================================
+2) DATABASE – USER EMAIL SETTINGS
+====================================================
+
+Create table: user_email_settings
+
+Columns:
+- id
+- user_id
+- provider (enum)
+- email_address
+- smtp_host
+- smtp_port
+- smtp_secure (boolean)
+- smtp_username
+- smtp_password_encrypted
+- oauth_provider (google | null)
+- oauth_access_token_encrypted
+- oauth_refresh_token_encrypted
+- is_verified (boolean)
+- is_active (boolean)
+- created_at
+- updated_at
+
+====================================================
+3) EMAIL PROVIDER PRESETS (MASTER DATA)
+====================================================
+
+Provide preset options in UI:
+
+Provider → Auto-fill settings
+
+GMAIL (SMTP):
+- smtp.gmail.com
+- port 587
+- secure false
+
+GOOGLE (OAuth):
+- Uses OAuth only (no SMTP password)
+
+MICROSOFT (Outlook / Hotmail):
+- smtp.office365.com
+- port 587
+
+YAHOO:
+- smtp.mail.yahoo.com
+- port 587
+
+ZOHO:
+- smtp.zoho.com
+- port 587
+
+TITAN:
+- smtp.titan.email
+- port 587
+
+OTHER:
+- User enters all details manually
+
+====================================================
+4) EMAIL SETUP UI FLOW (USER EXPERIENCE)
+====================================================
+
+Settings → Email Configuration
+
+Step 1: Select Provider
+- Gmail (Recommended)
+- Outlook / Microsoft
+- Zoho
+- Yahoo
+- Titan
+- Other (Custom SMTP)
+
+----------------------------------------------------
+IF USER SELECTS “GMAIL (GOOGLE)”
+----------------------------------------------------
+
+- Show “Connect with Google” button
+- Use Google OAuth
+- Request scope: send email only
+- Fetch:
+  - Email address
+  - Access token
+  - Refresh token
+- Auto-save configuration
+- Mark as verified
+
+User NEVER enters:
+- SMTP password
+- App password
+
+----------------------------------------------------
+IF USER SELECTS OTHER PROVIDER
+----------------------------------------------------
+
+Show fields:
+- Email address
+- SMTP host
+- Port
+- Secure (TLS/SSL)
+- Username
+- Password / App password
+
+Provide preset auto-fill where possible.
+
+====================================================
+5) GOOGLE OAUTH IMPLEMENTATION (MANDATORY)
+====================================================
+
+- Use OAuth 2.0
+- Store tokens encrypted
+- Auto-refresh access token
+- Handle token expiry silently
+- Allow disconnect / reconnect
+
+Send email using:
+- Gmail API
+OR
+- OAuth-enabled Nodemailer transport
+
+====================================================
+6) EMAIL SENDING LOGIC (SMART ROUTING)
+====================================================
+
+When sending email:
+
+IF user has OAuth configured:
+→ Use OAuth transport
+
+ELSE IF SMTP configured:
+→ Use SMTP transport
+
+ELSE:
+→ Block send with clear error:
+  “Please configure your email settings first”
+
+=======
