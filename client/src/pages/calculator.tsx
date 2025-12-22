@@ -211,7 +211,7 @@ interface CalculatorProps {
 export default function Calculator({ initialShowBulkUpload = false }: CalculatorProps = {}) {
   const { toast } = useToast();
   const { user } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"rsc" | "sheet">("rsc");
   
   // URL-based quote loading for editing from reports
@@ -228,10 +228,17 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   
   const [urlParams, setUrlParams] = useState(getUrlParams);
   
-  // Update URL params when location changes
+  // Update URL params when location changes (including query string changes)
   useEffect(() => {
-    setUrlParams(getUrlParams());
-  }, []);
+    const newParams = getUrlParams();
+    setUrlParams(prevParams => {
+      // Reset loading state if quoteId changed
+      if (prevParams.quoteId !== newParams.quoteId && newParams.quoteId) {
+        setLoadingQuoteFromUrl(true);
+      }
+      return newParams;
+    });
+  }, [location]);
   
   // Track if we're in edit mode (from reports)
   const isEditMode = !!urlParams.quoteId;
