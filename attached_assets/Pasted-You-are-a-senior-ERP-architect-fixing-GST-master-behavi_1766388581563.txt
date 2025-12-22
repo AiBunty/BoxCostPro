@@ -1,0 +1,153 @@
+You are a senior ERP architect fixing GST master behavior
+and adding Round-Off control to the Quote system in BoxCostPro.
+
+GOAL:
+1) Add a Round-Off toggle in GST Master
+2) Ensure Master GST Rate always applies to Create Quote
+3) Set default GST for Corrugated Boxes to 5%
+4) Make calculations accounting-safe and predictable
+
+====================================================
+1) DATABASE – GST MASTER (SOURCE OF TRUTH)
+====================================================
+
+Update / create table: gst_settings
+
+Columns:
+- id
+- user_id
+- gst_rate (numeric)         -- default 5
+- round_off_enabled (boolean) -- default true
+- created_at
+- updated_at
+
+Default Rule:
+- On first setup, auto-create gst_settings
+- gst_rate = 5
+- round_off_enabled = true
+
+====================================================
+2) SETUP / MASTER UI (MANDATORY)
+====================================================
+
+In Setup → GST Settings screen:
+
+Add fields:
+- GST Rate (%) [numeric input]
+- Round Off Grand Total [toggle ON/OFF]
+
+UX:
+- Label:
+  “Round off Grand Total to nearest Rupee”
+- Save button persists to gst_settings
+
+====================================================
+3) CREATE QUOTE – GST BEHAVIOR FIX (CRITICAL)
+====================================================
+
+When opening Create Quote:
+
+- FETCH gst_settings from backend
+- Pre-fill:
+  - GST Rate from gst_settings.gst_rate
+  - Round-Off flag from gst_settings.round_off_enabled
+
+IMPORTANT:
+❌ Do NOT hardcode GST
+❌ Do NOT use stale cached value
+
+====================================================
+4) CALCULATION LOGIC (ERP SAFE)
+====================================================
+
+Backend is FINAL authority.
+
+Steps:
+1) Calculate subtotal (2 decimals)
+2) Calculate GST amount using gst_rate
+3) Calculate grand total (2 decimals)
+
+IF round_off_enabled = true:
+  - Round grand total to nearest integer (₹)
+  - Compute roundOffDifference
+ELSE:
+  - Keep 2 decimals
+
+Store in quote:
+- gst_rate_used
+- gst_amount
+- round_off_enabled
+- round_off_value
+- grand_total
+
+====================================================
+5) QUOTE STORAGE (AUDIT SAFE)
+====================================================
+
+Each quote MUST store:
+- gst_rate_used (snapshot)
+- round_off_enabled (snapshot)
+
+Reason:
+- Old quotes must not change when master GST changes
+
+====================================================
+6) MASTER CHANGE BEHAVIOR (IMPORTANT)
+====================================================
+
+If GST Master is updated:
+- New quotes use new GST
+- Old quotes remain unchanged
+- NO retroactive updates
+
+====================================================
+7) UI DISPLAY
+====================================================
+
+In Quote Summary:
+Show:
+- Subtotal
+- GST @ X%
+- Round Off (+/-)
+- Grand Total
+
+Only show Round Off line if enabled.
+
+====================================================
+8) DEFAULT BEHAVIOR (INDIA COMPLIANCE)
+====================================================
+
+On first login / setup:
+- Auto-create GST Master:
+  gst_rate = 5
+  round_off_enabled = true
+
+Label:
+“GST rate as per Corrugated Box classification”
+
+====================================================
+9) VALIDATION TEST (MANDATORY)
+====================================================
+
+Test case:
+
+Subtotal = 60000.00
+GST = 5%
+GST Amt = 3000.00
+Grand Total = 63000.00
+
+With Round-Off ON:
+- Final = 63000
+
+With Round-Off OFF:
+- Final = 63000.00
+
+====================================================
+DELIVERABLE
+====================================================
+
+- GST Master drives Create Quote
+- Round-Off toggle works correctly
+- Default GST = 5% applied
+- No mismatch between Master & Quote
+- Accounting-safe ERP behavior
