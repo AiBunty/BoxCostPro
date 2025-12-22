@@ -82,6 +82,49 @@ export const insertUserEmailSettingsSchema = createInsertSchema(userEmailSetting
 export type InsertUserEmailSettings = z.infer<typeof insertUserEmailSettingsSchema>;
 export type UserEmailSettings = typeof userEmailSettings.$inferSelect;
 
+// Email Logs - Track every email attempt for analytics
+export const emailLogs = pgTable("email_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  recipientEmail: varchar("recipient_email").notNull(),
+  senderEmail: varchar("sender_email").notNull(),
+  provider: varchar("provider").notNull(), // 'smtp', 'google-oauth', 'ses'
+  subject: varchar("subject").notNull(),
+  channel: varchar("channel").notNull(), // 'quote', 'followup', 'system', 'confirmation'
+  status: varchar("status").notNull().default("sent"), // 'sent', 'delivered', 'bounced', 'failed'
+  failureReason: text("failure_reason"),
+  messageId: varchar("message_id"), // Provider reference
+  quoteId: varchar("quote_id"), // Optional reference to quote
+  sentAt: timestamp("sent_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_email_logs_user").on(table.userId),
+  index("idx_email_logs_status").on(table.status),
+  index("idx_email_logs_sent_at").on(table.sentAt),
+]);
+
+export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({ id: true, sentAt: true, updatedAt: true });
+export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
+export type EmailLog = typeof emailLogs.$inferSelect;
+
+// Email Bounces - Track hard and soft bounces
+export const emailBounces = pgTable("email_bounces", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  emailLogId: varchar("email_log_id").references(() => emailLogs.id).notNull(),
+  recipientEmail: varchar("recipient_email").notNull(),
+  bounceType: varchar("bounce_type").notNull(), // 'hard', 'soft'
+  bounceReason: text("bounce_reason"),
+  provider: varchar("provider").notNull(),
+  occurredAt: timestamp("occurred_at").defaultNow(),
+}, (table) => [
+  index("idx_email_bounces_recipient").on(table.recipientEmail),
+  index("idx_email_bounces_type").on(table.bounceType),
+]);
+
+export const insertEmailBounceSchema = createInsertSchema(emailBounces).omit({ id: true, occurredAt: true });
+export type InsertEmailBounce = z.infer<typeof insertEmailBounceSchema>;
+export type EmailBounce = typeof emailBounces.$inferSelect;
+
 // Subscription Plans (managed by owner)
 export const subscriptionPlans = pgTable("subscription_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

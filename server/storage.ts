@@ -63,6 +63,10 @@ import {
   type InsertQuoteSendLog,
   type UserEmailSettings,
   type InsertUserEmailSettings,
+  type EmailLog,
+  type InsertEmailLog,
+  type EmailBounce,
+  type InsertEmailBounce,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -97,6 +101,8 @@ import {
   templateVersions,
   quoteSendLogs,
   userEmailSettings,
+  emailLogs,
+  emailBounces,
   InsertTemplateVersion,
   TemplateVersion
 } from "@shared/schema";
@@ -314,6 +320,25 @@ export interface IStorage {
   createUserEmailSettings(settings: InsertUserEmailSettings): Promise<UserEmailSettings>;
   updateUserEmailSettings(userId: string, updates: Partial<InsertUserEmailSettings>): Promise<UserEmailSettings | undefined>;
   deleteUserEmailSettings(userId: string): Promise<boolean>;
+  
+  // Email Logs & Analytics
+  createEmailLog(log: InsertEmailLog): Promise<EmailLog>;
+  updateEmailLog(id: string, updates: Partial<InsertEmailLog>): Promise<EmailLog | undefined>;
+  getEmailLogs(userId: string, filters?: { status?: string; channel?: string; startDate?: Date; endDate?: Date }): Promise<EmailLog[]>;
+  getEmailStats(userId: string, startDate?: Date, endDate?: Date): Promise<{ 
+    total: number; 
+    sent: number; 
+    delivered: number; 
+    bounced: number; 
+    failed: number;
+    byProvider: Record<string, number>;
+    byChannel: Record<string, number>;
+  }>;
+  
+  // Email Bounces
+  createEmailBounce(bounce: InsertEmailBounce): Promise<EmailBounce>;
+  getEmailBounces(userId: string): Promise<EmailBounce[]>;
+  getBouncedRecipients(userId: string): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1746,6 +1771,99 @@ export class DatabaseStorage implements IStorage {
     const result = await db.delete(userEmailSettings)
       .where(eq(userEmailSettings.userId, userId));
     return true;
+  }
+  
+  // ========== EMAIL LOGS & ANALYTICS ==========
+  async createEmailLog(log: InsertEmailLog): Promise<EmailLog> {
+    const [created] = await db.insert(emailLogs).values(log).returning();
+    return created;
+  }
+  
+  async updateEmailLog(id: string, updates: Partial<InsertEmailLog>): Promise<EmailLog | undefined> {
+    const [updated] = await db.update(emailLogs)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(emailLogs.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async getEmailLogs(userId: string, filters?: { status?: string; channel?: string; startDate?: Date; endDate?: Date }): Promise<EmailLog[]> {
+    const conditions = [eq(emailLogs.userId, userId)];
+    
+    if (filters?.status) {
+      conditions.push(eq(emailLogs.status, filters.status));
+    }
+    if (filters?.channel) {
+      conditions.push(eq(emailLogs.channel, filters.channel));
+    }
+    if (filters?.startDate) {
+      conditions.push(sql`${emailLogs.sentAt} >= ${filters.startDate}`);
+    }
+    if (filters?.endDate) {
+      conditions.push(sql`${emailLogs.sentAt} <= ${filters.endDate}`);
+    }
+    
+    return await db.select().from(emailLogs)
+      .where(and(...conditions))
+      .orderBy(sql`${emailLogs.sentAt} DESC`)
+      .limit(500);
+  }
+  
+  async getEmailStats(userId: string, startDate?: Date, endDate?: Date): Promise<{ 
+    total: number; 
+    sent: number; 
+    delivered: number; 
+    bounced: number; 
+    failed: number;
+    byProvider: Record<string, number>;
+    byChannel: Record<string, number>;
+  }> {
+    const conditions = [eq(emailLogs.userId, userId)];
+    if (startDate) conditions.push(sql`${emailLogs.sentAt} >= ${startDate}`);
+    if (endDate) conditions.push(sql`${emailLogs.sentAt} <= ${endDate}`);
+    
+    const logs = await db.select().from(emailLogs).where(and(...conditions));
+    
+    const stats = {
+      total: logs.length,
+      sent: logs.filter(l => l.status === 'sent').length,
+      delivered: logs.filter(l => l.status === 'delivered').length,
+      bounced: logs.filter(l => l.status === 'bounced').length,
+      failed: logs.filter(l => l.status === 'failed').length,
+      byProvider: {} as Record<string, number>,
+      byChannel: {} as Record<string, number>,
+    };
+    
+    for (const log of logs) {
+      stats.byProvider[log.provider] = (stats.byProvider[log.provider] || 0) + 1;
+      stats.byChannel[log.channel] = (stats.byChannel[log.channel] || 0) + 1;
+    }
+    
+    return stats;
+  }
+  
+  // ========== EMAIL BOUNCES ==========
+  async createEmailBounce(bounce: InsertEmailBounce): Promise<EmailBounce> {
+    const [created] = await db.insert(emailBounces).values(bounce).returning();
+    return created;
+  }
+  
+  async getEmailBounces(userId: string): Promise<EmailBounce[]> {
+    const userLogs = await db.select({ id: emailLogs.id }).from(emailLogs)
+      .where(eq(emailLogs.userId, userId));
+    
+    if (userLogs.length === 0) return [];
+    
+    const logIds = userLogs.map(l => l.id);
+    return await db.select().from(emailBounces)
+      .where(sql`${emailBounces.emailLogId} IN (${sql.join(logIds.map(id => sql`${id}`), sql`, `)})`)
+      .orderBy(sql`${emailBounces.occurredAt} DESC`);
+  }
+  
+  async getBouncedRecipients(userId: string): Promise<string[]> {
+    const bounces = await this.getEmailBounces(userId);
+    const hardBounces = bounces.filter(b => b.bounceType === 'hard');
+    return Array.from(new Set(hardBounces.map(b => b.recipientEmail)));
   }
 }
 
