@@ -176,11 +176,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Company Profiles (protected, user-scoped)
+  // Company Profiles (protected, tenant-scoped)
   app.get("/api/company-profiles", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const profiles = await storage.getAllCompanyProfiles(userId);
+      const tenantId = req.tenantId;
+      const profiles = await storage.getAllCompanyProfiles(userId, tenantId);
       res.json(profiles);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch company profiles" });
@@ -190,7 +191,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/company-profiles/default", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const profile = await storage.getDefaultCompanyProfile(userId);
+      const tenantId = req.tenantId;
+      const profile = await storage.getDefaultCompanyProfile(userId, tenantId);
       if (!profile) {
         return res.status(404).json({ error: "No default profile found" });
       }
@@ -202,7 +204,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/company-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
-      const profile = await storage.getCompanyProfile(req.params.id);
+      const tenantId = req.tenantId;
+      const profile = await storage.getCompanyProfile(req.params.id, tenantId);
       if (!profile) {
         return res.status(404).json({ error: "Profile not found" });
       }
@@ -215,7 +218,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/company-profiles", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const data = insertCompanyProfileSchema.parse({ ...req.body, userId });
+      const tenantId = req.tenantId;
+      // Include tenantId in creation - never accept from frontend
+      const data = insertCompanyProfileSchema.parse({ ...req.body, userId, tenantId });
       const profile = await storage.createCompanyProfile(data);
       res.status(201).json(profile);
     } catch (error) {
@@ -239,18 +244,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/company-profiles/:id/set-default", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      await storage.setDefaultCompanyProfile(req.params.id, userId);
+      const tenantId = req.tenantId;
+      await storage.setDefaultCompanyProfile(req.params.id, userId, tenantId);
       res.json({ success: true });
     } catch (error) {
       res.status(400).json({ error: "Failed to set default profile" });
     }
   });
 
-  // Party Profiles (protected, user-scoped)
+  // Party Profiles (protected, tenant-scoped)
   app.get("/api/party-profiles", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const profiles = await storage.getAllPartyProfiles(userId);
+      const tenantId = req.tenantId;
+      const profiles = await storage.getAllPartyProfiles(userId, tenantId);
       res.json(profiles);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch party profiles" });
@@ -260,8 +267,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/party-profiles/search", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
+      const tenantId = req.tenantId;
       const search = req.query.q as string || "";
-      const profiles = await storage.searchPartyProfiles(userId, search);
+      const profiles = await storage.searchPartyProfiles(userId, search, tenantId);
       res.json(profiles);
     } catch (error) {
       res.status(500).json({ error: "Failed to search party profiles" });
@@ -271,7 +279,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/party-profiles", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const data = insertPartyProfileSchema.parse({ ...req.body, userId });
+      const tenantId = req.tenantId;
+      // Include tenantId in creation - never accept from frontend
+      const data = insertPartyProfileSchema.parse({ ...req.body, userId, tenantId });
       const profile = await storage.createPartyProfile(data);
       res.status(201).json(profile);
     } catch (error) {
@@ -294,7 +304,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/party-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
-      const success = await storage.deletePartyProfile(req.params.id);
+      const tenantId = req.tenantId;
+      const success = await storage.deletePartyProfile(req.params.id, tenantId);
       if (!success) {
         return res.status(404).json({ error: "Profile not found" });
       }
@@ -309,10 +320,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Quotes (protected, user-scoped)
+  // Quotes (protected, tenant-scoped)
   app.get("/api/quotes", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
+      const tenantId = req.tenantId;
       const partyName = req.query.partyName as string | undefined;
       const boxName = req.query.boxName as string | undefined;
       const boxSize = req.query.boxSize as string | undefined;
@@ -320,15 +332,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (includeItems) {
         // Return quotes with their active version items (for reports)
-        const quotes = await storage.getAllQuotesWithItems(userId);
+        const quotes = await storage.getAllQuotesWithItems(userId, tenantId);
         return res.json(quotes);
       }
       
       if (partyName || boxName || boxSize) {
-        const quotes = await storage.searchQuotes(userId, { partyName, boxName, boxSize });
+        const quotes = await storage.searchQuotes(userId, { partyName, boxName, boxSize }, tenantId);
         res.json(quotes);
       } else {
-        const quotes = await storage.getAllQuotes(userId);
+        const quotes = await storage.getAllQuotes(userId, tenantId);
         res.json(quotes);
       }
     } catch (error) {
@@ -338,7 +350,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/quotes/:id", combinedAuth, async (req: any, res) => {
     try {
-      const quote = await storage.getQuote(req.params.id);
+      const tenantId = req.tenantId;
+      const quote = await storage.getQuote(req.params.id, tenantId);
       if (!quote) {
         return res.status(404).json({ error: "Quote not found" });
       }
@@ -354,6 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const userId = req.userId;
+      const tenantId = req.tenantId;
       const { items, paymentTerms, deliveryDays, transportCharge, transportRemark, totalValue, boardThickness, partyId, ...quoteData } = req.body;
       
       // VALIDATION: Ensure required fields exist
@@ -400,8 +414,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let isNewVersion = false;
       
       if (partyId && items && items.length > 0) {
-        // Get all existing quotes for this party
-        const existingQuotes = await storage.getQuotesByPartyId(partyId, userId);
+        // Get all existing quotes for this party (tenant-scoped)
+        const existingQuotes = await storage.getQuotesByPartyId(partyId, userId, tenantId);
         
         // For each existing quote, check if any item matches by boxName+dimensions
         for (const eq of existingQuotes) {
@@ -441,15 +455,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         quoteNo = quote.quoteNo;
         console.log("USING EXISTING QUOTE FOR NEW VERSION:", quote.id);
       } else {
-        // Generate new quote number and create new quote
-        quoteNo = await storage.generateQuoteNumber(userId);
+        // Generate new quote number and create new quote (tenant-scoped)
+        quoteNo = await storage.generateQuoteNumber(userId, tenantId);
         console.log("GENERATED QUOTE NO:", quoteNo);
         
-        // Create the quote record
+        // Create the quote record with tenant isolation
         quote = await storage.createQuote({
           ...quoteData,
           partyId,
           userId,
+          tenantId, // Multi-tenant isolation - never accept from frontend
           quoteNo,
           status: 'draft',
           totalValue: 0, // Initial value, will be updated when version is created

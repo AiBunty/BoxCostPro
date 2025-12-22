@@ -275,7 +275,7 @@ export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
 // Each flute type has a fluting factor (paper weight multiplier) and height (for board thickness)
 export const fluteSettings = pgTable("flute_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Optional during migration
   userId: varchar("user_id").references(() => users.id), // Creator
   fluteType: varchar("flute_type").notNull(), // 'A', 'B', 'C', 'E', 'F'
   flutingFactor: real("fluting_factor").notNull(), // Multiplier for paper weight calculation
@@ -306,7 +306,7 @@ export type FlutingSetting = typeof flutingSettings.$inferSelect;
 // Chatbot Widgets (for embedding on customer websites - per tenant)
 export const chatbotWidgets = pgTable("chatbot_widgets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   widgetName: text("widget_name").notNull(),
   apiToken: varchar("api_token").unique().notNull(),
@@ -339,7 +339,7 @@ export type User = typeof users.$inferSelect;
 
 // Tenant Users - maps users to tenants with roles
 export const tenantUsers = pgTable("tenant_users", {
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id).notNull(),
   role: varchar("role").notNull().default("staff"), // 'owner', 'admin', 'staff', 'viewer'
   isActive: boolean("is_active").default(true),
@@ -360,7 +360,7 @@ export type TenantUser = typeof tenantUsers.$inferSelect;
 // Company Profiles (per tenant)
 export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   companyName: text("company_name").notNull(),
   ownerName: text("owner_name"), // Owner/Contact person name for templates
@@ -385,7 +385,7 @@ export type CompanyProfile = typeof companyProfiles.$inferSelect;
 // Party/Customer Profiles (per tenant)
 export const partyProfiles = pgTable("party_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   personName: text("person_name").notNull(),
   designation: text("designation"),
@@ -404,7 +404,7 @@ export type PartyProfile = typeof partyProfiles.$inferSelect;
 // Quotes master table - stores quote header, points to active version (per tenant)
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   quoteNo: varchar("quote_no").notNull(), // User-visible quote number (stays constant across versions)
   partyId: varchar("party_id").references(() => partyProfiles.id),
@@ -529,7 +529,7 @@ export type QuoteItemVersion = typeof quoteItemVersions.$inferSelect;
 // Business Defaults - stores tenant's default GST% and tax settings
 export const businessDefaults = pgTable("business_defaults", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).unique(),
   userId: varchar("user_id").references(() => users.id), // Creator
   defaultGstPercent: real("default_gst_percent").notNull().default(5), // India GST for Corrugated Boxes
   gstRegistered: boolean("gst_registered").default(true),
@@ -556,7 +556,7 @@ export type BusinessDefaults = typeof businessDefaults.$inferSelect;
 // App Settings (per tenant)
 export const appSettings = pgTable("app_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   appTitle: text("app_title").default("Box Costing Calculator"),
   plyThicknessMap: jsonb("ply_thickness_map").default(JSON.stringify({
@@ -575,7 +575,7 @@ export type AppSettings = typeof appSettings.$inferSelect;
 // Rate Memory for Paper (BF + Shade combinations) - per tenant
 export const rateMemory = pgTable("rate_memory", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   bfValue: text("bf_value").notNull(),
   shade: text("shade").notNull(),
@@ -710,7 +710,7 @@ export type PaperPrice = typeof paperPrices.$inferSelect;
 // BF-Based Paper Prices - Base price defined ONLY by BF (Bursting Factor) - per tenant
 export const paperBfPrices = pgTable("paper_bf_prices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   bf: integer("bf").notNull(), // Bursting Factor (e.g., 18, 20, 22, 25)
   basePrice: real("base_price").notNull(), // Base price per Kg for this BF
@@ -725,7 +725,7 @@ export type PaperBfPrice = typeof paperBfPrices.$inferSelect;
 // Shade Premiums - Tenant-defined premium for paper shades (e.g., Golden)
 export const shadePremiums = pgTable("shade_premiums", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   shade: varchar("shade").notNull(), // 'Golden', 'White', 'Kraft', etc.
   premium: real("premium").notNull().default(0), // Premium amount to add per Kg
@@ -740,7 +740,7 @@ export type ShadePremium = typeof shadePremiums.$inferSelect;
 // Paper Pricing Rules table - stores tenant's GSM adjustment rules and market adjustment
 export const paperPricingRules = pgTable("paper_pricing_rules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).unique(),
   userId: varchar("user_id").references(() => users.id), // Creator // One rule set per user
   lowGsmLimit: integer("low_gsm_limit").default(101), // GSM <= this gets low adjustment
   lowGsmAdjustment: real("low_gsm_adjustment").default(1), // Amount to add for low GSM
@@ -760,7 +760,7 @@ export type PaperPricingRules = typeof paperPricingRules.$inferSelect;
 
 export const userQuoteTerms = pgTable("user_quote_terms", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).unique(),
   userId: varchar("user_id").references(() => users.id), // Creator
   validityDays: integer("validity_days").default(7),
   defaultDeliveryText: text("default_delivery_text").default("10-15 working days after order confirmation and advance payment"),
@@ -779,7 +779,7 @@ export type UserQuoteTerms = typeof userQuoteTerms.$inferSelect;
 // Master table for unique box specifications (per tenant)
 export const boxSpecifications = pgTable("box_specifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
   customerId: varchar("customer_id").references(() => partyProfiles.id),
   boxType: varchar("box_type").notNull(), // 'rsc', 'sheet'
@@ -867,7 +867,7 @@ export type TransportSnapshot = z.infer<typeof transportSnapshotSchema>;
 // Onboarding Status - tracks tenant's onboarding steps and verification
 export const onboardingStatus = pgTable("onboarding_status", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).unique(),
   userId: varchar("user_id").references(() => users.id), // Creator
   
   // Onboarding step completion flags
@@ -915,7 +915,7 @@ export type AdminAction = typeof adminActions.$inferSelect;
 // Support Tickets - customer support request tracking (per tenant)
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   ticketNo: varchar("ticket_no").notNull().unique(), // Auto-generated ticket number
   userId: varchar("user_id").references(() => users.id).notNull(), // Customer who created ticket
   subject: text("subject").notNull(),
@@ -996,7 +996,7 @@ export type TemplateVersion = typeof templateVersions.$inferSelect;
 // Quote Send Log - audit trail for quote sends (per tenant)
 export const quoteSendLogs = pgTable("quote_send_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   quoteId: varchar("quote_id").references(() => quotes.id).notNull(),
   quoteVersionId: varchar("quote_version_id").references(() => quoteVersions.id),
   userId: varchar("user_id").references(() => users.id).notNull(),

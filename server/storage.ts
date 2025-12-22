@@ -126,30 +126,30 @@ export interface IStorage {
   createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   updateUserProfile(userId: string, updates: Partial<InsertUserProfile>): Promise<UserProfile | undefined>;
   
-  // Company Profiles
-  getCompanyProfile(id: string): Promise<CompanyProfile | undefined>;
-  getAllCompanyProfiles(userId?: string): Promise<CompanyProfile[]>;
-  getDefaultCompanyProfile(userId?: string): Promise<CompanyProfile | undefined>;
+  // Company Profiles (tenant-aware)
+  getCompanyProfile(id: string, tenantId?: string): Promise<CompanyProfile | undefined>;
+  getAllCompanyProfiles(userId?: string, tenantId?: string): Promise<CompanyProfile[]>;
+  getDefaultCompanyProfile(userId?: string, tenantId?: string): Promise<CompanyProfile | undefined>;
   createCompanyProfile(profile: InsertCompanyProfile): Promise<CompanyProfile>;
   updateCompanyProfile(id: string, profile: Partial<InsertCompanyProfile>): Promise<CompanyProfile | undefined>;
-  setDefaultCompanyProfile(id: string, userId?: string): Promise<void>;
+  setDefaultCompanyProfile(id: string, userId?: string, tenantId?: string): Promise<void>;
   
-  // Party Profiles
-  getPartyProfile(id: string): Promise<PartyProfile | undefined>;
-  getAllPartyProfiles(userId?: string): Promise<PartyProfile[]>;
+  // Party Profiles (tenant-aware)
+  getPartyProfile(id: string, tenantId?: string): Promise<PartyProfile | undefined>;
+  getAllPartyProfiles(userId?: string, tenantId?: string): Promise<PartyProfile[]>;
   createPartyProfile(profile: InsertPartyProfile): Promise<PartyProfile>;
   updatePartyProfile(id: string, profile: Partial<InsertPartyProfile>): Promise<PartyProfile | undefined>;
-  deletePartyProfile(id: string): Promise<boolean>;
-  searchPartyProfiles(userId: string, search: string): Promise<PartyProfile[]>;
+  deletePartyProfile(id: string, tenantId?: string): Promise<boolean>;
+  searchPartyProfiles(userId: string, search: string, tenantId?: string): Promise<PartyProfile[]>;
   
-  // Quotes
-  getQuote(id: string): Promise<Quote | undefined>;
-  getAllQuotes(userId?: string): Promise<Quote[]>;
-  getAllQuotesWithItems(userId?: string): Promise<(Quote & { items: any[]; activeVersion: QuoteVersion | null })[]>;
-  searchQuotes(userId: string, options: { partyName?: string; boxName?: string; boxSize?: string }): Promise<Quote[]>;
+  // Quotes (tenant-aware)
+  getQuote(id: string, tenantId?: string): Promise<Quote | undefined>;
+  getAllQuotes(userId?: string, tenantId?: string): Promise<Quote[]>;
+  getAllQuotesWithItems(userId?: string, tenantId?: string): Promise<(Quote & { items: any[]; activeVersion: QuoteVersion | null })[]>;
+  searchQuotes(userId: string, options: { partyName?: string; boxName?: string; boxSize?: string }, tenantId?: string): Promise<Quote[]>;
   createQuote(quote: InsertQuote): Promise<Quote>;
-  updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined>;
-  deleteQuote(id: string): Promise<boolean>;
+  updateQuote(id: string, quote: Partial<InsertQuote>, tenantId?: string): Promise<Quote | undefined>;
+  deleteQuote(id: string, tenantId?: string): Promise<boolean>;
   
   // Rate Memory (BF + Shade combinations)
   getAllRateMemory(userId?: string): Promise<RateMemoryEntry[]>;
@@ -471,19 +471,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Company Profiles
-  async getCompanyProfile(id: string): Promise<CompanyProfile | undefined> {
-    const [profile] = await db.select().from(companyProfiles).where(eq(companyProfiles.id, id));
+  async getCompanyProfile(id: string, tenantId?: string): Promise<CompanyProfile | undefined> {
+    const conditions = [eq(companyProfiles.id, id)];
+    if (tenantId) {
+      conditions.push(eq(companyProfiles.tenantId, tenantId));
+    }
+    const [profile] = await db.select().from(companyProfiles).where(and(...conditions));
     return profile;
   }
 
-  async getAllCompanyProfiles(userId?: string): Promise<CompanyProfile[]> {
+  async getAllCompanyProfiles(userId?: string, tenantId?: string): Promise<CompanyProfile[]> {
+    // Prefer tenantId for multi-tenant isolation
+    if (tenantId) {
+      return await db.select().from(companyProfiles).where(eq(companyProfiles.tenantId, tenantId));
+    }
     if (userId) {
       return await db.select().from(companyProfiles).where(eq(companyProfiles.userId, userId));
     }
     return await db.select().from(companyProfiles);
   }
 
-  async getDefaultCompanyProfile(userId?: string): Promise<CompanyProfile | undefined> {
+  async getDefaultCompanyProfile(userId?: string, tenantId?: string): Promise<CompanyProfile | undefined> {
+    // Prefer tenantId for multi-tenant isolation
+    if (tenantId) {
+      const [profile] = await db.select().from(companyProfiles)
+        .where(and(eq(companyProfiles.tenantId, tenantId), eq(companyProfiles.isDefault, true)));
+      return profile;
+    }
     if (userId) {
       const [profile] = await db.select().from(companyProfiles)
         .where(and(eq(companyProfiles.userId, userId), eq(companyProfiles.isDefault, true)));
@@ -506,9 +520,13 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async setDefaultCompanyProfile(id: string, userId?: string): Promise<void> {
-    // Remove default from all user's profiles
-    if (userId) {
+  async setDefaultCompanyProfile(id: string, userId?: string, tenantId?: string): Promise<void> {
+    // Remove default from all tenant's/user's profiles
+    if (tenantId) {
+      await db.update(companyProfiles)
+        .set({ isDefault: false })
+        .where(eq(companyProfiles.tenantId, tenantId));
+    } else if (userId) {
       await db.update(companyProfiles)
         .set({ isDefault: false })
         .where(eq(companyProfiles.userId, userId));
@@ -522,12 +540,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Party Profiles
-  async getPartyProfile(id: string): Promise<PartyProfile | undefined> {
-    const [profile] = await db.select().from(partyProfiles).where(eq(partyProfiles.id, id));
+  async getPartyProfile(id: string, tenantId?: string): Promise<PartyProfile | undefined> {
+    const conditions = [eq(partyProfiles.id, id)];
+    if (tenantId) {
+      conditions.push(eq(partyProfiles.tenantId, tenantId));
+    }
+    const [profile] = await db.select().from(partyProfiles).where(and(...conditions));
     return profile;
   }
 
-  async getAllPartyProfiles(userId?: string): Promise<PartyProfile[]> {
+  async getAllPartyProfiles(userId?: string, tenantId?: string): Promise<PartyProfile[]> {
+    // Prefer tenantId for multi-tenant isolation
+    if (tenantId) {
+      return await db.select().from(partyProfiles).where(eq(partyProfiles.tenantId, tenantId));
+    }
     if (userId) {
       return await db.select().from(partyProfiles).where(eq(partyProfiles.userId, userId));
     }
@@ -547,22 +573,37 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async deletePartyProfile(id: string): Promise<boolean> {
+  async deletePartyProfile(id: string, tenantId?: string): Promise<boolean> {
     // Check if any quotes exist for this party
+    const conditions = [eq(quotes.partyId, id)];
+    if (tenantId) {
+      conditions.push(eq(quotes.tenantId, tenantId));
+    }
     const partyQuotes = await db.select({ id: quotes.id })
       .from(quotes)
-      .where(eq(quotes.partyId, id))
+      .where(and(...conditions))
       .limit(1);
     
     if (partyQuotes.length > 0) {
       throw new Error("PARTY_HAS_QUOTES");
     }
     
-    const result = await db.delete(partyProfiles).where(eq(partyProfiles.id, id));
+    const deleteConditions = [eq(partyProfiles.id, id)];
+    if (tenantId) {
+      deleteConditions.push(eq(partyProfiles.tenantId, tenantId));
+    }
+    await db.delete(partyProfiles).where(and(...deleteConditions));
     return true;
   }
   
-  async getQuotesByPartyId(partyId: string, userId?: string): Promise<Quote[]> {
+  async getQuotesByPartyId(partyId: string, userId?: string, tenantId?: string): Promise<Quote[]> {
+    // Prefer tenantId for multi-tenant isolation
+    if (tenantId) {
+      return await db.select().from(quotes).where(and(
+        eq(quotes.partyId, partyId),
+        eq(quotes.tenantId, tenantId)
+      ));
+    }
     if (userId) {
       return await db.select().from(quotes).where(and(
         eq(quotes.partyId, partyId),
@@ -572,8 +613,19 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(quotes).where(eq(quotes.partyId, partyId));
   }
 
-  async searchPartyProfiles(userId: string, search: string): Promise<PartyProfile[]> {
+  async searchPartyProfiles(userId: string, search: string, tenantId?: string): Promise<PartyProfile[]> {
     const searchTerm = `%${search}%`;
+    // Prefer tenantId for multi-tenant isolation
+    if (tenantId) {
+      return await db.select().from(partyProfiles)
+        .where(and(
+          eq(partyProfiles.tenantId, tenantId),
+          or(
+            ilike(partyProfiles.personName, searchTerm),
+            ilike(partyProfiles.companyName, searchTerm)
+          )
+        ));
+    }
     return await db.select().from(partyProfiles)
       .where(and(
         eq(partyProfiles.userId, userId),
@@ -585,23 +637,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Quotes
-  async getQuote(id: string): Promise<Quote | undefined> {
-    const [quote] = await db.select().from(quotes).where(eq(quotes.id, id));
+  async getQuote(id: string, tenantId?: string): Promise<Quote | undefined> {
+    const conditions = [eq(quotes.id, id)];
+    if (tenantId) {
+      conditions.push(eq(quotes.tenantId, tenantId));
+    }
+    const [quote] = await db.select().from(quotes).where(and(...conditions));
     return quote;
   }
 
-  async getAllQuotes(userId?: string): Promise<Quote[]> {
+  async getAllQuotes(userId?: string, tenantId?: string): Promise<Quote[]> {
+    // Prefer tenantId for multi-tenant isolation
+    if (tenantId) {
+      return await db.select().from(quotes).where(eq(quotes.tenantId, tenantId));
+    }
     if (userId) {
       return await db.select().from(quotes).where(eq(quotes.userId, userId));
     }
     return await db.select().from(quotes);
   }
 
-  async getAllQuotesWithItems(userId?: string): Promise<(Quote & { items: any[]; activeVersion: QuoteVersion | null })[]> {
-    // Get all quotes for user
-    const quotesData = userId 
-      ? await db.select().from(quotes).where(eq(quotes.userId, userId))
-      : await db.select().from(quotes);
+  async getAllQuotesWithItems(userId?: string, tenantId?: string): Promise<(Quote & { items: any[]; activeVersion: QuoteVersion | null })[]> {
+    // Get all quotes for tenant/user (prefer tenantId for multi-tenant isolation)
+    let quotesData: Quote[];
+    if (tenantId) {
+      quotesData = await db.select().from(quotes).where(eq(quotes.tenantId, tenantId));
+    } else if (userId) {
+      quotesData = await db.select().from(quotes).where(eq(quotes.userId, userId));
+    } else {
+      quotesData = await db.select().from(quotes);
+    }
     
     // For each quote, get its active version and items
     const result = await Promise.all(
@@ -652,8 +717,14 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async searchQuotes(userId: string, options: { partyName?: string; boxName?: string; boxSize?: string }): Promise<Quote[]> {
-    let results = await db.select().from(quotes).where(eq(quotes.userId, userId));
+  async searchQuotes(userId: string, options: { partyName?: string; boxName?: string; boxSize?: string }, tenantId?: string): Promise<Quote[]> {
+    // Prefer tenantId for multi-tenant isolation
+    let results: Quote[];
+    if (tenantId) {
+      results = await db.select().from(quotes).where(eq(quotes.tenantId, tenantId));
+    } else {
+      results = await db.select().from(quotes).where(eq(quotes.userId, userId));
+    }
     
     if (options.partyName) {
       const search = options.partyName.toLowerCase();
@@ -672,27 +743,41 @@ export class DatabaseStorage implements IStorage {
     return quote;
   }
 
-  async updateQuote(id: string, updates: Partial<InsertQuote>): Promise<Quote | undefined> {
+  async updateQuote(id: string, updates: Partial<InsertQuote>, tenantId?: string): Promise<Quote | undefined> {
+    const conditions = [eq(quotes.id, id)];
+    if (tenantId) {
+      conditions.push(eq(quotes.tenantId, tenantId));
+    }
     const [updated] = await db.update(quotes)
       .set(updates)
-      .where(eq(quotes.id, id))
+      .where(and(...conditions))
       .returning();
     return updated;
   }
 
-  async deleteQuote(id: string): Promise<boolean> {
-    await db.delete(quotes).where(eq(quotes.id, id));
+  async deleteQuote(id: string, tenantId?: string): Promise<boolean> {
+    const conditions = [eq(quotes.id, id)];
+    if (tenantId) {
+      conditions.push(eq(quotes.tenantId, tenantId));
+    }
+    await db.delete(quotes).where(and(...conditions));
     return true;
   }
 
   // Generate unique quote number (format: QT-YYYYMMDD-XXX)
-  async generateQuoteNumber(userId: string): Promise<string> {
+  async generateQuoteNumber(userId: string, tenantId?: string): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    // Count quotes created today by this user
-    const existingQuotes = await db.select().from(quotes)
-      .where(eq(quotes.userId, userId));
+    // Count quotes created today by tenant/user (prefer tenantId for multi-tenant)
+    let existingQuotes: Quote[];
+    if (tenantId) {
+      existingQuotes = await db.select().from(quotes)
+        .where(eq(quotes.tenantId, tenantId));
+    } else {
+      existingQuotes = await db.select().from(quotes)
+        .where(eq(quotes.userId, userId));
+    }
     
     const todayQuotes = existingQuotes.filter(q => {
       if (!q.createdAt) return false;
