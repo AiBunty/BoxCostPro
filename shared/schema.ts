@@ -456,6 +456,7 @@ export const quoteVersions = pgTable("quote_versions", {
   negotiationType: varchar("negotiation_type"), // 'flat', 'percentage', null
   negotiationValue: real("negotiation_value"),
   isLocked: boolean("is_locked").default(false), // Once negotiated, version is locked
+  isArchived: boolean("is_archived").default(false), // True when a newer version exists
   
   // Snapshotted master data (captured at quote creation - CRITICAL)
   partySnapshot: jsonb("party_snapshot"), // Party details snapshot at quote creation time
