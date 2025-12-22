@@ -807,6 +807,20 @@ export const insertQuoteTemplateSchema = createInsertSchema(quoteTemplates).omit
 export type InsertQuoteTemplate = z.infer<typeof insertQuoteTemplateSchema>;
 export type QuoteTemplate = typeof quoteTemplates.$inferSelect;
 
+// Template Versions - version history for template rollback
+export const templateVersions = pgTable("template_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").references(() => quoteTemplates.id).notNull(),
+  versionNo: integer("version_no").notNull(),
+  content: text("content").notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTemplateVersionSchema = createInsertSchema(templateVersions).omit({ id: true, createdAt: true });
+export type InsertTemplateVersion = z.infer<typeof insertTemplateVersionSchema>;
+export type TemplateVersion = typeof templateVersions.$inferSelect;
+
 // Quote Send Log - audit trail for quote sends
 export const quoteSendLogs = pgTable("quote_send_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

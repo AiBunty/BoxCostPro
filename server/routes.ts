@@ -2854,6 +2854,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied" });
       }
       
+      // If content is being changed, save current content as new version
+      if (req.body.content && req.body.content !== template.content) {
+        await storage.saveTemplateVersion(req.params.id, template.content, userId);
+      }
+      
       const updated = await storage.updateQuoteTemplate(req.params.id, req.body);
       res.json(updated);
     } catch (error) {
@@ -3066,6 +3071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const missingFields: string[] = [];
       if (!companyProfile.companyName) missingFields.push('Company Name');
+      if (!companyProfile.ownerName) missingFields.push('Owner Name');
       if (!companyProfile.phone) missingFields.push('Phone');
       if (!companyProfile.email) missingFields.push('Email');
       if (!companyProfile.gstNo) missingFields.push('GST Number');
@@ -3176,6 +3182,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(logs);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch send history" });
+    }
+  });
+  
+  // ========== TEMPLATE VERSION MANAGEMENT ==========
+  
+  // Get version history for a template
+  app.get("/api/quote-templates/:id/versions", combinedAuth, async (req: any, res) => {
+    try {
+      const versions = await storage.getTemplateVersions(req.params.id);
+      res.json(versions);
+    } catch (error) {
+      console.error("Error fetching template versions:", error);
+      res.status(500).json({ error: "Failed to fetch template versions" });
+    }
+  });
+  
+  // Get specific version of a template
+  app.get("/api/quote-templates/:id/versions/:versionNo", combinedAuth, async (req: any, res) => {
+    try {
+      const version = await storage.getTemplateVersion(req.params.id, parseInt(req.params.versionNo));
+      if (!version) {
+        return res.status(404).json({ error: "Version not found" });
+      }
+      res.json(version);
+    } catch (error) {
+      console.error("Error fetching template version:", error);
+      res.status(500).json({ error: "Failed to fetch template version" });
+    }
+  });
+  
+  // Rollback template to a specific version
+  app.post("/api/quote-templates/:id/rollback/:versionNo", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const templateId = req.params.id;
+      const versionNo = parseInt(req.params.versionNo);
+      
+      // Check template exists and user owns it
+      const template = await storage.getQuoteTemplate(templateId);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      if (template.templateType === 'system') {
+        return res.status(403).json({ error: "Cannot modify system templates" });
+      }
+      
+      if (template.userId !== userId) {
+        return res.status(403).json({ error: "Not authorized to modify this template" });
+      }
+      
+      // Save current content as new version before rollback
+      await storage.saveTemplateVersion(templateId, template.content, userId);
+      
+      // Rollback to specified version
+      const updated = await storage.rollbackTemplate(templateId, versionNo);
+      if (!updated) {
+        return res.status(400).json({ error: "Failed to rollback. Version may not exist." });
+      }
+      
+      res.json({ success: true, template: updated });
+    } catch (error) {
+      console.error("Error rolling back template:", error);
+      res.status(500).json({ error: "Failed to rollback template" });
     }
   });
 

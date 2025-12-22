@@ -10,7 +10,8 @@ import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ArrowLeft, User, Building2, ImageIcon, Upload, Loader2, Save, MessageSquare, Mail, Copy, Star, Trash2, Eye, Edit2, Check, Columns3 } from "lucide-react";
+import { ArrowLeft, User, Building2, ImageIcon, Upload, Loader2, Save, MessageSquare, Mail, Copy, Star, Trash2, Eye, Edit2, Check, Columns3, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Link } from "wouter";
 import type { User as UserType, CompanyProfile, QuoteTemplate } from "@shared/schema";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -68,10 +69,13 @@ export default function Settings() {
   const businessForm = useForm({
     defaultValues: {
       companyName: "",
+      ownerName: "",
       address: "",
       phone: "",
       email: "",
       gstNo: "",
+      website: "",
+      mapLink: "",
     },
   });
 
@@ -90,10 +94,13 @@ export default function Settings() {
     if (defaultProfile) {
       businessForm.reset({
         companyName: defaultProfile.companyName || "",
+        ownerName: (defaultProfile as any).ownerName || "",
         address: defaultProfile.address || "",
         phone: defaultProfile.phone || "",
         email: defaultProfile.email || "",
         gstNo: defaultProfile.gstNo || "",
+        website: (defaultProfile as any).website || "",
+        mapLink: (defaultProfile as any).mapLink || "",
       });
       if (defaultProfile.logoUrl) {
         setLogoPreview(defaultProfile.logoUrl);
@@ -393,18 +400,44 @@ export default function Settings() {
               <CardContent>
                 <Form {...businessForm}>
                   <form onSubmit={businessForm.handleSubmit(handleBusinessSave)} className="space-y-4">
-                    <FormField
-                      control={businessForm.control}
-                      name="companyName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Company Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Ventura Packagers Pvt. Ltd." {...field} data-testid="input-company-name" />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                    <Alert className="mb-4">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        Fields marked with * are required for sending quotes via WhatsApp/Email.
+                      </AlertDescription>
+                    </Alert>
+
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <FormField
+                        control={businessForm.control}
+                        name="companyName"
+                        rules={{ required: "Company Name is required" }}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Company Name *</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Ventura Packagers Pvt. Ltd." {...field} data-testid="input-company-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={businessForm.control}
+                        name="ownerName"
+                        rules={{ required: "Owner Name is required" }}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Owner / Contact Name *</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Rajesh Kumar" {...field} data-testid="input-owner-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     <FormField
                       control={businessForm.control}
@@ -423,12 +456,14 @@ export default function Settings() {
                       <FormField
                         control={businessForm.control}
                         name="phone"
+                        rules={{ required: "Phone is required" }}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Phone</FormLabel>
+                            <FormLabel>Phone *</FormLabel>
                             <FormControl>
                               <Input placeholder="+91 98765 43210" {...field} data-testid="input-phone" />
                             </FormControl>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />
@@ -436,12 +471,14 @@ export default function Settings() {
                       <FormField
                         control={businessForm.control}
                         name="email"
+                        rules={{ required: "Email is required" }}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Business Email</FormLabel>
+                            <FormLabel>Business Email *</FormLabel>
                             <FormControl>
                               <Input type="email" placeholder="sales@company.com" {...field} data-testid="input-business-email" />
                             </FormControl>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />
@@ -450,15 +487,45 @@ export default function Settings() {
                     <FormField
                       control={businessForm.control}
                       name="gstNo"
+                      rules={{ required: "GST Number is required" }}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>GST Number</FormLabel>
+                          <FormLabel>GST Number *</FormLabel>
                           <FormControl>
                             <Input placeholder="22AAAAA0000A1Z5" {...field} data-testid="input-gst" />
                           </FormControl>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
+
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <FormField
+                        control={businessForm.control}
+                        name="website"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Website</FormLabel>
+                            <FormControl>
+                              <Input placeholder="https://company.com" {...field} data-testid="input-website" />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={businessForm.control}
+                        name="mapLink"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Google Maps Link</FormLabel>
+                            <FormControl>
+                              <Input placeholder="https://maps.google.com/..." {...field} data-testid="input-map-link" />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     <Button 
                       type="submit" 

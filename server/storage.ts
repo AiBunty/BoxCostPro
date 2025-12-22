@@ -92,7 +92,10 @@ import {
   supportTickets,
   supportMessages,
   quoteTemplates,
-  quoteSendLogs
+  templateVersions,
+  quoteSendLogs,
+  InsertTemplateVersion,
+  TemplateVersion
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, sql } from "drizzle-orm";
@@ -1638,6 +1641,56 @@ export class DatabaseStorage implements IStorage {
     await db.update(quoteTemplates)
       .set({ isDefault: true })
       .where(eq(quoteTemplates.id, templateId));
+  }
+  
+  // ========== TEMPLATE VERSIONS ==========
+  async getLatestTemplateVersion(templateId: string): Promise<TemplateVersion | undefined> {
+    const [version] = await db.select().from(templateVersions)
+      .where(eq(templateVersions.templateId, templateId))
+      .orderBy(sql`${templateVersions.versionNo} DESC`)
+      .limit(1);
+    return version;
+  }
+  
+  async getTemplateVersions(templateId: string): Promise<TemplateVersion[]> {
+    return await db.select().from(templateVersions)
+      .where(eq(templateVersions.templateId, templateId))
+      .orderBy(sql`${templateVersions.versionNo} DESC`);
+  }
+  
+  async getTemplateVersion(templateId: string, versionNo: number): Promise<TemplateVersion | undefined> {
+    const [version] = await db.select().from(templateVersions)
+      .where(and(
+        eq(templateVersions.templateId, templateId),
+        eq(templateVersions.versionNo, versionNo)
+      ));
+    return version;
+  }
+  
+  async saveTemplateVersion(templateId: string, content: string, userId: string): Promise<TemplateVersion> {
+    const latest = await this.getLatestTemplateVersion(templateId);
+    const nextVersionNo = (latest?.versionNo || 0) + 1;
+    
+    const [created] = await db.insert(templateVersions).values({
+      templateId,
+      versionNo: nextVersionNo,
+      content,
+      createdBy: userId
+    }).returning();
+    
+    return created;
+  }
+  
+  async rollbackTemplate(templateId: string, versionNo: number): Promise<QuoteTemplate | undefined> {
+    const version = await this.getTemplateVersion(templateId, versionNo);
+    if (!version) return undefined;
+    
+    const [updated] = await db.update(quoteTemplates)
+      .set({ content: version.content, updatedAt: new Date() })
+      .where(eq(quoteTemplates.id, templateId))
+      .returning();
+    
+    return updated;
   }
   
   // ========== QUOTE SEND LOGS ==========
