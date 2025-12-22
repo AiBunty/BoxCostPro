@@ -1,7 +1,28 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, real, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, real, integer, boolean, jsonb, timestamp, index, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// ========== MULTI-TENANT INFRASTRUCTURE ==========
+
+// Tenants (Companies) - Each organization is a tenant
+export const tenants = pgTable("tenants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessName: text("business_name").notNull(),
+  ownerUserId: varchar("owner_user_id"), // FK added after users table defined
+  slug: varchar("slug").unique(), // URL-friendly identifier
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTenantSchema = createInsertSchema(tenants).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTenant = z.infer<typeof insertTenantSchema>;
+export type Tenant = typeof tenants.$inferSelect;
+
+// Tenant user roles
+export const tenantUserRole = z.enum(['owner', 'admin', 'staff', 'viewer']);
+export type TenantUserRole = z.infer<typeof tenantUserRole>;
 
 // Session storage table for Replit Auth
 export const sessions = pgTable(
@@ -95,9 +116,10 @@ export const insertUserEmailSettingsSchema = createInsertSchema(userEmailSetting
 export type InsertUserEmailSettings = z.infer<typeof insertUserEmailSettingsSchema>;
 export type UserEmailSettings = typeof userEmailSettings.$inferSelect;
 
-// Email Logs - Track every email attempt for analytics
+// Email Logs - Track every email attempt for analytics (per tenant)
 export const emailLogs = pgTable("email_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id).notNull(),
   recipientEmail: varchar("recipient_email").notNull(),
   senderEmail: varchar("sender_email").notNull(),
@@ -249,11 +271,12 @@ export const insertPaymentTransactionSchema = createInsertSchema(paymentTransact
 export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
 export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
 
-// Flute Settings (per user - technical constants for board costing)
+// Flute Settings (per tenant - technical constants for board costing)
 // Each flute type has a fluting factor (paper weight multiplier) and height (for board thickness)
 export const fluteSettings = pgTable("flute_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   fluteType: varchar("flute_type").notNull(), // 'A', 'B', 'C', 'E', 'F'
   flutingFactor: real("fluting_factor").notNull(), // Multiplier for paper weight calculation
   fluteHeightMm: real("flute_height_mm").notNull(), // Flute height in mm for board thickness
@@ -268,6 +291,7 @@ export type FluteSetting = typeof fluteSettings.$inferSelect;
 // Legacy flutingSettings table (deprecated - use fluteSettings instead)
 export const flutingSettings = pgTable("fluting_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id),
   fluteType: varchar("flute_type").notNull(),
   flutingFactor: real("fluting_factor").notNull(),
@@ -279,10 +303,11 @@ export const insertFlutingSettingSchema = createInsertSchema(flutingSettings).om
 export type InsertFlutingSetting = z.infer<typeof insertFlutingSettingSchema>;
 export type FlutingSetting = typeof flutingSettings.$inferSelect;
 
-// Chatbot Widgets (for embedding on customer websites)
+// Chatbot Widgets (for embedding on customer websites - per tenant)
 export const chatbotWidgets = pgTable("chatbot_widgets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   widgetName: text("widget_name").notNull(),
   apiToken: varchar("api_token").unique().notNull(),
   allowedDomains: jsonb("allowed_domains").default('[]'), // domains where widget can be embedded
@@ -310,10 +335,33 @@ export const ownerSettings = pgTable("owner_settings", {
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
-// Company Profiles (per user)
+// ========== TENANT USER MAPPING ==========
+
+// Tenant Users - maps users to tenants with roles
+export const tenantUsers = pgTable("tenant_users", {
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  role: varchar("role").notNull().default("staff"), // 'owner', 'admin', 'staff', 'viewer'
+  isActive: boolean("is_active").default(true),
+  invitedBy: varchar("invited_by").references(() => users.id),
+  invitedAt: timestamp("invited_at"),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.tenantId, table.userId] }),
+  index("idx_tenant_users_tenant").on(table.tenantId),
+  index("idx_tenant_users_user").on(table.userId),
+]);
+
+export const insertTenantUserSchema = createInsertSchema(tenantUsers).omit({ createdAt: true, joinedAt: true });
+export type InsertTenantUser = z.infer<typeof insertTenantUserSchema>;
+export type TenantUser = typeof tenantUsers.$inferSelect;
+
+// Company Profiles (per tenant)
 export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   companyName: text("company_name").notNull(),
   ownerName: text("owner_name"), // Owner/Contact person name for templates
   gstNo: text("gst_no"),
@@ -334,10 +382,11 @@ export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).om
 export type InsertCompanyProfile = z.infer<typeof insertCompanyProfileSchema>;
 export type CompanyProfile = typeof companyProfiles.$inferSelect;
 
-// Party/Customer Profiles (per user)
+// Party/Customer Profiles (per tenant)
 export const partyProfiles = pgTable("party_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   personName: text("person_name").notNull(),
   designation: text("designation"),
   companyName: text("company_name"),
@@ -352,10 +401,11 @@ export const insertPartyProfileSchema = createInsertSchema(partyProfiles).omit({
 export type InsertPartyProfile = z.infer<typeof insertPartyProfileSchema>;
 export type PartyProfile = typeof partyProfiles.$inferSelect;
 
-// Quotes master table - stores quote header, points to active version
+// Quotes master table - stores quote header, points to active version (per tenant)
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   quoteNo: varchar("quote_no").notNull(), // User-visible quote number (stays constant across versions)
   partyId: varchar("party_id").references(() => partyProfiles.id),
   partyName: text("party_name").notNull(),
@@ -476,10 +526,11 @@ export const insertQuoteItemVersionSchema = createInsertSchema(quoteItemVersions
 export type InsertQuoteItemVersion = z.infer<typeof insertQuoteItemVersionSchema>;
 export type QuoteItemVersion = typeof quoteItemVersions.$inferSelect;
 
-// Business Defaults - stores user's default GST% and tax settings
+// Business Defaults - stores tenant's default GST% and tax settings
 export const businessDefaults = pgTable("business_defaults", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   defaultGstPercent: real("default_gst_percent").notNull().default(5), // India GST for Corrugated Boxes
   gstRegistered: boolean("gst_registered").default(true),
   gstNumber: varchar("gst_number"),
@@ -502,10 +553,11 @@ export const insertBusinessDefaultsSchema = createInsertSchema(businessDefaults)
 export type InsertBusinessDefaults = z.infer<typeof insertBusinessDefaultsSchema>;
 export type BusinessDefaults = typeof businessDefaults.$inferSelect;
 
-// App Settings (per user)
+// App Settings (per tenant)
 export const appSettings = pgTable("app_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   appTitle: text("app_title").default("Box Costing Calculator"),
   plyThicknessMap: jsonb("ply_thickness_map").default(JSON.stringify({
     '1': 0.45,
@@ -520,10 +572,11 @@ export const insertAppSettingsSchema = createInsertSchema(appSettings).omit({ id
 export type InsertAppSettings = z.infer<typeof insertAppSettingsSchema>;
 export type AppSettings = typeof appSettings.$inferSelect;
 
-// Rate Memory for Paper (BF + Shade combinations) - per user
+// Rate Memory for Paper (BF + Shade combinations) - per tenant
 export const rateMemory = pgTable("rate_memory", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   bfValue: text("bf_value").notNull(),
   shade: text("shade").notNull(),
   rate: real("rate").notNull(),
@@ -640,7 +693,8 @@ export type LayerSpec = z.infer<typeof layerSpecSchema>;
 // Legacy Paper Prices table (deprecated - use paper_bf_prices instead)
 export const paperPrices = pgTable("paper_prices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  userId: varchar("user_id").references(() => users.id), // Creator
   gsm: integer("gsm").notNull(),
   bf: integer("bf").notNull(),
   shade: varchar("shade").notNull(),
@@ -653,10 +707,11 @@ export const insertPaperPriceSchema = createInsertSchema(paperPrices).omit({ id:
 export type InsertPaperPrice = z.infer<typeof insertPaperPriceSchema>;
 export type PaperPrice = typeof paperPrices.$inferSelect;
 
-// BF-Based Paper Prices - Base price defined ONLY by BF (Bursting Factor)
+// BF-Based Paper Prices - Base price defined ONLY by BF (Bursting Factor) - per tenant
 export const paperBfPrices = pgTable("paper_bf_prices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   bf: integer("bf").notNull(), // Bursting Factor (e.g., 18, 20, 22, 25)
   basePrice: real("base_price").notNull(), // Base price per Kg for this BF
   createdAt: timestamp("created_at").defaultNow(),
@@ -667,10 +722,11 @@ export const insertPaperBfPriceSchema = createInsertSchema(paperBfPrices).omit({
 export type InsertPaperBfPrice = z.infer<typeof insertPaperBfPriceSchema>;
 export type PaperBfPrice = typeof paperBfPrices.$inferSelect;
 
-// Shade Premiums - User-defined premium for paper shades (e.g., Golden)
+// Shade Premiums - Tenant-defined premium for paper shades (e.g., Golden)
 export const shadePremiums = pgTable("shade_premiums", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   shade: varchar("shade").notNull(), // 'Golden', 'White', 'Kraft', etc.
   premium: real("premium").notNull().default(0), // Premium amount to add per Kg
   createdAt: timestamp("created_at").defaultNow(),
@@ -681,10 +737,11 @@ export const insertShadePremiumSchema = createInsertSchema(shadePremiums).omit({
 export type InsertShadePremium = z.infer<typeof insertShadePremiumSchema>;
 export type ShadePremium = typeof shadePremiums.$inferSelect;
 
-// Paper Pricing Rules table - stores user's GSM adjustment rules and market adjustment
+// Paper Pricing Rules table - stores tenant's GSM adjustment rules and market adjustment
 export const paperPricingRules = pgTable("paper_pricing_rules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull().unique(), // One rule set per user
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  userId: varchar("user_id").references(() => users.id), // Creator // One rule set per user
   lowGsmLimit: integer("low_gsm_limit").default(101), // GSM <= this gets low adjustment
   lowGsmAdjustment: real("low_gsm_adjustment").default(1), // Amount to add for low GSM
   highGsmLimit: integer("high_gsm_limit").default(201), // GSM >= this gets high adjustment
@@ -703,7 +760,8 @@ export type PaperPricingRules = typeof paperPricingRules.$inferSelect;
 
 export const userQuoteTerms = pgTable("user_quote_terms", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   validityDays: integer("validity_days").default(7),
   defaultDeliveryText: text("default_delivery_text").default("10-15 working days after order confirmation and advance payment"),
   defaultPaymentType: varchar("default_payment_type").default("advance"), // 'advance', 'credit'
@@ -718,10 +776,11 @@ export type UserQuoteTerms = typeof userQuoteTerms.$inferSelect;
 
 // ========== BOX SPECIFICATIONS (Master + Versioning) ==========
 
-// Master table for unique box specifications
+// Master table for unique box specifications (per tenant)
 export const boxSpecifications = pgTable("box_specifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   customerId: varchar("customer_id").references(() => partyProfiles.id),
   boxType: varchar("box_type").notNull(), // 'rsc', 'sheet'
   length: real("length").notNull(),
@@ -805,10 +864,11 @@ export type TransportSnapshot = z.infer<typeof transportSnapshotSchema>;
 
 // ========== ADMIN VERIFICATION & ONBOARDING SYSTEM ==========
 
-// Onboarding Status - tracks user's onboarding steps and verification
+// Onboarding Status - tracks tenant's onboarding steps and verification
 export const onboardingStatus = pgTable("onboarding_status", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull().unique(),
+  userId: varchar("user_id").references(() => users.id), // Creator
   
   // Onboarding step completion flags
   businessProfileDone: boolean("business_profile_done").default(false),
@@ -852,9 +912,10 @@ export type AdminAction = typeof adminActions.$inferSelect;
 
 // ========== SUPPORT TICKET SYSTEM ==========
 
-// Support Tickets - customer support request tracking
+// Support Tickets - customer support request tracking (per tenant)
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
   ticketNo: varchar("ticket_no").notNull().unique(), // Auto-generated ticket number
   userId: varchar("user_id").references(() => users.id).notNull(), // Customer who created ticket
   subject: text("subject").notNull(),
@@ -898,10 +959,11 @@ export type SupportMessage = typeof supportMessages.$inferSelect;
 
 // ========== QUOTE TEMPLATES SYSTEM ==========
 
-// Quote Templates - WhatsApp and Email templates for sending quotes
+// Quote Templates - WhatsApp and Email templates for sending quotes (per tenant)
 export const quoteTemplates = pgTable("quote_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id), // null for system templates
+  tenantId: varchar("tenant_id").references(() => tenants.id), // null for system templates
+  userId: varchar("user_id").references(() => users.id), // Creator (null for system templates)
   name: text("name").notNull(),
   channel: varchar("channel").notNull(), // 'whatsapp' or 'email'
   templateType: varchar("template_type").notNull().default("custom"), // 'system' or 'custom'
@@ -931,9 +993,10 @@ export const insertTemplateVersionSchema = createInsertSchema(templateVersions).
 export type InsertTemplateVersion = z.infer<typeof insertTemplateVersionSchema>;
 export type TemplateVersion = typeof templateVersions.$inferSelect;
 
-// Quote Send Log - audit trail for quote sends
+// Quote Send Log - audit trail for quote sends (per tenant)
 export const quoteSendLogs = pgTable("quote_send_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
   quoteId: varchar("quote_id").references(() => quotes.id).notNull(),
   quoteVersionId: varchar("quote_version_id").references(() => quoteVersions.id),
   userId: varchar("user_id").references(() => users.id).notNull(),
