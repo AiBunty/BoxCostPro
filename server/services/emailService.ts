@@ -65,9 +65,10 @@ interface TransporterResult {
 }
 
 /**
- * Log email attempt asynchronously (non-blocking)
+ * Log email attempt - fire-and-forget (truly non-blocking)
+ * Returns immediately, logging happens in background
  */
-async function logEmailAttempt(params: {
+function logEmailAttemptAsync(params: {
   userId: string;
   recipientEmail: string;
   senderEmail: string;
@@ -78,51 +79,87 @@ async function logEmailAttempt(params: {
   messageId?: string;
   failureReason?: string;
   quoteId?: string;
-}): Promise<string | null> {
-  try {
-    const log = await storage.createEmailLog({
-      userId: params.userId,
-      recipientEmail: params.recipientEmail,
-      senderEmail: params.senderEmail,
-      provider: params.provider,
-      subject: params.subject,
-      channel: params.channel,
-      status: params.status,
-      messageId: params.messageId || null,
-      failureReason: params.failureReason || null,
-      quoteId: params.quoteId || null,
-    });
-    return log.id;
-  } catch (err) {
-    console.error('EMAIL_LOG_FAILED:', err);
-    return null;
-  }
+  bounceType?: 'hard' | 'soft' | null;
+}): void {
+  setImmediate(async () => {
+    try {
+      const log = await storage.createEmailLog({
+        userId: params.userId,
+        recipientEmail: params.recipientEmail,
+        senderEmail: params.senderEmail,
+        provider: params.provider,
+        subject: params.subject,
+        channel: params.channel,
+        status: params.status,
+        messageId: params.messageId || null,
+        failureReason: params.failureReason || null,
+        quoteId: params.quoteId || null,
+      });
+      
+      // If bounced, log the bounce record with the pre-detected type
+      if (params.status === 'bounced' && params.bounceType && params.failureReason) {
+        void logBounceAsync({
+          emailLogId: log.id,
+          recipientEmail: params.recipientEmail,
+          bounceType: params.bounceType,
+          bounceReason: params.failureReason,
+          provider: params.provider,
+        });
+      }
+    } catch (err) {
+      console.error('EMAIL_LOG_FAILED:', err);
+    }
+  });
 }
 
 /**
  * Detect bounce type from SMTP error
+ * Parses both responseCode and response/message for SMTP status codes
  */
-function detectBounceType(errorCode: string | number | undefined, errorMessage: string): 'hard' | 'soft' | null {
-  const codeStr = String(errorCode || '');
-  
-  if (HARD_BOUNCE_CODES.some(code => codeStr.startsWith(code))) {
-    return 'hard';
+function detectBounceType(err: any): 'hard' | 'soft' | null {
+  // Check responseCode first (numeric SMTP status like 550, 421, etc.)
+  const responseCode = err.responseCode;
+  if (responseCode) {
+    const codeStr = String(responseCode);
+    if (HARD_BOUNCE_CODES.some(code => codeStr.startsWith(code.substring(0, 1)) && codeStr === code)) {
+      return 'hard';
+    }
+    if (SOFT_BOUNCE_CODES.some(code => codeStr.startsWith(code.substring(0, 1)) && codeStr === code)) {
+      return 'soft';
+    }
+    // Check first digit for category
+    if (codeStr.startsWith('5')) return 'hard';
+    if (codeStr.startsWith('4')) return 'soft';
   }
   
-  if (SOFT_BOUNCE_CODES.some(code => codeStr.startsWith(code))) {
-    return 'soft';
+  // Check response string for embedded SMTP codes
+  const response = err.response || err.message || '';
+  const smtpCodeMatch = response.match(/\b(5\d{2}|4\d{2})\b/);
+  if (smtpCodeMatch) {
+    const code = smtpCodeMatch[1];
+    if (code.startsWith('5')) return 'hard';
+    if (code.startsWith('4')) return 'soft';
   }
   
-  // Check message patterns for bounce indicators
+  // Fall back to message pattern matching
+  return detectBounceFromError(response);
+}
+
+/**
+ * Detect bounce from error message patterns
+ */
+function detectBounceFromError(errorMessage: string): 'hard' | 'soft' | null {
   const hardBouncePatterns = [
     'user unknown', 'user not found', 'mailbox not found',
     'invalid recipient', 'recipient rejected', 'does not exist',
-    'no such user', 'address rejected', 'domain not found'
+    'no such user', 'address rejected', 'domain not found',
+    'mailbox unavailable', 'relay denied', 'relay access denied'
   ];
   
   const softBouncePatterns = [
     'mailbox full', 'over quota', 'temporarily unavailable',
-    'try again later', 'service unavailable', 'too many connections'
+    'try again later', 'service unavailable', 'too many connections',
+    'temporarily rejected', 'greylisted', 'try later'
   ];
   
   const lowerMessage = errorMessage.toLowerCase();
@@ -139,27 +176,29 @@ function detectBounceType(errorCode: string | number | undefined, errorMessage: 
 }
 
 /**
- * Log bounce asynchronously
+ * Log bounce - fire-and-forget
  */
-async function logBounce(params: {
+function logBounceAsync(params: {
   emailLogId: string;
   recipientEmail: string;
   bounceType: 'hard' | 'soft';
   bounceReason: string;
   provider: string;
-}): Promise<void> {
-  try {
-    await storage.createEmailBounce({
-      emailLogId: params.emailLogId,
-      recipientEmail: params.recipientEmail,
-      bounceType: params.bounceType,
-      bounceReason: params.bounceReason,
-      provider: params.provider,
-    });
-    console.log('BOUNCE_LOGGED:', { type: params.bounceType, recipient: params.recipientEmail });
-  } catch (err) {
-    console.error('BOUNCE_LOG_FAILED:', err);
-  }
+}): void {
+  setImmediate(async () => {
+    try {
+      await storage.createEmailBounce({
+        emailLogId: params.emailLogId,
+        recipientEmail: params.recipientEmail,
+        bounceType: params.bounceType,
+        bounceReason: params.bounceReason,
+        provider: params.provider,
+      });
+      console.log('BOUNCE_LOGGED:', { type: params.bounceType, recipient: params.recipientEmail });
+    } catch (err) {
+      console.error('BOUNCE_LOG_FAILED:', err);
+    }
+  });
 }
 
 /**
@@ -242,17 +281,17 @@ async function getUserTransporter(userId: string, requireVerified: boolean = tru
 
 /**
  * Send email from USER's configured email address (Smart Routing)
- * With full logging and bounce detection
+ * With fire-and-forget logging and bounce detection
  */
 export async function sendUserEmail({ 
   userId, to, subject, html, text, replyTo, 
   channel = 'quote', quoteId 
-}: SendUserEmailParams): Promise<{ success: boolean; fromAddress?: string; error?: string; needsReauth?: boolean; logId?: string }> {
+}: SendUserEmailParams): Promise<{ success: boolean; fromAddress?: string; error?: string; needsReauth?: boolean }> {
   const { transporter, fromAddress, provider, error, needsReauth } = await getUserTransporter(userId, true);
   
   if (!transporter || !fromAddress) {
-    // Log failed attempt
-    const logId = await logEmailAttempt({
+    // Log failed attempt (fire-and-forget)
+    logEmailAttemptAsync({
       userId,
       recipientEmail: to,
       senderEmail: 'unknown',
@@ -267,8 +306,7 @@ export async function sendUserEmail({
     return { 
       success: false, 
       error: error || 'Email not configured. Please set up your email in Settings → Email.',
-      needsReauth,
-      logId: logId || undefined
+      needsReauth
     };
   }
   
@@ -291,8 +329,8 @@ export async function sendUserEmail({
     const info = await transporter.sendMail(mailOptions);
     console.log('USER_EMAIL_SENT_SUCCESS:', { messageId: info.messageId, to, subject, from: fromAddress });
     
-    // Log successful send
-    const logId = await logEmailAttempt({
+    // Log successful send (fire-and-forget)
+    logEmailAttemptAsync({
       userId,
       recipientEmail: to,
       senderEmail: fromAddress,
@@ -304,16 +342,16 @@ export async function sendUserEmail({
       quoteId,
     });
     
-    return { success: true, fromAddress, logId: logId || undefined };
+    return { success: true, fromAddress };
   } catch (err: any) {
     console.error('USER_EMAIL_SEND_FAILED:', err);
     
-    // Detect bounce type
-    const bounceType = detectBounceType(err.responseCode, err.message || '');
+    // Detect bounce type using full error object
+    const bounceType = detectBounceType(err);
     const status = bounceType ? 'bounced' : 'failed';
     
-    // Log the failure
-    const logId = await logEmailAttempt({
+    // Log the failure (fire-and-forget - bounce logging happens inside)
+    logEmailAttemptAsync({
       userId,
       recipientEmail: to,
       senderEmail: fromAddress,
@@ -321,20 +359,10 @@ export async function sendUserEmail({
       subject,
       channel,
       status,
-      failureReason: err.message || String(err),
+      failureReason: err.response || err.message || String(err),
       quoteId,
+      bounceType,
     });
-    
-    // If it's a bounce, create bounce record
-    if (bounceType && logId) {
-      await logBounce({
-        emailLogId: logId,
-        recipientEmail: to,
-        bounceType,
-        bounceReason: err.message || String(err),
-        provider,
-      });
-    }
     
     // Check for OAuth token expiry or auth errors
     const authErrors = ['invalid_grant', 'Invalid Credentials', 'Unauthorized', 'EAUTH'];
@@ -346,32 +374,31 @@ export async function sendUserEmail({
       return { 
         success: false, 
         error: 'Your email authorization has expired. Please reconnect your email in Settings.',
-        needsReauth: true,
-        logId: logId || undefined
+        needsReauth: true
       };
     }
     
-    return { success: false, error: err.message || String(err), logId: logId || undefined };
+    return { success: false, error: err.message || String(err) };
   }
 }
 
 /**
  * Send SYSTEM email (for admin notifications, confirmations, etc.)
- * With optional logging when userId is provided
+ * With fire-and-forget logging when userId is provided
  */
 export async function sendSystemEmail({ 
   to, subject, html, text, replyTo,
   userId, channel = 'system'
-}: SendSystemEmailParams): Promise<{ success: boolean; error?: string; logId?: string }> {
+}: SendSystemEmailParams): Promise<{ success: boolean; error?: string }> {
   const transporter = getSystemTransporter();
   const senderEmail = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@boxcostpro.com';
   
   if (!transporter) {
     console.warn('SYSTEM_EMAIL_NOT_CONFIGURED: SMTP credentials not set');
     
-    // Log failure if userId provided
+    // Log failure if userId provided (fire-and-forget)
     if (userId) {
-      await logEmailAttempt({
+      logEmailAttemptAsync({
         userId,
         recipientEmail: to,
         senderEmail,
@@ -405,10 +432,9 @@ export async function sendSystemEmail({
     const info = await transporter.sendMail(mailOptions);
     console.log('SYSTEM_EMAIL_SENT_SUCCESS:', { messageId: info.messageId, to, subject });
     
-    // Log success if userId provided
-    let logId: string | null = null;
+    // Log success if userId provided (fire-and-forget)
     if (userId) {
-      logId = await logEmailAttempt({
+      logEmailAttemptAsync({
         userId,
         recipientEmail: to,
         senderEmail,
@@ -420,14 +446,14 @@ export async function sendSystemEmail({
       });
     }
     
-    return { success: true, logId: logId || undefined };
+    return { success: true };
   } catch (err: any) {
     console.error('SYSTEM_EMAIL_SEND_FAILED:', err);
     
-    // Log failure if userId provided
+    // Log failure if userId provided (fire-and-forget)
     if (userId) {
-      const bounceType = detectBounceType(err.responseCode, err.message || '');
-      await logEmailAttempt({
+      const bounceType = detectBounceType(err);
+      logEmailAttemptAsync({
         userId,
         recipientEmail: to,
         senderEmail,
@@ -435,7 +461,8 @@ export async function sendSystemEmail({
         subject,
         channel,
         status: bounceType ? 'bounced' : 'failed',
-        failureReason: err.message || String(err),
+        failureReason: err.response || err.message || String(err),
+        bounceType,
       });
     }
     

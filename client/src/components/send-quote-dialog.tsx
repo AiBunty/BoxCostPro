@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, ExternalLink, Copy, Check, Star } from "lucide-react";
+import { Loader2, Mail, ExternalLink, Copy, Check, Star, AlertTriangle } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { QuoteTemplate } from "@shared/schema";
 
 interface SendQuoteDialogProps {
@@ -35,6 +37,17 @@ export function SendQuoteDialog({ quoteId, partyPhone, partyEmail, isOpen, onClo
     },
     enabled: isOpen
   });
+
+  const { data: bouncedRecipients = [] } = useQuery<string[]>({
+    queryKey: ["/api/email-analytics/bounced-recipients"],
+    enabled: isOpen && channel === "email"
+  });
+
+  const isRecipientBounced = useMemo(() => {
+    if (channel !== "email" || !recipientInfo) return false;
+    const normalizedInput = recipientInfo.toLowerCase().trim();
+    return bouncedRecipients.some(email => email.toLowerCase() === normalizedInput);
+  }, [channel, recipientInfo, bouncedRecipients]);
 
   const previewMutation = useMutation({
     mutationFn: async (templateId: string) => {
@@ -148,12 +161,37 @@ export function SendQuoteDialog({ quoteId, partyPhone, partyEmail, isOpen, onClo
         <div className="space-y-4 flex-1 overflow-hidden">
           <div>
             <Label>{channel === "whatsapp" ? "Phone Number" : "Email Address"}</Label>
-            <Input
-              value={recipientInfo}
-              onChange={(e) => setRecipientInfo(e.target.value)}
-              placeholder={channel === "whatsapp" ? "+91 98765 43210" : "customer@example.com"}
-              data-testid="input-recipient"
-            />
+            <div className="relative">
+              <Input
+                value={recipientInfo}
+                onChange={(e) => setRecipientInfo(e.target.value)}
+                placeholder={channel === "whatsapp" ? "+91 98765 43210" : "customer@example.com"}
+                className={isRecipientBounced ? "pr-10 border-orange-500" : ""}
+                data-testid="input-recipient"
+              />
+              {isRecipientBounced && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>This email has bounced before</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
+            {isRecipientBounced && (
+              <Alert variant="destructive" className="mt-2 py-2 border-orange-200 bg-orange-50 dark:bg-orange-950/20">
+                <AlertTriangle className="h-4 w-4 text-orange-500" />
+                <AlertDescription className="text-sm text-orange-700 dark:text-orange-400">
+                  This email address has bounced previously. Consider verifying the address or using an alternative.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
 
           <div>
