@@ -67,6 +67,8 @@ import {
   type InsertEmailLog,
   type EmailBounce,
   type InsertEmailBounce,
+  type AuthAuditLog,
+  type InsertAuthAuditLog,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -103,6 +105,7 @@ import {
   userEmailSettings,
   emailLogs,
   emailBounces,
+  authAuditLogs,
   InsertTemplateVersion,
   TemplateVersion
 } from "@shared/schema";
@@ -1864,6 +1867,113 @@ export class DatabaseStorage implements IStorage {
     const bounces = await this.getEmailBounces(userId);
     const hardBounces = bounces.filter(b => b.bounceType === 'hard');
     return Array.from(new Set(hardBounces.map(b => b.recipientEmail)));
+  }
+  
+  // ========== AUTH AUDIT LOGS ==========
+  async createAuthAuditLog(log: InsertAuthAuditLog): Promise<AuthAuditLog> {
+    const [created] = await db.insert(authAuditLogs).values(log).returning();
+    return created;
+  }
+  
+  async getAuthAuditLogs(userId: string, limit = 100): Promise<AuthAuditLog[]> {
+    return await db.select().from(authAuditLogs)
+      .where(eq(authAuditLogs.userId, userId))
+      .orderBy(sql`${authAuditLogs.createdAt} DESC`)
+      .limit(limit);
+  }
+  
+  async getRecentAuthLogs(filters?: { 
+    action?: string; 
+    status?: string; 
+    startDate?: Date; 
+    endDate?: Date;
+    limit?: number;
+  }): Promise<AuthAuditLog[]> {
+    const conditions = [];
+    
+    if (filters?.action) {
+      conditions.push(eq(authAuditLogs.action, filters.action));
+    }
+    if (filters?.status) {
+      conditions.push(eq(authAuditLogs.status, filters.status));
+    }
+    if (filters?.startDate) {
+      conditions.push(sql`${authAuditLogs.createdAt} >= ${filters.startDate}`);
+    }
+    if (filters?.endDate) {
+      conditions.push(sql`${authAuditLogs.createdAt} <= ${filters.endDate}`);
+    }
+    
+    const query = db.select().from(authAuditLogs);
+    
+    if (conditions.length > 0) {
+      return await query
+        .where(and(...conditions))
+        .orderBy(sql`${authAuditLogs.createdAt} DESC`)
+        .limit(filters?.limit || 100);
+    }
+    
+    return await query
+      .orderBy(sql`${authAuditLogs.createdAt} DESC`)
+      .limit(filters?.limit || 100);
+  }
+  
+  // Update user account fields
+  async updateUserAccountStatus(userId: string, updates: {
+    accountStatus?: string;
+    emailVerified?: boolean;
+    mobileVerified?: boolean;
+    lastLoginAt?: Date;
+    failedLoginAttempts?: number;
+    lockedUntil?: Date | null;
+    passwordResetRequired?: boolean;
+  }): Promise<User | undefined> {
+    const [updated] = await db.update(users)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  }
+  
+  // Check if user account is locked
+  async isAccountLocked(userId: string): Promise<boolean> {
+    const user = await this.getUser(userId);
+    if (!user || !user.lockedUntil) return false;
+    return new Date(user.lockedUntil) > new Date();
+  }
+  
+  // Increment failed login attempts
+  async incrementFailedLoginAttempts(userId: string): Promise<number> {
+    const user = await this.getUser(userId);
+    const newCount = (user?.failedLoginAttempts || 0) + 1;
+    
+    const updates: any = { 
+      failedLoginAttempts: newCount,
+      updatedAt: new Date()
+    };
+    
+    // Lock account after 5 failed attempts for 15 minutes
+    if (newCount >= 5) {
+      updates.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+    }
+    
+    await db.update(users)
+      .set(updates)
+      .where(eq(users.id, userId));
+    
+    return newCount;
+  }
+  
+  // Reset failed login attempts on successful login
+  async resetFailedLoginAttempts(userId: string): Promise<void> {
+    await db.update(users)
+      .set({ 
+        failedLoginAttempts: 0, 
+        lockedUntil: null,
+        lastLoginAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
   }
 }
 

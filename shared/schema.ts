@@ -14,6 +14,10 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
+// User account status enum
+export const userAccountStatus = z.enum(['new_user', 'email_verified', 'mobile_verified', 'fully_verified', 'suspended', 'deleted']);
+export type UserAccountStatus = z.infer<typeof userAccountStatus>;
+
 // User storage table for Supabase Auth
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -28,8 +32,17 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   mobileNo: varchar("mobile_no"), // User's mobile number
+  countryCode: varchar("country_code").default("+91"), // Country code for mobile
   companyName: varchar("company_name"), // User's company name
-  authProvider: varchar("auth_provider").default("supabase"), // 'supabase', 'google'
+  authProvider: varchar("auth_provider").default("supabase"), // 'supabase', 'google', 'email_password', 'magic_link'
+  signupMethod: varchar("signup_method"), // 'email_otp', 'email_password', 'magic_link', 'google', 'microsoft', 'linkedin', 'apple'
+  emailVerified: boolean("email_verified").default(false), // Email verification status
+  mobileVerified: boolean("mobile_verified").default(false), // Mobile verification status
+  accountStatus: varchar("account_status").default("new_user"), // 'new_user', 'email_verified', 'mobile_verified', 'fully_verified', 'suspended', 'deleted'
+  lastLoginAt: timestamp("last_login_at"), // Last successful login
+  passwordResetRequired: boolean("password_reset_required").default(false), // Force password reset
+  failedLoginAttempts: integer("failed_login_attempts").default(0), // Track failed logins for rate limiting
+  lockedUntil: timestamp("locked_until"), // Account lock time after too many failures
 });
 
 // User Profile for tracking onboarding/setup progress
@@ -124,6 +137,27 @@ export const emailBounces = pgTable("email_bounces", {
 export const insertEmailBounceSchema = createInsertSchema(emailBounces).omit({ id: true, occurredAt: true });
 export type InsertEmailBounce = z.infer<typeof insertEmailBounceSchema>;
 export type EmailBounce = typeof emailBounces.$inferSelect;
+
+// Auth Audit Logs - Track all authentication events
+export const authAuditLogs = pgTable("auth_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id), // Can be null for failed login attempts
+  email: varchar("email"), // Email used in the attempt
+  action: varchar("action").notNull(), // 'LOGIN', 'SIGNUP', 'LOGOUT', 'PASSWORD_RESET_REQUEST', 'PASSWORD_RESET_COMPLETE', 'VERIFY_EMAIL', 'VERIFY_MOBILE', 'ACCOUNT_LOCKED', 'FAILED_LOGIN'
+  status: varchar("status").notNull().default("success"), // 'success', 'failed'
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  metadata: jsonb("metadata").default('{}'), // Additional context (provider, device info, etc.)
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_audit_logs_user").on(table.userId),
+  index("idx_audit_logs_action").on(table.action),
+  index("idx_audit_logs_created").on(table.createdAt),
+]);
+
+export const insertAuthAuditLogSchema = createInsertSchema(authAuditLogs).omit({ id: true, createdAt: true });
+export type InsertAuthAuditLog = z.infer<typeof insertAuthAuditLogSchema>;
+export type AuthAuditLog = typeof authAuditLogs.$inferSelect;
 
 // Subscription Plans (managed by owner)
 export const subscriptionPlans = pgTable("subscription_plans", {
