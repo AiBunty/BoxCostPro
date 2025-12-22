@@ -3248,6 +3248,297 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to rollback template" });
     }
   });
+  
+  // ========== USER EMAIL SETTINGS ==========
+  
+  // Get all email provider presets
+  app.get("/api/email-providers", combinedAuth, async (req: any, res) => {
+    try {
+      const { getAllProviders } = await import('./config/emailProviderPresets');
+      res.json(getAllProviders());
+    } catch (error) {
+      console.error("Error fetching email providers:", error);
+      res.status(500).json({ error: "Failed to fetch email providers" });
+    }
+  });
+  
+  // Get current user's email settings
+  app.get("/api/email-settings", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const settings = await storage.getUserEmailSettings(userId);
+      
+      if (!settings) {
+        return res.json({ configured: false });
+      }
+      
+      // Return settings without decrypted sensitive data
+      res.json({
+        configured: true,
+        provider: settings.provider,
+        emailAddress: settings.emailAddress,
+        smtpHost: settings.smtpHost,
+        smtpPort: settings.smtpPort,
+        smtpSecure: settings.smtpSecure,
+        smtpUsername: settings.smtpUsername,
+        hasSmtpPassword: !!settings.smtpPasswordEncrypted,
+        oauthProvider: settings.oauthProvider,
+        hasOAuthTokens: !!(settings.oauthAccessTokenEncrypted && settings.oauthRefreshTokenEncrypted),
+        isVerified: settings.isVerified,
+        isActive: settings.isActive,
+        lastVerifiedAt: settings.lastVerifiedAt
+      });
+    } catch (error) {
+      console.error("Error fetching email settings:", error);
+      res.status(500).json({ error: "Failed to fetch email settings" });
+    }
+  });
+  
+  // Save SMTP email settings
+  app.post("/api/email-settings/smtp", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { provider, emailAddress, smtpHost, smtpPort, smtpSecure, smtpUsername, smtpPassword } = req.body;
+      
+      if (!provider || !emailAddress) {
+        return res.status(400).json({ error: "Provider and email address are required" });
+      }
+      
+      const { encrypt } = await import('./utils/encryption');
+      const { getProviderPreset } = await import('./config/emailProviderPresets');
+      
+      // Get preset values for known providers
+      const preset = getProviderPreset(provider);
+      const finalHost = smtpHost || preset?.smtpHost;
+      const finalPort = smtpPort || preset?.smtpPort || 587;
+      const finalSecure = smtpSecure !== undefined ? smtpSecure : (preset?.smtpSecure || false);
+      
+      const existing = await storage.getUserEmailSettings(userId);
+      
+      const settingsData = {
+        userId,
+        provider,
+        emailAddress,
+        smtpHost: finalHost,
+        smtpPort: finalPort,
+        smtpSecure: finalSecure,
+        smtpUsername: smtpUsername || emailAddress,
+        smtpPasswordEncrypted: smtpPassword ? encrypt(smtpPassword) : (existing?.smtpPasswordEncrypted || null),
+        oauthProvider: null,
+        oauthAccessTokenEncrypted: null,
+        oauthRefreshTokenEncrypted: null,
+        oauthTokenExpiresAt: null,
+        isVerified: false,
+        isActive: true
+      };
+      
+      let settings;
+      if (existing) {
+        settings = await storage.updateUserEmailSettings(userId, settingsData);
+      } else {
+        settings = await storage.createUserEmailSettings(settingsData);
+      }
+      
+      res.json({ success: true, message: "Email settings saved. Please verify your configuration." });
+    } catch (error) {
+      console.error("Error saving SMTP settings:", error);
+      res.status(500).json({ error: "Failed to save email settings" });
+    }
+  });
+  
+  // Verify email configuration by sending a test email
+  app.post("/api/email-settings/verify", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const settings = await storage.getUserEmailSettings(userId);
+      
+      if (!settings) {
+        return res.status(400).json({ error: "No email settings configured" });
+      }
+      
+      const { decrypt } = await import('./utils/encryption');
+      const nodemailer = await import('nodemailer');
+      
+      // Build transport based on configuration
+      let transportConfig: any;
+      
+      if (settings.oauthProvider === 'google' && settings.oauthAccessTokenEncrypted) {
+        // OAuth configuration for Gmail
+        transportConfig = {
+          service: 'gmail',
+          auth: {
+            type: 'OAuth2',
+            user: settings.emailAddress,
+            accessToken: decrypt(settings.oauthAccessTokenEncrypted),
+            refreshToken: settings.oauthRefreshTokenEncrypted ? decrypt(settings.oauthRefreshTokenEncrypted) : undefined
+          }
+        };
+      } else if (settings.smtpPasswordEncrypted) {
+        // SMTP configuration
+        transportConfig = {
+          host: settings.smtpHost,
+          port: settings.smtpPort || 587,
+          secure: settings.smtpSecure || false,
+          auth: {
+            user: settings.smtpUsername || settings.emailAddress,
+            pass: decrypt(settings.smtpPasswordEncrypted)
+          }
+        };
+      } else {
+        return res.status(400).json({ error: "No valid credentials configured" });
+      }
+      
+      const transporter = nodemailer.createTransport(transportConfig);
+      
+      // Verify connection
+      await transporter.verify();
+      
+      // Mark as verified
+      await storage.updateUserEmailSettings(userId, {
+        isVerified: true,
+        lastVerifiedAt: new Date()
+      });
+      
+      res.json({ success: true, message: "Email configuration verified successfully!" });
+    } catch (error: any) {
+      console.error("Email verification failed:", error);
+      res.status(400).json({ 
+        error: "Email verification failed",
+        details: error.message || "Please check your credentials and try again"
+      });
+    }
+  });
+  
+  // Delete email settings
+  app.delete("/api/email-settings", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      await storage.deleteUserEmailSettings(userId);
+      res.json({ success: true, message: "Email settings removed" });
+    } catch (error) {
+      console.error("Error deleting email settings:", error);
+      res.status(500).json({ error: "Failed to delete email settings" });
+    }
+  });
+  
+  // Google OAuth initiation
+  app.get("/api/email-settings/google/connect", combinedAuth, async (req: any, res) => {
+    try {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.REPLIT_URL || 'https://' + process.env.REPL_SLUG + '.' + process.env.REPL_OWNER + '.repl.co'}/api/email-settings/google/callback`;
+      
+      if (!clientId) {
+        return res.status(400).json({ error: "Google OAuth is not configured. Please contact support." });
+      }
+      
+      const scope = encodeURIComponent('https://www.googleapis.com/auth/gmail.send email profile');
+      const state = req.userId; // Use userId as state for security
+      
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${clientId}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code` +
+        `&scope=${scope}` +
+        `&access_type=offline` +
+        `&prompt=consent` +
+        `&state=${state}`;
+      
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("Error initiating Google OAuth:", error);
+      res.status(500).json({ error: "Failed to initiate Google connection" });
+    }
+  });
+  
+  // Google OAuth callback
+  app.get("/api/email-settings/google/callback", async (req, res) => {
+    try {
+      const { code, state: userId } = req.query;
+      
+      if (!code || !userId) {
+        return res.redirect('/settings?tab=email&error=missing_params');
+      }
+      
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.REPLIT_URL || 'https://' + process.env.REPL_SLUG + '.' + process.env.REPL_OWNER + '.repl.co'}/api/email-settings/google/callback`;
+      
+      if (!clientId || !clientSecret) {
+        return res.redirect('/settings?tab=email&error=oauth_not_configured');
+      }
+      
+      // Exchange code for tokens
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: code as string,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code'
+        })
+      });
+      
+      const tokens = await tokenResponse.json();
+      
+      if (tokens.error) {
+        console.error("Token exchange failed:", tokens);
+        return res.redirect('/settings?tab=email&error=token_exchange_failed');
+      }
+      
+      // Get user's email from Google
+      const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { 'Authorization': `Bearer ${tokens.access_token}` }
+      });
+      const userInfo = await userInfoResponse.json();
+      
+      const { encrypt } = await import('./utils/encryption');
+      
+      const existing = await storage.getUserEmailSettings(userId as string);
+      
+      const settingsData = {
+        userId: userId as string,
+        provider: 'google_oauth',
+        emailAddress: userInfo.email,
+        oauthProvider: 'google',
+        oauthAccessTokenEncrypted: encrypt(tokens.access_token),
+        oauthRefreshTokenEncrypted: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
+        oauthTokenExpiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        smtpHost: 'smtp.gmail.com',
+        smtpPort: 587,
+        smtpSecure: false,
+        smtpUsername: null,
+        smtpPasswordEncrypted: null,
+        isVerified: true,
+        isActive: true,
+        lastVerifiedAt: new Date()
+      };
+      
+      if (existing) {
+        await storage.updateUserEmailSettings(userId as string, settingsData);
+      } else {
+        await storage.createUserEmailSettings(settingsData);
+      }
+      
+      res.redirect('/settings?tab=email&success=google_connected');
+    } catch (error) {
+      console.error("Google OAuth callback error:", error);
+      res.redirect('/settings?tab=email&error=oauth_failed');
+    }
+  });
+  
+  // Disconnect Google OAuth
+  app.post("/api/email-settings/google/disconnect", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      await storage.deleteUserEmailSettings(userId);
+      res.json({ success: true, message: "Google account disconnected" });
+    } catch (error) {
+      console.error("Error disconnecting Google:", error);
+      res.status(500).json({ error: "Failed to disconnect Google account" });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
