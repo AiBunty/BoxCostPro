@@ -348,9 +348,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fluteHeights[s.fluteType] = s.fluteHeight || 2.5;
       });
       
-      // Get business defaults for GST snapshot
+      // Get business defaults for GST snapshot (India GST for Corrugated Boxes = 5%)
       const businessDefaults = await storage.getBusinessDefaults(userId);
-      const gstPercent = businessDefaults?.defaultGstPercent || 18;
+      const gstPercent = businessDefaults?.defaultGstPercent ?? 5;
+      const roundOffEnabled = businessDefaults?.roundOffEnabled ?? true;
       
       // DUPLICATE DETECTION: Check if a quote with same Party+BoxName+BoxSize exists
       let existingQuote = null;
@@ -419,13 +420,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Calculate totals
+      // Calculate totals with round-off logic
       const subtotal = items?.reduce((sum: number, item: any) => sum + (item.totalValue || 0), 0) || 0;
-      const gstAmount = subtotal * (gstPercent / 100);
-      const finalTotal = subtotal + gstAmount + (transportCharge || 0);
+      const gstAmount = parseFloat((subtotal * (gstPercent / 100)).toFixed(2));
+      const rawTotal = subtotal + gstAmount + (transportCharge || 0);
+      
+      // Apply round-off if enabled (round to nearest rupee)
+      let finalTotal: number;
+      let roundOffValue: number = 0;
+      if (roundOffEnabled) {
+        finalTotal = Math.round(rawTotal);
+        roundOffValue = parseFloat((finalTotal - rawTotal).toFixed(2));
+      } else {
+        finalTotal = parseFloat(rawTotal.toFixed(2));
+      }
       
       // ==================== TRACE LOG 5: TOTALS CALCULATED ====================
-      console.log("TOTALS", { subtotal, gstAmount, finalTotal, transportCharge: transportCharge || 0 });
+      console.log("TOTALS", { subtotal, gstAmount, rawTotal, roundOffEnabled, roundOffValue, finalTotal, transportCharge: transportCharge || 0 });
       
       // Get next version number (1 for new quotes, next number for existing)
       const versionNo = isNewVersion ? await storage.getNextVersionNumber(quote.id) : 1;
@@ -442,6 +453,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subtotal,
         gstPercent,
         gstAmount,
+        roundOffEnabled,
+        roundOffValue,
         finalTotal,
         isNegotiated: false,
         isLocked: false,
@@ -618,19 +631,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fluteHeights[s.fluteType] = s.fluteHeight;
       });
       
-      // Get business defaults for GST snapshot
+      // Get business defaults for GST snapshot (India GST for Corrugated Boxes = 5%)
       const businessDefaults = await storage.getBusinessDefaults(userId);
-      const gstPercent = businessDefaults?.defaultGstPercent || 18;
+      const gstPercent = businessDefaults?.defaultGstPercent ?? 5;
+      const roundOffEnabled = businessDefaults?.roundOffEnabled ?? true;
       
-      // Calculate totals
+      // Calculate totals with round-off
       const subtotal = items?.reduce((sum: number, item: any) => {
         const price = item.negotiatedPrice || item.totalCostPerBox || 0;
         const qty = item.quantity || 0;
         return sum + (price * qty);
       }, 0) || 0;
-      const gstAmount = subtotal * (gstPercent / 100);
+      const gstAmount = parseFloat((subtotal * (gstPercent / 100)).toFixed(2));
       const transportCharge = versionData.transportCharge || 0;
-      const finalTotal = subtotal + gstAmount + transportCharge;
+      const rawTotal = subtotal + gstAmount + transportCharge;
+      
+      // Apply round-off if enabled
+      let finalTotal: number;
+      let roundOffValue: number = 0;
+      if (roundOffEnabled) {
+        finalTotal = Math.round(rawTotal);
+        roundOffValue = parseFloat((finalTotal - rawTotal).toFixed(2));
+      } else {
+        finalTotal = parseFloat(rawTotal.toFixed(2));
+      }
       
       // Create new version (negotiated versions are locked)
       const version = await storage.createQuoteVersion({
@@ -643,6 +667,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subtotal,
         gstPercent,
         gstAmount,
+        roundOffEnabled,
+        roundOffValue,
         finalTotal,
         isNegotiated: isNegotiated || false,
         negotiationType: negotiationType || null,
@@ -969,9 +995,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fluteHeights[s.fluteType] = s.fluteHeight;
       });
       
-      // Get business defaults for GST snapshot
+      // Get business defaults for GST snapshot (India GST for Corrugated Boxes = 5%)
       const businessDefaults = await storage.getBusinessDefaults(userId);
-      const gstPercent = businessDefaults?.defaultGstPercent || 18;
+      const gstPercent = businessDefaults?.defaultGstPercent ?? 5;
+      const roundOffEnabled = businessDefaults?.roundOffEnabled ?? true;
       
       // Create negotiation map for quick lookup
       const negotiationMap = new Map<number, number>();
@@ -994,14 +1021,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return item;
       });
       
-      // Calculate totals with new prices
+      // Calculate totals with round-off
       const subtotal = updatedItems.reduce((sum: number, item: any) => {
         const price = item.negotiatedPrice || item.totalCostPerBox || 0;
         const qty = item.quantity || 0;
         return sum + (price * qty);
       }, 0);
-      const gstAmount = subtotal * (gstPercent / 100);
-      const finalTotal = subtotal + gstAmount;
+      const gstAmount = parseFloat((subtotal * (gstPercent / 100)).toFixed(2));
+      const transportCharge = quoteData.version.transportCharge || 0;
+      const rawTotal = subtotal + gstAmount + transportCharge;
+      
+      // Apply round-off if enabled
+      let finalTotal: number;
+      let roundOffValue: number = 0;
+      if (roundOffEnabled) {
+        finalTotal = Math.round(rawTotal);
+        roundOffValue = parseFloat((finalTotal - rawTotal).toFixed(2));
+      } else {
+        finalTotal = parseFloat(rawTotal.toFixed(2));
+      }
       
       // Create new version (locked because it's negotiated)
       const newVersion = await storage.createQuoteVersion({
@@ -1014,6 +1052,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subtotal,
         gstPercent,
         gstAmount,
+        roundOffEnabled,
+        roundOffValue,
         finalTotal,
         isNegotiated: true,
         negotiationType: 'bulk',
@@ -1281,13 +1321,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.userId;
       const defaults = await storage.getBusinessDefaults(userId);
       if (!defaults) {
-        // Return default values if no settings exist
+        // Return default values if no settings exist (India GST for Corrugated Boxes = 5%)
         return res.json({
           userId,
-          defaultGstPercent: 18,
+          defaultGstPercent: 5,
           gstRegistered: true,
           gstNumber: null,
-          igstApplicable: false
+          igstApplicable: false,
+          roundOffEnabled: true
         });
       }
       res.json(defaults);
