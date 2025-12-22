@@ -1,0 +1,131 @@
+You are a senior ERP & SaaS engineer implementing a
+professional WhatsApp & Email Quote Template System
+for BoxCostPro.
+
+This implementation MUST be correct, predictable,
+and ERP-grade. No shortcuts.
+
+====================================================
+1) BUSINESS PROFILE – MASTER DATA (CRITICAL)
+====================================================
+
+Ensure Business Profile includes ALL fields used in templates.
+
+MANDATORY FIELDS:
+- business_name
+- owner_name
+- business_phone
+- business_email
+- gst_no
+
+OPTIONAL FIELDS:
+- website
+- map_link
+- address
+- logo_url
+
+----------------------------------------------------
+VALIDATION
+----------------------------------------------------
+
+When saving Business Profile:
+- If any mandatory field is missing
+  → show inline error
+  → block Save & Continue
+
+Reason:
+Templates must NEVER break due to missing data.
+
+====================================================
+2) TEMPLATE PLACEHOLDERS (GLOBAL)
+====================================================
+
+Support placeholders in BOTH WhatsApp & Email:
+
+Business:
+{{BusinessName}}
+{{OwnerName}}
+{{BusinessPhone}}
+{{BusinessEmail}}
+{{GSTNo}}
+{{Website}}
+{{MapLink}}
+
+Party:
+{{PartyName}}
+
+Quote:
+{{QuoteNo}}
+{{QuoteDate}}
+{{Subtotal}}
+{{GST}}
+{{GSTAmount}}
+{{GrandTotal}}
+{{PaymentTerms}}
+{{DeliveryTimeline}}
+
+====================================================
+3) SHOW COLUMNS – SINGLE SOURCE OF TRUTH
+====================================================
+
+The “Show Columns” config MUST drive:
+- Quote UI
+- WhatsApp content
+- Email tables
+
+Example:
+showColumns = {
+  boxSize: true,
+  board: true,
+  flute: true,
+  paper: true,
+  printing: false,
+  lamination: false,
+  varnish: true,
+  weight: true
+}
+
+RULE:
+If a column is OFF → it must NOT appear anywhere.
+
+====================================================
+4) RENDER HELPER FUNCTION (CORE ENGINE – CODE)
+====================================================
+
+Create file:
+utils/templateRenderer.ts
+
+```ts
+type ShowColumns = {
+  boxSize?: boolean;
+  board?: boolean;
+  flute?: boolean;
+  paper?: boolean;
+  printing?: boolean;
+  lamination?: boolean;
+  varnish?: boolean;
+  weight?: boolean;
+};
+
+export function renderItemsForTemplate(items: any[], showColumns: ShowColumns) {
+  return items.map((item, index) => {
+    const filtered: any = {
+      index: index + 1,
+      itemName: item.itemName,
+      qty: item.qty,
+      rateIncl: item.rateIncl,
+      rateExcl: item.rateExcl,
+    };
+
+    if (showColumns.boxSize) filtered.boxSize = item.boxSize;
+    if (showColumns.board) filtered.board = item.board;
+    if (showColumns.flute) filtered.flute = item.flute;
+    if (showColumns.paper) filtered.paper = item.paperSummary;
+    if (showColumns.printing) filtered.printing = item.printing;
+    if (showColumns.lamination) filtered.lamination = item.lamination;
+    if (showColumns.varnish) filtered.varnish = item.varnish;
+    if (showColumns.weight) filtered.weight = item.weight;
+
+    return filtered;
+  });
+}
