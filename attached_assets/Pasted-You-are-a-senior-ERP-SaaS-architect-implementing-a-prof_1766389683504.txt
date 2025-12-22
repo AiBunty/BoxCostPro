@@ -1,0 +1,238 @@
+You are a senior ERP & SaaS architect implementing a
+professional WhatsApp & Email Quote Template system
+for BoxCostPro with strict data correctness rules.
+
+DO NOT guess.
+DO NOT hardcode fields.
+FOLLOW ERP best practices.
+
+====================================================
+1) BUSINESS PROFILE (MASTER DATA – CRITICAL)
+====================================================
+
+Ensure Business Profile contains ALL required fields
+used in WhatsApp & Email templates.
+
+Fields (MANDATORY):
+- business_name
+- owner_name
+- business_phone
+- business_email
+- gst_no
+
+Fields (OPTIONAL):
+- website
+- map_link
+- address
+- logo_url
+
+----------------------------------------------------
+VALIDATION RULE
+----------------------------------------------------
+
+When saving Business Profile:
+- If any mandatory field is missing
+  → show inline error
+  → block Save & Continue
+- This prevents broken templates.
+
+====================================================
+2) TEMPLATE PLACEHOLDERS (GLOBAL STANDARD)
+====================================================
+
+Support these placeholders in ALL templates:
+
+Business:
+{{BusinessName}}
+{{OwnerName}}
+{{BusinessPhone}}
+{{BusinessEmail}}
+{{GSTNo}}
+{{Website}}
+{{MapLink}}
+
+Party:
+{{PartyName}}
+
+Quote:
+{{QuoteNo}}
+{{QuoteDate}}
+{{Subtotal}}
+{{GST}}
+{{GSTAmount}}
+{{GrandTotal}}
+{{PaymentTerms}}
+{{DeliveryTimeline}}
+
+====================================================
+3) SHOW COLUMNS – SINGLE SOURCE OF TRUTH
+====================================================
+
+The "Show Columns" configuration MUST drive:
+
+- Quote UI table
+- WhatsApp message generation
+- Email table generation
+- PDF (future)
+
+Example config:
+showColumns = {
+  boxSize: true,
+  board: true,
+  flute: true,
+  paper: true,
+  printing: false,
+  lamination: false,
+  varnish: true,
+  weight: true
+}
+
+----------------------------------------------------
+NON-NEGOTIABLE RULE
+----------------------------------------------------
+If a column is OFF:
+- It MUST NOT appear
+- No label
+- No empty line
+- No empty table column
+
+====================================================
+4) DATA FILTERING PIPELINE (MANDATORY)
+====================================================
+
+When user clicks "Send WhatsApp" or "Send Email":
+
+1) Fetch Quote
+2) Fetch Quote Items
+3) Fetch Business Profile
+4) Fetch Show Columns config
+5) Build a FILTERED items array
+   containing ONLY selected fields
+6) Pass filtered data to template renderer
+
+DO NOT hide fields using UI tricks.
+DATA MUST BE FILTERED BEFORE RENDERING.
+
+====================================================
+5) WHATSAPP TEMPLATE SYSTEM
+====================================================
+
+Provide system templates:
+
+1) Formal Emoji (detailed offer)
+2) Formal No Emoji
+3) Alternate Pattern
+4) Short & Sweet
+
+----------------------------------------------------
+WHATSAPP RENDER RULE
+----------------------------------------------------
+
+For each item:
+- Render ONLY fields enabled in Show Columns
+- Example:
+  If printing = false
+  → Do NOT render "Printing:" line at all
+
+Footer:
+- Show Website / MapLink ONLY if present
+
+====================================================
+6) EMAIL TEMPLATE SYSTEM (HTML – PROFESSIONAL)
+====================================================
+
+Email templates must include:
+- Logo header (if available)
+- Greeting with PartyName
+- Dynamic item table
+- Totals summary
+- Terms
+- Professional footer
+
+----------------------------------------------------
+EMAIL TABLE – DYNAMIC COLUMNS
+----------------------------------------------------
+
+Build table headers dynamically:
+
+<th>Item</th>
+{{#if Columns.boxSize}}<th>Box Size</th>{{/if}}
+{{#if Columns.board}}<th>Board</th>{{/if}}
+{{#if Columns.flute}}<th>Flute</th>{{/if}}
+{{#if Columns.paper}}<th>Paper Spec</th>{{/if}}
+{{#if Columns.printing}}<th>Printing</th>{{/if}}
+{{#if Columns.varnish}}<th>Varnish</th>{{/if}}
+<th>Qty</th>
+<th>Rate</th>
+
+Apply SAME logic for table rows.
+
+----------------------------------------------------
+EMAIL FOOTER
+----------------------------------------------------
+
+Render footer lines ONLY if data exists:
+
+{{BusinessName}}
+{{BusinessPhone}}
+{{BusinessEmail}}
+GST: {{GSTNo}}
+Website (optional)
+Map Link (optional)
+
+====================================================
+7) TEMPLATE MANAGEMENT UI
+====================================================
+
+Settings → Templates:
+
+- Tabs: WhatsApp | Email
+- Preview with sample quote
+- Edit template
+- Duplicate template
+- Set default template per channel
+
+System templates:
+- Cannot be deleted
+- Can be duplicated & edited
+
+====================================================
+8) SEND ACTION INTEGRATION
+====================================================
+
+On Quote screen:
+- Send via WhatsApp
+- Send via Email
+
+Flow:
+- Select template
+- Preview rendered output
+- Send
+- Log:
+  - Template used
+  - Channel
+  - Timestamp
+
+====================================================
+9) SAFETY VALIDATIONS (MANDATORY)
+====================================================
+
+Before sending:
+- Validate Business Profile completeness
+- Validate at least 1 item
+- Validate Show Columns config exists
+
+If validation fails:
+- Block send
+- Show clear error
+
+====================================================
+DELIVERABLE
+====================================================
+
+- Business Profile always complete
+- Owner Name usable in all templates
+- WhatsApp & Email content driven ONLY by Show Columns
+- Clean professional formatting
+- No accidental data leakage
+- ERP-grade quote communication system
