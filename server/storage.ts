@@ -852,15 +852,29 @@ export class DatabaseStorage implements IStorage {
     return { quote, version, items };
   }
   
-  // Rate Memory
-  async getAllRateMemory(userId?: string): Promise<RateMemoryEntry[]> {
+  // Rate Memory - tenant-scoped
+  async getAllRateMemory(tenantId?: string, userId?: string): Promise<RateMemoryEntry[]> {
+    // Prefer tenantId for isolation, fall back to userId for backward compatibility
+    if (tenantId) {
+      return await db.select().from(rateMemory).where(eq(rateMemory.tenantId, tenantId));
+    }
     if (userId) {
       return await db.select().from(rateMemory).where(eq(rateMemory.userId, userId));
     }
-    return await db.select().from(rateMemory);
+    return [];
   }
 
-  async getRateMemoryByKey(bfValue: string, shade: string, userId?: string): Promise<RateMemoryEntry | undefined> {
+  async getRateMemoryByKey(bfValue: string, shade: string, tenantId?: string, userId?: string): Promise<RateMemoryEntry | undefined> {
+    // Prefer tenantId for isolation, fall back to userId for backward compatibility
+    if (tenantId) {
+      const [entry] = await db.select().from(rateMemory)
+        .where(and(
+          eq(rateMemory.tenantId, tenantId),
+          eq(rateMemory.bfValue, bfValue),
+          eq(rateMemory.shade, shade)
+        ));
+      return entry;
+    }
     if (userId) {
       const [entry] = await db.select().from(rateMemory)
         .where(and(
@@ -870,13 +884,11 @@ export class DatabaseStorage implements IStorage {
         ));
       return entry;
     }
-    const [entry] = await db.select().from(rateMemory)
-      .where(and(eq(rateMemory.bfValue, bfValue), eq(rateMemory.shade, shade)));
-    return entry;
+    return undefined;
   }
 
-  async saveOrUpdateRateMemory(bfValue: string, shade: string, rate: number, userId?: string): Promise<RateMemoryEntry> {
-    const existing = await this.getRateMemoryByKey(bfValue, shade, userId);
+  async saveOrUpdateRateMemory(bfValue: string, shade: string, rate: number, tenantId?: string, userId?: string): Promise<RateMemoryEntry> {
+    const existing = await this.getRateMemoryByKey(bfValue, shade, tenantId, userId);
     
     if (existing) {
       const [updated] = await db.update(rateMemory)
@@ -886,24 +898,38 @@ export class DatabaseStorage implements IStorage {
       return updated;
     }
     
+    // Include tenantId in inserts for proper tenant isolation
     const [entry] = await db.insert(rateMemory)
-      .values({ bfValue, shade, rate, userId })
+      .values({ bfValue, shade, rate, tenantId, userId })
       .returning();
     return entry;
   }
   
-  // App Settings
-  async getAppSettings(userId?: string): Promise<AppSettings> {
+  // App Settings - tenant-scoped
+  async getAppSettings(tenantId?: string, userId?: string): Promise<AppSettings> {
+    // Prefer tenantId for isolation, fall back to userId for backward compatibility
+    if (tenantId) {
+      const [settings] = await db.select().from(appSettings).where(eq(appSettings.tenantId, tenantId));
+      if (settings) return settings;
+      
+      // Create default settings for this tenant
+      const [newSettings] = await db.insert(appSettings).values({
+        tenantId,
+        userId,
+        appTitle: "Box Costing Calculator",
+        plyThicknessMap: { '1': 0.45, '3': 2.5, '5': 3.5, '7': 5.5, '9': 6.5 },
+      }).returning();
+      return newSettings;
+    }
+    
     if (userId) {
       const [settings] = await db.select().from(appSettings).where(eq(appSettings.userId, userId));
       if (settings) return settings;
     }
     
-    const [settings] = await db.select().from(appSettings);
-    if (settings) return settings;
-    
-    // Create default settings
+    // Create default settings (legacy fallback)
     const [newSettings] = await db.insert(appSettings).values({
+      tenantId,
       userId,
       appTitle: "Box Costing Calculator",
       plyThicknessMap: { '1': 0.45, '3': 2.5, '5': 3.5, '7': 5.5, '9': 6.5 },
@@ -911,8 +937,8 @@ export class DatabaseStorage implements IStorage {
     return newSettings;
   }
   
-  async updateAppSettings(updates: Partial<InsertAppSettings>, userId?: string): Promise<AppSettings> {
-    const existing = await this.getAppSettings(userId);
+  async updateAppSettings(updates: Partial<InsertAppSettings>, tenantId?: string, userId?: string): Promise<AppSettings> {
+    const existing = await this.getAppSettings(tenantId, userId);
     const [updated] = await db.update(appSettings)
       .set(updates)
       .where(eq(appSettings.id, existing.id))

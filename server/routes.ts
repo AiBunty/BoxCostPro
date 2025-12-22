@@ -1194,11 +1194,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Rate Memory (protected, user-scoped)
+  // Rate Memory (protected, tenant-scoped)
   app.get("/api/rate-memory", combinedAuth, async (req: any, res) => {
     try {
+      const tenantId = req.tenantId;
       const userId = req.userId;
-      const rates = await storage.getAllRateMemory(userId);
+      const rates = await storage.getAllRateMemory(tenantId, userId);
       res.json(rates);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch rate memory" });
@@ -1207,8 +1208,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/rate-memory/:bf/:shade", combinedAuth, async (req: any, res) => {
     try {
+      const tenantId = req.tenantId;
       const userId = req.userId;
-      const rate = await storage.getRateMemoryByKey(req.params.bf, req.params.shade, userId);
+      const rate = await storage.getRateMemoryByKey(req.params.bf, req.params.shade, tenantId, userId);
       if (!rate) {
         return res.status(404).json({ error: "Rate not found" });
       }
@@ -1220,20 +1222,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/rate-memory", combinedAuth, async (req: any, res) => {
     try {
+      const tenantId = req.tenantId;
       const userId = req.userId;
       const { bfValue, shade, rate } = req.body;
-      const saved = await storage.saveOrUpdateRateMemory(bfValue, shade, rate, userId);
+      const saved = await storage.saveOrUpdateRateMemory(bfValue, shade, rate, tenantId, userId);
       res.status(201).json(saved);
     } catch (error) {
       res.status(400).json({ error: "Failed to save rate" });
     }
   });
 
-  // App Settings (protected, user-scoped)
+  // App Settings (protected, tenant-scoped)
   app.get("/api/settings", combinedAuth, async (req: any, res) => {
     try {
+      const tenantId = req.tenantId;
       const userId = req.userId;
-      const settings = await storage.getAppSettings(userId);
+      const settings = await storage.getAppSettings(tenantId, userId);
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch settings" });
@@ -1242,9 +1246,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/settings", combinedAuth, async (req: any, res) => {
     try {
+      const tenantId = req.tenantId;
       const userId = req.userId;
       const data = insertAppSettingsSchema.partial().parse(req.body);
-      const settings = await storage.updateAppSettings(data, userId);
+      const settings = await storage.updateAppSettings(data, tenantId, userId);
       res.json(settings);
     } catch (error) {
       res.status(400).json({ error: "Failed to update settings" });
