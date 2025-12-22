@@ -285,6 +285,8 @@ export const quoteVersions = pgTable("quote_versions", {
   subtotal: real("subtotal").notNull(),
   gstPercent: real("gst_percent").notNull(),
   gstAmount: real("gst_amount").notNull(),
+  roundOffEnabled: boolean("round_off_enabled").default(false), // Snapshot of setting at quote creation
+  roundOffValue: real("round_off_value").default(0), // Difference from rounding (can be +/-)
   finalTotal: real("final_total").notNull(),
   
   // Negotiation fields
@@ -366,10 +368,11 @@ export type QuoteItemVersion = typeof quoteItemVersions.$inferSelect;
 export const businessDefaults = pgTable("business_defaults", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull().unique(),
-  defaultGstPercent: real("default_gst_percent").notNull().default(18),
+  defaultGstPercent: real("default_gst_percent").notNull().default(5), // India GST for Corrugated Boxes
   gstRegistered: boolean("gst_registered").default(true),
   gstNumber: varchar("gst_number"),
   igstApplicable: boolean("igst_applicable").default(false),
+  roundOffEnabled: boolean("round_off_enabled").default(true), // Round grand total to nearest rupee
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
