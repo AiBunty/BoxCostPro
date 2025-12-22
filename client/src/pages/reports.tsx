@@ -30,6 +30,7 @@ import {
 import { downloadGenericExcel } from "@/lib/excelExport";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatPaperSpecs } from "@/lib/utils";
 import type { PartyProfile } from "@shared/schema";
 
 // Extended quote type with items from active version
@@ -384,11 +385,10 @@ export default function Reports() {
     }).filter(q => q.filteredItems.length > 0);
   }, [allQuotes, auditPartyName, auditStartDate, auditEndDate, auditBoxNameFilter, auditBoxDescFilter, auditBoxSizeFilter]);
 
-  // Helper to format paper specification
+  // Helper to format paper specification using centralized utility
   const formatPaperSpec = (item: any): string => {
     const layers = item.layerSpecs || item.layers || [];
-    if (!layers.length) return '-';
-    return layers.map((layer: any) => `${layer.gsm || '-'}/${layer.bf || '-'}`).join(' + ');
+    return formatPaperSpecs(layers);
   };
 
   const hasNegotiatedInputs = useMemo(() => {
@@ -1384,7 +1384,12 @@ export default function Reports() {
                                     const inputKey = `${quote.id}_${item.originalIndex}`;
                                     
                                     return (
-                                      <TableRow key={iIdx} data-testid={`audit-item-${qIdx}-${iIdx}`}>
+                                      <TableRow 
+                                        key={iIdx} 
+                                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                                        onClick={() => navigateToQuoteEdit(quote.id)}
+                                        data-testid={`audit-item-${qIdx}-${iIdx}`}
+                                      >
                                         <TableCell className="font-medium">{item.boxName || '-'}</TableCell>
                                         <TableCell className="text-muted-foreground text-sm">{item.boxDescription || '-'}</TableCell>
                                         <TableCell className="text-muted-foreground text-sm">{item.remarks || '-'}</TableCell>
@@ -1411,7 +1416,7 @@ export default function Reports() {
                                         <TableCell className="text-right font-mono">
                                           ₹{finalTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                         </TableCell>
-                                        <TableCell className="no-print">
+                                        <TableCell className="no-print" onClick={(e) => e.stopPropagation()}>
                                           <Input
                                             type="number"
                                             step="0.01"
