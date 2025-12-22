@@ -1,0 +1,158 @@
+You are a senior SaaS database architect and Supabase security expert.
+
+IMPORTANT CONTEXT:
+- This is a multi-tenant SaaS (PaperBox ERP / AiBunty).
+- There is NO production data yet.
+- It is safe to DROP and RECREATE all tables.
+- Data isolation is CRITICAL — data leakage is unacceptable.
+
+================================================
+GLOBAL ARCHITECTURE RULE (NON-NEGOTIABLE)
+================================================
+
+1. This is a SINGLE database with STRICT tenant isolation.
+2. Every business record MUST belong to exactly ONE tenant.
+3. NO shared business data across tenants.
+4. Database (RLS) must enforce isolation — not frontend logic.
+5. Supabase Auth is used only for identity, NOT for data security.
+
+================================================
+STEP 1: CLEAN SLATE (RESET UNSAFE STRUCTURE)
+================================================
+
+DROP all existing public tables EXCEPT:
+- auth.users
+- storage.*
+- supabase internal tables
+
+================================================
+STEP 2: TENANT (COMPANY) MODEL
+================================================
+
+Create tenants table:
+
+tenants
+- id (uuid, PK)
+- business_name (text, not null)
+- owner_user_id (uuid → auth.users.id)
+- created_at (timestamp)
+
+================================================
+STEP 3: USER ↔ TENANT MAPPING
+================================================
+
+Create tenant_users table:
+
+tenant_users
+- tenant_id (uuid → tenants.id)
+- user_id (uuid → auth.users.id)
+- role (owner, admin, staff)
+- created_at (timestamp)
+
+Composite primary key:
+- (tenant_id, user_id)
+
+================================================
+STEP 4: USER PROFILE (EXTENDED AUTH)
+================================================
+
+profiles
+- user_id (uuid, PK → auth.users.id)
+- full_name
+- email
+- mobile_number
+- country_code
+- email_verified (boolean)
+- mobile_verified (boolean)
+- created_at
+
+================================================
+STEP 5: BUSINESS TABLE PATTERN (MANDATORY)
+================================================
+
+ALL business tables MUST follow this pattern:
+
+Example: quotes
+
+quotes
+- id (uuid, PK)
+- tenant_id (uuid → tenants.id, NOT NULL)
+- created_by (uuid → auth.users.id)
+- data fields...
+- created_at
+
+❌ NO business table may exist without tenant_id
+❌ company_name text fields are NOT allowed as isolation
+
+================================================
+STEP 6: ROW LEVEL SECURITY (CRITICAL)
+================================================
+
+Enable RLS on ALL business tables.
+
+Create this STANDARD POLICY (apply everywhere):
+
+"Tenant Isolation Policy"
+
+USING (
+  tenant_id IN (
+    SELECT tenant_id
+    FROM tenant_users
+    WHERE user_id = auth.uid()
+  )
+)
+
+This policy must apply to:
+- SELECT
+- INSERT
+- UPDATE
+- DELETE
+
+================================================
+STEP 7: AUTO-CREATE TENANT ON SIGNUP
+================================================
+
+On new user signup:
+1. Create tenant
+2. Map user as tenant owner
+3. Create profile row
+
+This must be done in a Supabase Edge Function using service role.
+
+================================================
+STEP 8: FRONTEND RULES (STRICT)
+================================================
+
+- tenant_id is NEVER taken from user input
+- tenant_id is resolved from tenant_users on login
+- tenant_id is never editable from UI
+- Queries must NOT use service role
+- RLS must remain ON at all times
+
+================================================
+STEP 9: ADMIN & SUPPORT SAFETY
+================================================
+
+- No global admin access via frontend
+- Admin actions only via Edge Functions
+- Service role keys NEVER exposed to browser
+
+================================================
+STEP 10: DELIVERABLES REQUIRED
+================================================
+
+Provide:
+1. SQL to drop unsafe tables
+2. SQL to create tenant-safe schema
+3. RLS policies for ALL tables
+4. Edge Function to auto-create tenant
+5. Example safe queries
+6. Clear comments explaining WHY each rule exists
+
+DO NOT:
+- Use shared tables without tenant_id
+- Disable RLS
+- Trust frontend filters
+- Store business data without isolation
+
+This system must be ENTERPRISE-GRADE, SAFE, and SCALE-READY.
