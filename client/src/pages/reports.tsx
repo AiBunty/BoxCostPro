@@ -52,15 +52,39 @@ interface QuoteWithItems {
 function useReportsState() {
   const [location, setLocation] = useLocation();
   
+  // Calculate default 30-day range
+  const getDefault30Days = () => {
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    return {
+      startDate: thirtyDaysAgo.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
+    };
+  };
+  
   // Parse URL query params
   const getParams = useCallback(() => {
     const searchParams = new URLSearchParams(window.location.search);
+    const dateMode = searchParams.get('dateMode') || 'rolling30';
+    
+    // Default to 30-day range unless explicitly set to 'all' or 'custom'
+    let startDate = searchParams.get('startDate') || '';
+    let endDate = searchParams.get('endDate') || '';
+    
+    if (dateMode === 'rolling30' && !startDate && !endDate) {
+      const defaults = getDefault30Days();
+      startDate = defaults.startDate;
+      endDate = defaults.endDate;
+    }
+    
     return {
       tab: searchParams.get('tab') || 'quote-register',
       party: searchParams.get('party') || '',
       search: searchParams.get('search') || '',
-      startDate: searchParams.get('startDate') || '',
-      endDate: searchParams.get('endDate') || '',
+      startDate,
+      endDate,
+      dateMode,
       partyId: searchParams.get('partyId') || '',
       page: parseInt(searchParams.get('page') || '1', 10),
     };
@@ -77,6 +101,7 @@ function useReportsState() {
     if (newState.tab && newState.tab !== 'quote-register') params.set('tab', newState.tab);
     if (newState.party) params.set('party', newState.party);
     if (newState.search) params.set('search', newState.search);
+    if (newState.dateMode && newState.dateMode !== 'rolling30') params.set('dateMode', newState.dateMode);
     if (newState.startDate) params.set('startDate', newState.startDate);
     if (newState.endDate) params.set('endDate', newState.endDate);
     if (newState.partyId) params.set('partyId', newState.partyId);
@@ -162,6 +187,7 @@ export default function Reports() {
     const today = new Date();
     let startDate = '';
     let endDate = '';
+    let dateMode = 'custom';
     
     switch(preset) {
       case 'today':
@@ -174,9 +200,8 @@ export default function Reports() {
         break;
       case 'thisWeek':
         const weekStart = new Date(today);
-        // Use Monday as week start (ISO week standard)
         const dayOfWeek = today.getDay();
-        const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday=0, Monday=1, etc.
+        const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
         weekStart.setDate(today.getDate() - mondayOffset);
         startDate = weekStart.toISOString().split('T')[0];
         endDate = today.toISOString().split('T')[0];
@@ -195,9 +220,14 @@ export default function Reports() {
         startDate = new Date(today.getFullYear(), 0, 1).toISOString().split('T')[0];
         endDate = today.toISOString().split('T')[0];
         break;
+      case 'allTime':
+        startDate = '';
+        endDate = '';
+        dateMode = 'all';
+        break;
     }
     
-    updateState({ startDate, endDate });
+    updateState({ startDate, endDate, dateMode });
   }, [updateState]);
   
   const printRef = useRef<HTMLDivElement>(null);
@@ -963,6 +993,7 @@ export default function Reports() {
                   <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('thisWeek')} data-testid="btn-preset-week">Week</Button>
                   <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('thisMonth')} data-testid="btn-preset-month">Month</Button>
                   <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('lastMonth')} data-testid="btn-preset-lastmonth">Prev</Button>
+                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => applyDatePreset('allTime')} data-testid="btn-preset-all">All</Button>
                 </div>
                 <Input 
                   type="date"
