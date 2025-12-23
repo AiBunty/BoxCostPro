@@ -348,20 +348,11 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showQuotesDialog, setShowQuotesDialog] = useState(false);
   const [showMessageDialog, setShowMessageDialog] = useState<"whatsapp" | "email" | null>(null);
-  const [showBusinessProfile, setShowBusinessProfile] = useState(false);
   const [showPartyProfile, setShowPartyProfile] = useState(false);
   
-  // Business Profile state
-  const [businessCompanyName, setBusinessCompanyName] = useState("");
-  const [businessPhone, setBusinessPhone] = useState("");
-  const [businessEmail, setBusinessEmail] = useState("");
-  const [businessAddress, setBusinessAddress] = useState("");
-  const [businessGst, setBusinessGst] = useState("");
-  const [businessWebsite, setBusinessWebsite] = useState("");
-  const [businessSocial, setBusinessSocial] = useState("");
-  const [businessLocation, setBusinessLocation] = useState("");
-  const [editingProfileId, setEditingProfileId] = useState<string>("");
-  const [businessSearchTerm, setBusinessSearchTerm] = useState("");
+  // Note: Business Profile editing has been removed from Calculator.
+  // Calculator is READ-ONLY consumer of business_profiles.
+  // Users must edit their business profile via Settings → Account Profile.
   
   // Party Profile state
   const [partyPersonName, setPartyPersonName] = useState("");
@@ -730,60 +721,9 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
     },
   });
 
-  // Save business profile mutation
-  const saveBusinessProfileMutation = useMutation({
-    mutationFn: async (data: Partial<CompanyProfile>) => {
-      if (editingProfileId) {
-        return await apiRequest("PATCH", `/api/company-profiles/${editingProfileId}`, data);
-      }
-      return await apiRequest("POST", "/api/company-profiles", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-profiles"] });
-      toast({
-        title: "Saved",
-        description: "Business profile saved successfully.",
-      });
-      setShowBusinessProfile(false);
-      setEditingProfileId("");
-      setBusinessCompanyName("");
-      setBusinessPhone("");
-      setBusinessEmail("");
-      setBusinessAddress("");
-      setBusinessGst("");
-      setBusinessWebsite("");
-      setBusinessSocial("");
-      setBusinessLocation("");
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to save business profile.",
-        variant: "destructive",
-      });
-    },
-  });
-  
-  // Delete business profile mutation
-  const deleteBusinessProfileMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return await apiRequest("DELETE", `/api/company-profiles/${id}`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-profiles"] });
-      toast({
-        title: "Deleted",
-        description: "Business profile deleted successfully.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to delete business profile.",
-        variant: "destructive",
-      });
-    },
-  });
+  // Note: Business profile mutations have been removed from Calculator.
+  // Calculator is READ-ONLY consumer of business_profiles.
+  // Profile editing is centralized in Settings → Account Profile.
 
   // Save party profile mutation
   const savePartyProfileMutation = useMutation({
@@ -838,19 +778,8 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
     },
   });
   
-  // Sync business profile when company profile loads
-  useEffect(() => {
-    if (companyProfile && !editingProfileId) {
-      setBusinessCompanyName(companyProfile.companyName || "");
-      setBusinessPhone(companyProfile.phone || "");
-      setBusinessEmail(companyProfile.email || "");
-      setBusinessAddress(companyProfile.address || "");
-      setBusinessGst(companyProfile.gstNo || "");
-      setBusinessWebsite(companyProfile.website || "");
-      setBusinessSocial(companyProfile.socialMedia || "");
-      setBusinessLocation(companyProfile.googleLocation || "");
-    }
-  }, [companyProfile, editingProfileId]);
+  // Note: Business profile sync removed - Calculator now reads companyProfile directly
+  // No local state for business profile fields is needed since editing is in Settings
 
   // Load rate memory from API on mount
   useEffect(() => {
@@ -1791,127 +1720,17 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                 </Link>
               )}
               
-              <Dialog open={showBusinessProfile} onOpenChange={setShowBusinessProfile}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" data-testid="button-business-profile">
-                    <Building className="w-4 h-4 mr-2" />
-                    Business Profile
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>{editingProfileId ? "Edit" : "Create New"} Business Profile</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    {editingProfileId ? (
-                      <div className="mb-4 p-3 bg-muted rounded text-sm">
-                        Editing profile: {businessCompanyName}
-                      </div>
-                    ) : null}
-                    <div>
-                      <Label htmlFor="business-company">Company Name</Label>
-                      <Input id="business-company" value={businessCompanyName} onChange={(e) => setBusinessCompanyName(e.target.value)} data-testid="input-business-company" placeholder="Your Company Name" />
-                    </div>
-                    <div>
-                      <Label htmlFor="business-phone">Phone</Label>
-                      <Input id="business-phone" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} data-testid="input-business-phone" />
-                    </div>
-                    <div>
-                      <Label htmlFor="business-email">Email</Label>
-                      <Input id="business-email" value={businessEmail} onChange={(e) => setBusinessEmail(e.target.value)} data-testid="input-business-email" />
-                    </div>
-                    <div>
-                      <Label htmlFor="business-address">Address</Label>
-                      <Input id="business-address" value={businessAddress} onChange={(e) => setBusinessAddress(e.target.value)} data-testid="input-business-address" />
-                    </div>
-                    <div>
-                      <Label htmlFor="business-gst">GST</Label>
-                      <Input id="business-gst" value={businessGst} onChange={(e) => setBusinessGst(e.target.value)} data-testid="input-business-gst" />
-                    </div>
-                    <div>
-                      <Label htmlFor="business-website">Website</Label>
-                      <Input id="business-website" value={businessWebsite} onChange={(e) => setBusinessWebsite(e.target.value)} data-testid="input-business-website" />
-                    </div>
-                    <div>
-                      <Label htmlFor="business-social">Social Media</Label>
-                      <Input id="business-social" value={businessSocial} onChange={(e) => setBusinessSocial(e.target.value)} data-testid="input-business-social" />
-                    </div>
-                    <div>
-                      <Label htmlFor="business-location">Location</Label>
-                      <Input id="business-location" value={businessLocation} onChange={(e) => setBusinessLocation(e.target.value)} data-testid="input-business-location" />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button 
-                        onClick={() => {
-                          saveBusinessProfileMutation.mutate({
-                            companyName: businessCompanyName,
-                            phone: businessPhone,
-                            email: businessEmail,
-                            address: businessAddress,
-                            gstNo: businessGst,
-                            website: businessWebsite,
-                            socialMedia: businessSocial,
-                            googleLocation: businessLocation,
-                            isDefault: !editingProfileId,
-                          });
-                        }}
-                        disabled={saveBusinessProfileMutation.isPending}
-                        data-testid="button-save-business-profile"
-                        className="flex-1"
-                      >
-                        {saveBusinessProfileMutation.isPending ? "Saving..." : "Save"}
-                      </Button>
-                      {editingProfileId && (
-                        <Button 
-                          onClick={() => {
-                            if (confirm("Delete this profile?")) {
-                              deleteBusinessProfileMutation.mutate(editingProfileId);
-                              setShowBusinessProfile(false);
-                              setEditingProfileId("");
-                            }
-                          }}
-                          variant="destructive"
-                          size="sm"
-                          data-testid="button-delete-business-profile"
-                        >
-                          Delete
-                        </Button>
-                      )}
-                    </div>
-                    
-                    {!editingProfileId && allCompanyProfiles.length > 0 && (
-                      <div>
-                        <Label className="text-sm font-semibold mb-2 block">Existing Profiles</Label>
-                        <Input 
-                          placeholder="Search profiles..." 
-                          value={businessSearchTerm} 
-                          onChange={(e) => setBusinessSearchTerm(e.target.value)}
-                          data-testid="input-search-business-profile"
-                          className="mb-2"
-                        />
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {allCompanyProfiles.filter(p => p.companyName.toLowerCase().includes(businessSearchTerm.toLowerCase())).map(profile => (
-                            <Card key={profile.id} className="p-2 cursor-pointer hover-elevate" onClick={() => {
-                              setEditingProfileId(profile.id);
-                              setBusinessCompanyName(profile.companyName);
-                              setBusinessPhone(profile.phone || "");
-                              setBusinessEmail(profile.email || "");
-                              setBusinessAddress(profile.address || "");
-                              setBusinessGst(profile.gstNo || "");
-                              setBusinessWebsite(profile.website || "");
-                              setBusinessSocial(profile.socialMedia || "");
-                              setBusinessLocation(profile.googleLocation || "");
-                            }}>
-                              <div className="text-sm font-medium">{profile.companyName}</div>
-                              <div className="text-xs text-muted-foreground">{profile.phone} • {profile.email}</div>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </DialogContent>
-              </Dialog>
+              {/* Business Profile editing has been removed from Calculator.
+                  Profile management is centralized in Settings → Account Profile.
+                  Calculator only reads business profile data for quote headers and PDFs. */}
+              
+              {/* Link to Settings for profile management */}
+              <Link href="/settings">
+                <Button variant="outline" size="sm" data-testid="button-settings-link">
+                  <Building className="w-4 h-4 mr-2" />
+                  Settings
+                </Button>
+              </Link>
 
               {allPartyProfiles.length > 0 && (
                 <Select value={selectedPartyProfileId} onValueChange={setSelectedPartyProfileId}>
