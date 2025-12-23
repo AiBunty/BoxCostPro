@@ -37,6 +37,7 @@ import {
   type InsertPaperBfPrice,
   type ShadePremium,
   type InsertShadePremium,
+  type PaperShade,
   type PaperPricingRules,
   type InsertPaperPricingRules,
   type UserQuoteTerms,
@@ -89,6 +90,7 @@ import {
   paperPrices,
   paperBfPrices,
   shadePremiums,
+  paperShades,
   paperPricingRules,
   userQuoteTerms,
   boxSpecifications,
@@ -243,6 +245,10 @@ export interface IStorage {
   createShadePremium(premium: InsertShadePremium): Promise<ShadePremium>;
   updateShadePremium(id: string, updates: Partial<InsertShadePremium>): Promise<ShadePremium | undefined>;
   deleteShadePremium(id: string): Promise<boolean>;
+  
+  // Paper Shades Master Table (global - single source of truth)
+  getPaperShades(): Promise<PaperShade[]>;
+  getPaperShadeByName(shadeName: string): Promise<PaperShade | undefined>;
   
   // Paper Pricing Rules (per user)
   getPaperPricingRules(userId: string): Promise<PaperPricingRules | undefined>;
@@ -1337,6 +1343,18 @@ export class DatabaseStorage implements IStorage {
   async deleteShadePremium(id: string): Promise<boolean> {
     await db.delete(shadePremiums).where(eq(shadePremiums.id, id));
     return true;
+  }
+  
+  // ========== PAPER SHADES MASTER TABLE ==========
+  async getPaperShades(): Promise<PaperShade[]> {
+    return await db.select().from(paperShades).where(eq(paperShades.isActive, true)).orderBy(paperShades.sortOrder);
+  }
+  
+  async getPaperShadeByName(shadeName: string): Promise<PaperShade | undefined> {
+    const [shade] = await db.select().from(paperShades).where(
+      and(eq(paperShades.shadeName, shadeName), eq(paperShades.isActive, true))
+    );
+    return shade;
   }
   
   // ========== PAPER PRICING RULES ==========

@@ -689,6 +689,40 @@ export const quoteItemSchema = z.object({
 export type QuoteItem = z.infer<typeof quoteItemSchema>;
 export type LayerSpec = z.infer<typeof layerSpecSchema>;
 
+// ========== PAPER SHADES MASTER TABLE (SINGLE SOURCE OF TRUTH) ==========
+// This is the canonical reference for all shade names and abbreviations
+// Abbreviations are used in paper spec generation: e.g., "Kra120/32"
+
+export const paperShades = pgTable("paper_shades", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  shadeName: varchar("shade_name", { length: 100 }).notNull().unique(),
+  abbreviation: varchar("abbreviation", { length: 10 }).notNull(),
+  description: text("description"),
+  isFluting: boolean("is_fluting").default(false),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPaperShadeSchema = createInsertSchema(paperShades).omit({ id: true, createdAt: true });
+export type InsertPaperShade = z.infer<typeof insertPaperShadeSchema>;
+export type PaperShade = typeof paperShades.$inferSelect;
+
+// Default shades with canonical abbreviations (seeded on first run)
+export const DEFAULT_PAPER_SHADES = [
+  { shadeName: "Kraft/Natural", abbreviation: "Kra", description: "Standard kraft paper", isFluting: false, sortOrder: 1 },
+  { shadeName: "Testliner", abbreviation: "TL", description: "Recycled testliner", isFluting: false, sortOrder: 2 },
+  { shadeName: "Virgin Kraft Liner", abbreviation: "VKL", description: "Premium virgin kraft liner", isFluting: false, sortOrder: 3 },
+  { shadeName: "White Kraft Liner", abbreviation: "WKL", description: "White coated kraft liner", isFluting: false, sortOrder: 4 },
+  { shadeName: "White Top Testliner", abbreviation: "WTT", description: "White top coated testliner", isFluting: false, sortOrder: 5 },
+  { shadeName: "Duplex Grey Back (LWC)", abbreviation: "LWC", description: "Light weight coated duplex", isFluting: false, sortOrder: 6 },
+  { shadeName: "Duplex Grey Back (HWC)", abbreviation: "HWC", description: "Heavy weight coated duplex", isFluting: false, sortOrder: 7 },
+  { shadeName: "Semi Chemical Fluting", abbreviation: "SCF", description: "Semi chemical fluting medium", isFluting: true, sortOrder: 8 },
+  { shadeName: "Recycled Fluting", abbreviation: "RF", description: "Recycled fluting medium", isFluting: true, sortOrder: 9 },
+  { shadeName: "Bagasse (Agro based)", abbreviation: "BAG", description: "Agricultural waste based paper", isFluting: false, sortOrder: 10 },
+  { shadeName: "Golden Kraft", abbreviation: "GOL", description: "Premium golden kraft paper", isFluting: false, sortOrder: 11 },
+] as const;
+
 // ========== PAPER PRICE SETUP (per user) ==========
 
 // Legacy Paper Prices table (deprecated - use paper_bf_prices instead)

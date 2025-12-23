@@ -1726,6 +1726,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== PAPER SHADES MASTER TABLE (global) ==========
+  app.get("/api/paper-shades", combinedAuth, async (req: any, res) => {
+    try {
+      const shades = await storage.getPaperShades();
+      res.json(shades);
+    } catch (error) {
+      console.error("Failed to fetch paper shades:", error);
+      res.status(500).json({ error: "Failed to fetch paper shades" });
+    }
+  });
+
   // ========== SHADE PREMIUMS (per user) ==========
   app.get("/api/shade-premiums", combinedAuth, async (req: any, res) => {
     try {
