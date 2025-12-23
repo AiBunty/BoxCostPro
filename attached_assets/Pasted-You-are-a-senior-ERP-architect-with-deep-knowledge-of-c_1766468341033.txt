@@ -1,0 +1,216 @@
+You are a senior ERP architect with deep knowledge of corrugated box costing systems.
+This software is PaperBox ERP / AiBunty and must be ENTERPRISE-GRADE and FUTURE-PROOF.
+
+IMPORTANT:
+- There is currently NO production data
+- You are allowed to refactor schema, logic, and reports
+- Paper Spec showing BLANK is a CRITICAL BUG and MUST NEVER happen again
+
+====================================================
+PRIMARY OBJECTIVE (NON-NEGOTIABLE)
+====================================================
+
+Fix paper specification generation so that:
+1. There is ONE single source of truth
+2. All reports use the same logic
+3. Paper spec can NEVER be empty
+4. Shade abbreviations are standardized across the system
+
+====================================================
+STEP 1: MASTER SHADE TABLE (SINGLE SOURCE OF TRUTH)
+====================================================
+
+Create a master table:
+
+paper_shades
+- id (uuid, PK)
+- shade_name (text, unique, not null)
+- abbreviation (text, not null)
+- description (text)
+- is_fluting (boolean)
+- created_at (timestamp)
+
+Insert DEFAULT SHADES with CANONICAL ABBREVIATIONS:
+
+Kraft/Natural               → Kra
+Testliner                   → TL
+Virgin Kraft Liner           → VKL
+White Kraft Liner            → WKL
+White Top Testliner          → WTT
+Duplex Grey Back (LWC)       → LWC   (Light Coating)
+Duplex Grey Back (HWC)       → HWC   (Heavy Coating)
+Semi Chemical Fluting        → SCF
+Recycled Fluting             → RF
+Bagasse (Agro based)         → BAG
+Golden Kraft                 → GOL
+
+====================================================
+STEP 2: PAPER LAYER STRUCTURE (STRICT & VALIDATED)
+====================================================
+
+Create / Refactor paper_layers table:
+
+paper_layers
+- id
+- quote_id
+- layer_no (1,2,3...)
+- shade_id → paper_shades.id
+- gsm (integer, nullable)
+- bf (integer, nullable)
+- created_at
+
+Rules:
+- Shade MUST exist in paper_shades
+- gsm OR bf MUST exist (based on layer type)
+- No free-text shade names allowed anywhere
+
+====================================================
+STEP 3: PAPER SPEC GENERATION LOGIC (CORE FIX)
+====================================================
+
+Paper spec must be GENERATED, never manually typed.
+
+Logic:
+For each layer (ordered by layer_no):
+
+Format:
+<ShadeAbbreviation><GSM>/<BF>
+
+Examples:
+Kra120/32
+VKL180/24
+GOL180/24,Kra150/18,DUP230/14
+
+Rules:
+- BF = Bursting Factor (DO NOT mention flute)
+- If GSM exists → show GSM
+- If BF exists → show BF
+- If BOTH missing → BLOCK SAVE (error)
+
+Generate paper_spec ONLY from:
+paper_layers + paper_shades
+
+====================================================
+STEP 4: QUOTE TABLE (DERIVED FIELD SAFETY)
+====================================================
+
+quotes
+- id
+- tenant_id
+- paper_spec (text, NOT NULL)
+- other fields...
+
+paper_spec MUST:
+- Be auto-generated before save
+- Be re-generated on update
+- NEVER be empty
+- NEVER be user-editable
+
+Add DB constraint:
+CHECK (paper_spec <> '')
+
+====================================================
+STEP 5: PATCH ALL REPORTS (CRITICAL)
+====================================================
+
+ALL reports must:
+- JOIN paper_layers + paper_shades
+- NEVER read paper_spec from old/free-text fields
+- Always show generated paper_spec
+
+Fix these reports:
+- Party Summary → click party → show ALL quotes for that party
+- Quote Reports → click quote → open EDITABLE quote
+- Paper Audit → FIX blank Paper Specs
+- Remove reports:
+  ❌ Cost Breakdown
+  ❌ GST & Tax
+  ❌ Date Wise Sales
+
+Default report behavior:
+- Load ONLY last 30 days data
+- Add date filter to expand range
+
+====================================================
+STEP 6: EDITABLE REPORT FLOW (VERSIONING)
+====================================================
+
+When clicking a quote from ANY report:
+- Quote opens in EDIT MODE (not greyed out)
+- Add button: "Update Quote"
+
+On Update Quote:
+- Create NEW quote version
+- Old quote moves to quote_history table
+- Maintain audit trail
+
+quote_history
+- original_quote_id
+- version_no
+- paper_spec
+- updated_by
+- updated_at
+
+====================================================
+STEP 7: VALIDATION (ZERO TOLERANCE)
+====================================================
+
+Block save if:
+- Any layer missing shade_id
+- Both gsm & bf are missing
+- paper_spec evaluates to empty
+- Shade not found in master table
+
+Error message:
+"Paper specification is incomplete. Please verify all layers."
+
+====================================================
+STEP 8: REPORT UX + ENTERPRISE FEATURES
+====================================================
+
+Redesign reports:
+- Saved Filters (per user)
+- Export (CSV / Excel)
+- Pagination for large data
+- Performance optimization (server-side filtering)
+- Audit trail per report action:
+  - Viewed
+  - Exported
+  - Edited
+
+====================================================
+STEP 9: MIGRATION / RESET SCRIPT
+====================================================
+
+Since no production data exists:
+
+1. Drop old paper spec logic
+2. Create paper_shades
+3. Create paper_layers
+4. Add constraints
+5. Patch all queries to use new structure
+6. Rebuild reports
+
+Provide:
+- SQL migration
+- Updated schema
+- Updated queries
+- Clear comments
+
+====================================================
+FINAL RULES
+====================================================
+
+DO NOT:
+- Allow free-text paper specs
+- Duplicate shade logic
+- Generate paper spec in frontend
+- Allow empty or NULL paper_spec
+
+This system must be:
+✔ Single source of truth
+✔ Impossible to break accidentally
+✔ Consistent across Quotes, Reports, Audit
+✔ Ready for long-term ERP scale
+
+Implement this COMPLETELY.
