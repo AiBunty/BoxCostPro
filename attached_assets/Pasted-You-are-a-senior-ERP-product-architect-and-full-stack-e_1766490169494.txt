@@ -1,0 +1,170 @@
+You are a senior ERP product architect and full-stack engineer.
+
+This project is a Box Costing / ERP SaaS.
+There is a critical architectural issue in the Calculator module related to
+Persona, Business Profile, and Branding being fragmented and incorrect.
+
+================================================
+CORE PRINCIPLE (NON-NEGOTIABLE)
+================================================
+
+There must be ONE SINGLE SOURCE OF TRUTH for:
+- Business identity
+- Branding
+- Contact details
+
+Calculator must NEVER manage or override business data.
+Calculator is a consumer of Account data only.
+
+================================================
+CURRENT PROBLEMS TO FIX
+================================================
+
+1. Persona / Business / Branding data is inconsistent
+2. Calculator page has a "Business Profile" button (WRONG)
+3. Multiple profile tabs exist (Persona, Business, Branding)
+4. Calculator reads profile data incorrectly or not at all
+5. Users can change business identity without verification
+6. Profile data duplication risk
+
+================================================
+TARGET ARCHITECTURE (MANDATORY)
+================================================
+
+A. REMOVE from Calculator:
+- Business Profile button
+- Any business/profile related state or logic
+- Any local storage / context profile overrides
+
+Calculator must ONLY read profile data from Accounts module.
+
+================================================
+B. SINGLE ACCOUNT PROFILE PAGE (MERGED)
+================================================
+
+Instead of 3 tabs, create ONE unified page:
+
+📍 Accounts → Business Profile
+
+This page handles ALL identity data.
+
+================================================
+C. BUSINESS PROFILE DATA MODEL
+================================================
+
+Create / update table:
+
+business_profiles
+- tenant_id (uuid, PK)
+- company_name (text, mandatory)
+- owner_name (text, mandatory)
+- email (text, mandatory)
+- phone (text, mandatory)
+- gst_number (text)
+- website (text)
+- social_media_link (text)
+- google_location_link (text)
+- logo_url (text)
+- logo_size_kb (int)
+- verified (boolean)
+- created_at
+- updated_at
+
+================================================
+D. REGISTRATION FLOW INTEGRATION
+================================================
+
+Mandatory fields MUST be auto-filled from registration:
+1. Company Name
+2. Owner Name
+3. Email
+4. Phone Number
+
+Rules:
+- These fields are READ-ONLY by default
+- Editing them REQUIRES email verification
+- Verification flow must be enforced
+
+================================================
+E. OPTIONAL BUSINESS DETAILS
+================================================
+
+Editable anytime:
+- GST Number
+- Website
+- Social Media Link
+- Google Location Link
+- Logo Upload
+
+Logo rules:
+- Max size: 100 KB
+- Validate file size before upload
+- Reject oversized files
+- Store in Supabase Storage
+- Save public URL
+
+================================================
+F. CALCULATOR INTEGRATION (CRITICAL)
+================================================
+
+Calculator must:
+- Read company_name, logo, GST from business_profiles
+- NEVER allow edits
+- Use branding ONLY for:
+  - Quote header
+  - PDF generation
+  - Print preview
+
+If business profile is incomplete:
+→ Show blocking message:
+"Please complete Business Profile before creating quotes."
+
+================================================
+G. SECURITY & DATA INTEGRITY
+================================================
+
+- Enable RLS on business_profiles
+- Enforce tenant isolation
+- Only tenant owner can edit
+- All changes logged to audit_logs
+- Calculator has READ-ONLY access
+
+================================================
+H. UI / UX CHANGES REQUIRED
+================================================
+
+1. REMOVE Business Profile button from Calculator page
+2. Add CTA:
+   "Complete Business Profile" (only if missing)
+3. Calculator header must be CLEAN
+4. No duplicate identity inputs anywhere else
+
+================================================
+I. VALIDATION RULES (MANDATORY)
+================================================
+
+- Company Name cannot be empty
+- Email must match auth.users.email
+- Phone must be valid
+- Logo must be ≤ 100 KB
+- GST format validation (India)
+
+================================================
+J. DELIVERABLES REQUIRED
+================================================
+
+Provide:
+1. SQL to drop old persona / branding tables (if any)
+2. SQL to create business_profiles table
+3. RLS policies
+4. Updated Calculator logic (read-only)
+5. Updated Account Profile UI
+6. Clear comments explaining why this architecture exists
+
+DO NOT:
+- Keep multiple profile sources
+- Allow calculator to edit identity
+- Store duplicate business info
+- Bypass verification
+
+This must be implemented as a LONG-TERM, ENTERPRISE-SAFE solution.

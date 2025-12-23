@@ -1,0 +1,90 @@
+You are a senior SaaS architect.
+
+OBJECTIVE:
+Fix the Calculator architecture by enforcing a SINGLE SOURCE OF TRUTH for
+Persona, Business, and Branding data.
+
+================================================
+RULES (NON-NEGOTIABLE)
+================================================
+
+1. Persona, Business, Branding MUST NOT exist as separate concepts.
+2. ALL identity & branding data must come ONLY from Accounts.
+3. Calculator must NEVER edit profile data.
+4. Profile editing must be centralized and auditable.
+
+================================================
+STEP 1: REMOVE WRONG IMPLEMENTATIONS
+================================================
+
+- Remove Persona tab completely
+- Remove Branding tab completely
+- Remove "Business Profile" button from Calculator UI
+- Remove any profile read/write logic from calculator code
+
+================================================
+STEP 2: CREATE SINGLE ACCOUNT PROFILE PAGE
+================================================
+
+Create a single page:
+Settings → Account Profile
+
+Fields (AUTO-FILLED & LOCKED from registration):
+- Company Name (required)
+- Owner Name (required)
+- Email (required)
+- Phone Number (required)
+
+These fields are READ-ONLY by default.
+
+To edit them:
+- Require email verification
+- Log audit event
+
+Editable Fields:
+- GST Number
+- Website
+- Social Media Links
+- Google Location Link
+- Company Logo (PNG/JPG, max 100KB)
+
+================================================
+STEP 3: DATABASE
+================================================
+
+Create accounts table as single source of truth.
+
+Remove:
+- persona tables
+- branding tables
+- duplicated business profile fields elsewhere
+
+================================================
+STEP 4: CALCULATOR BEHAVIOR
+================================================
+
+Calculator must:
+- Read company name, logo, owner from accounts
+- Never show profile edit UI
+- Never store profile data
+
+================================================
+STEP 5: SECURITY
+================================================
+
+- Enforce tenant isolation
+- Profile edits logged in audit_logs
+- Logo upload validated for size and type
+- Supabase Storage paths tenant-scoped
+
+================================================
+DELIVERABLES
+================================================
+
+1. Database migration SQL
+2. Clean Account Profile UI
+3. Updated Calculator logic (read-only)
+4. Removed dead code & buttons
+5. Audit logging for profile edits
+
+This must be enterprise-grade, clean, and future-proof.
