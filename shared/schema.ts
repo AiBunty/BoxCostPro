@@ -357,28 +357,38 @@ export const insertTenantUserSchema = createInsertSchema(tenantUsers).omit({ cre
 export type InsertTenantUser = z.infer<typeof insertTenantUserSchema>;
 export type TenantUser = typeof tenantUsers.$inferSelect;
 
-// Company Profiles (per tenant)
+// Company Profiles (per tenant) - SINGLE SOURCE OF TRUTH for business identity & branding
+// Calculator and other modules MUST read from here and NEVER edit directly
 export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id),
   userId: varchar("user_id").references(() => users.id), // Creator
+  // Core identity fields (locked after registration, require verification to edit)
   companyName: text("company_name").notNull(),
   ownerName: text("owner_name"), // Owner/Contact person name for templates
+  email: text("email"),
+  phone: text("phone"),
+  verified: boolean("verified").default(false), // Email verified for profile edits
+  // Editable business details
   gstNo: text("gst_no"),
   address: text("address"),
-  phone: text("phone"),
-  email: text("email"),
   website: text("website"),
   mapLink: text("map_link"), // Google Maps link for templates
   socialMedia: text("social_media"),
   googleLocation: text("google_location"),
+  // Quote defaults
   paymentTerms: text("payment_terms").default("100% Advance"),
   deliveryTime: text("delivery_time").default("10 days after receipt of PO"),
   isDefault: boolean("is_default").default(false),
+  // Branding
   logoUrl: text("logo_url"), // Company logo for quote signatures
+  logoSizeKb: integer("logo_size_kb"), // Track logo file size (max 100KB enforced)
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).omit({ id: true });
+export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCompanyProfile = z.infer<typeof insertCompanyProfileSchema>;
 export type CompanyProfile = typeof companyProfiles.$inferSelect;
 
