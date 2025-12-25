@@ -1,0 +1,274 @@
+You are a senior SaaS architect, ERP domain expert, and modern UI/UX designer.
+
+PROJECT:
+PaperBox ERP / Box Costing Calculator (Multi-tenant SaaS)
+
+GOAL:
+Refactor the system to be ENTERPRISE-GRADE, SAFE, MODERN, and LONG-TERM SCALABLE.
+
+====================================================
+PART 1 — SINGLE SOURCE OF TRUTH (CRITICAL FIX)
+====================================================
+
+PROBLEM:
+Persona / Business / Branding data is broken, duplicated, and unreliable.
+There are multiple tabs and a “Business Profile” button inside Calculator — THIS MUST BE REMOVED.
+
+SOLUTION (NON-NEGOTIABLE):
+- There must be ONE single source of truth for all business identity data
+- Calculator must NEVER manage profile data
+- All profile data must come ONLY from Accounts module
+
+ACTION:
+1. REMOVE “Business Profile” button from Calculator UI
+2. REMOVE persona / business / branding logic from Calculator code
+3. CREATE a single unified ACCOUNT PROFILE PAGE
+
+----------------------------------------------------
+ACCOUNT PROFILE (SINGLE PAGE ENTRY)
+----------------------------------------------------
+
+Fields:
+MANDATORY (auto-filled from registration):
+1. Company Name
+2. Owner Name
+3. Email
+4. Phone Number
+
+Editable ONLY after email verification.
+
+OPTIONAL FIELDS:
+5. GST Number
+6. Website
+7. Social Media Link
+8. Google Maps Location Link
+9. Upload Company Logo
+   - Max size: 100 KB
+   - PNG/JPG only
+
+RULES:
+- This page is accessible from main navigation
+- All modules (Calculator, Quotes, Reports) READ from this table ONLY
+- No duplicate profile tables anywhere
+
+====================================================
+PART 2 — TENANT + SUB-USER (STAFF) SYSTEM
+====================================================
+
+Implement true multi-tenant architecture:
+
+Tables:
+- tenants
+- tenant_users
+- profiles
+- roles
+- permissions
+- role_permissions
+- user_permissions
+
+ROLES:
+- Owner (full access)
+- Admin (config + reports)
+- Staff (limited access)
+
+Owner can:
+- Add staff
+- Assign role
+- Enable / disable permissions
+- Suspend staff
+
+Staff:
+- Sees limited UI
+- Can access only allowed modules
+- All actions logged
+
+RLS MUST enforce:
+- tenant isolation
+- role & permission checks
+- no cross-tenant data access ever
+
+====================================================
+PART 3 — PAPER SHADE MASTER (FIX BLANK PAPER SPEC)
+====================================================
+
+CREATE MASTER TABLE:
+paper_shades
+
+Fields:
+- id
+- name
+- abbreviation (CANONICAL)
+- category (kraft / liner / duplex / flute)
+- description
+
+CANONICAL ABBREVIATIONS (MANDATORY):
+
+Kraft / Natural           → KRA  
+Virgin Kraft Liner        → VKL  
+White Kraft Liner         → WKL  
+Testliner                 → TST  
+White Top Testliner       → WTT  
+Duplex Grey Back (LWC)    → LWC  (Light Weight Coating)
+Duplex Grey Back (HWC)    → HWC  (Heavy Weight Coating)
+Semi Chemical Fluting     → SCF  
+Recycled Fluting          → RCF  
+Bagasse (Agro based)      → BAG  
+Golden Kraft              → GOL  
+
+RULE:
+All dropdowns, pricing, reports, calculator MUST reference this table.
+NO hardcoded shade names anywhere.
+
+====================================================
+PART 4 — PAPER SPEC GENERATION (SINGLE SOURCE OF TRUTH)
+====================================================
+
+FIX PERMANENTLY:
+Paper spec must NEVER be blank.
+
+LOGIC:
+Paper spec is GENERATED ONCE using master shade + GSM + BF.
+
+FORMAT (SINGLE LINE):
+<ABBR><GSM>/<BF>
+
+Examples:
+Kra120/32
+VKL180/24
+GOL180/24,Kra150/18,DUP230/14
+
+RULES:
+- BF = Bursting Factor (do NOT mention flute)
+- Validation: save must FAIL if paper spec is empty
+- Reports READ this generated field (not recompute)
+
+====================================================
+PART 5 — REPORTS (MAJOR UX + FUNCTIONAL FIX)
+====================================================
+
+GLOBAL RULES FOR ALL REPORTS:
+- Default load ONLY last 30 days
+- Saved Filters (date, party, item)
+- Export: Excel / CSV
+- Pagination + server-side filtering
+- Performance optimized queries
+- Audit trail for every action
+
+----------------------------------------------------
+REPORT → EDIT FLOW (CRITICAL FIX)
+----------------------------------------------------
+
+CURRENT BUG:
+Clicking report opens quote but it is read-only / greyed.
+
+FIX:
+- Clicking a report row opens Quote in EDIT MODE
+- Show button: “Update Quote”
+- Updating creates NEW VERSION
+- Old version moves to QUOTE HISTORY
+- Reports always show latest version
+
+----------------------------------------------------
+PARTY SUMMARY REPORT
+----------------------------------------------------
+
+On clicking Party:
+- Show ALL quotes for that party
+- Drill-down supported
+- One click → editable quote
+
+REMOVE REPORT TABS:
+- Cost Breakdown
+- GST & Tax
+- Date Wise Sales
+
+FIX THESE:
+- Paper Audit
+- Paper Report
+- Paper Specs (must show correct spec)
+
+====================================================
+PART 6 — MODERN UI REDESIGN (HIGH IMPACT)
+====================================================
+
+DESIGN LANGUAGE:
+- Soft gradients
+- Rounded cards
+- Clean typography
+- Glass / neumorphic cards
+- Modern SaaS look
+
+----------------------------------------------------
+CALCULATOR UI
+----------------------------------------------------
+- Clean card-based layout
+- No profile buttons
+- Focus only on costing
+- Inline validations
+- Sticky summary panel
+
+----------------------------------------------------
+DASHBOARD UI
+----------------------------------------------------
+Inspired by modern HR / Analytics dashboards:
+- KPI cards
+- Recent quotes
+- Cost trends
+- Party activity
+- Quick actions
+
+----------------------------------------------------
+WEBSITE HOME PAGE
+----------------------------------------------------
+
+Sections:
+1. Hero with accurate costing message
+2. Costing Calculator Card (live preview)
+3. Coming Soon cards:
+   - AI Suggestions
+   - Purchase Order Planner
+   - Job Card Generator
+   - PDI / COA Generator
+4. Dashboard screenshots
+5. Navigation:
+   - Home
+   - About Us
+   - Pricing
+   - Contact Us
+   - Demo
+
+DEMO PAGE:
+- Embedded YouTube iframe
+- Responsive video container
+
+====================================================
+PART 7 — AUDIT, SAFETY & LONG-TERM STABILITY
+====================================================
+
+Implement:
+- Audit logs per report action
+- Versioning for quotes
+- Soft deletes
+- Rate limiting
+- Secure exports
+- Strict RLS everywhere
+- No service key in frontend
+- Edge functions for admin actions
+
+====================================================
+DELIVERABLES REQUIRED
+====================================================
+
+1. Cleaned & refactored schema (SQL)
+2. RLS policies
+3. Shade master seed data
+4. Paper spec generator function
+5. Report query refactor
+6. UI refactor (Calculator, Dashboard, Home)
+7. Migration steps
+8. Comments explaining decisions
+
+IMPORTANT:
+- This is an ERP, not a demo app
+- Build for 5–10 year scale
+- No shortcuts

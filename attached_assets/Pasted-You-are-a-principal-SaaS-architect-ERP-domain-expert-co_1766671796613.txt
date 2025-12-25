@@ -1,0 +1,243 @@
+You are a principal SaaS architect, ERP domain expert (corrugation industry),
+and senior full-stack engineer.
+
+This product is NOT just a costing tool.
+It is a SALES REPRESENTATIVE + ERP FOUNDATION for corrugators.
+
+There is NO production data yet.
+You are allowed to DELETE, REFACTOR, and REBUILD anything unsafe or broken.
+
+=====================================================
+CORE NON-NEGOTIABLE PRINCIPLES
+=====================================================
+
+1. Single source of truth (masters drive everything)
+2. Tenant-isolated SaaS (no data leaks)
+3. Reports must be actionable, editable, and traceable
+4. Calculator must reflect masters EXACTLY
+5. UI must feel modern, enterprise, and scalable
+6. Every feature must be future-ready
+
+=====================================================
+PART 1 — DATA SAFETY & TENANT ISOLATION
+=====================================================
+
+- Implement strict multi-tenant architecture
+- Every business table MUST contain tenant_id
+- Enforce Row Level Security (RLS) everywhere
+- No shared data across tenants
+- No frontend-based filtering
+
+=====================================================
+PART 2 — BUSINESS PROFILE (FIX & SIMPLIFY)
+=====================================================
+
+REMOVE:
+- Business Profile button from Calculator page
+- Persona / Business / Branding split tabs
+
+REPLACE WITH:
+- ONE unified "Account Profile" page
+- All profile data must be read from Accounts
+
+MANDATORY FIELDS (auto-filled from signup):
+1. Company Name
+2. Owner Name
+3. Email
+4. Phone Number
+
+Editable ONLY after email verification.
+
+ADDITIONAL FIELDS:
+5. GST Number
+6. Website
+7. Social Media Link
+8. Google Maps Location Link
+9. Company Logo (max 100KB)
+
+=====================================================
+PART 3 — PAPER MASTERS (CRITICAL FIX)
+=====================================================
+
+Create a MASTER SHADE TABLE (single source of truth):
+
+Each shade must have:
+- shade_name
+- canonical_abbreviation
+- category (liner / flute / duplex)
+- description
+
+DEFAULT ABBREVIATIONS:
+- Kraft / Natural → KRA
+- Testliner → TL
+- Virgin Kraft Liner → VKL
+- White Kraft Liner → WKL
+- White Top Testliner → WTTL
+- Duplex Grey Back (LWC) → LWC (Light Coating)
+- Duplex Grey Back (HWC) → HWC (Heavy Coating)
+- Semi Chemical Fluting → SCF
+- Recycled Fluting → RF
+- Bagasse → BAG
+- Golden Kraft → GOL
+
+These abbreviations MUST appear in:
+- Paper Price Settings
+- Shade Premiums
+- Calculator
+- Reports
+- Paper Specs
+
+=====================================================
+PART 4 — PAPER SPEC GENERATION (BROKEN → FIX)
+=====================================================
+
+Fix paper spec logic using ONE shared utility.
+
+Rules:
+- Paper spec can NEVER be blank
+- If spec generation fails → block save + show error
+- Always generate single-line spec per layer
+
+FORMAT:
+Layer example:
+GOL180/24,KRA150/18,DUP230/14
+
+Rules:
+- Shade abbreviation + GSM + "/" + BF
+- BF = Bursting Factor (do NOT mention flute)
+
+=====================================================
+PART 5 — REPORTS (MAJOR REWORK)
+=====================================================
+
+GLOBAL RULES FOR ALL REPORTS:
+- Editable on click
+- Clicking opens Quote in EDIT MODE
+- Add "Update Quote" button
+- Saving creates NEW VERSION
+- Old quote goes to history (read-only)
+
+DEFAULT LOAD:
+- Only last 30 days data
+- Add date range selector
+
+REMOVE REPORTS:
+- Cost Breakdown
+- GST & Tax
+- Date Wise Sales
+
+FIX REPORTS:
+- Paper Audit (paper specs must show)
+- Paper Specs (never blank)
+- Party Summary:
+  Clicking a party shows ALL quotes for that party
+
+ADD:
+- Saved filters
+- Export (Excel / PDF)
+- Audit trail per report action
+
+=====================================================
+PART 6 — GST MASTER LINKAGE
+=====================================================
+
+Create GST Master:
+- Default GST rate = 5%
+- Editable in Masters only
+
+Rules:
+- Calculator MUST fetch GST from master
+- Reports MUST reflect same GST
+- No hardcoded GST anywhere
+
+=====================================================
+PART 7 — SUB-USERS & PERMISSIONS
+=====================================================
+
+Allow multiple users under one account:
+Roles:
+- Owner
+- Admin
+- Staff
+
+Owner can:
+- Create staff
+- Assign permissions
+- Restrict modules
+
+Staff:
+- Sees limited UI
+- Cannot edit masters unless permitted
+
+=====================================================
+PART 8 — CALCULATOR UX REDESIGN
+=====================================================
+
+- Modern card-based layout
+- Clear visual hierarchy
+- Real-time validation
+- Inline errors
+- Fast performance
+
+Remove clutter.
+Calculator should feel like a premium SaaS tool.
+
+=====================================================
+PART 9 — HOME PAGE & DASHBOARD UI
+=====================================================
+
+HOME PAGE:
+- Hero headline:
+  "Not Just a Costing Tool — Your Smart Sales Representative"
+
+Sections:
+- Accurate Costing Card (live preview)
+- Navigation Links:
+  Home | About | Pricing | Contact | Demo
+- Demo section with YouTube iframe
+- Dashboard screenshots section
+- Coming Soon cards:
+  - AI Suggestions
+  - Purchase Order Planner
+  - Job Card Generator
+  - PDI / COA Generator
+  - Paper Stock Management
+  - Auto Client Follow-ups (Email + WhatsApp)
+  - Price Increase Email Generator (with % comparison)
+
+DASHBOARD STYLE:
+- Modern, soft gradients
+- Card-based widgets
+- Inspired by premium HR / ERP dashboards
+- Clean typography
+- Light shadows, rounded corners
+
+=====================================================
+PART 10 — PERFORMANCE & STABILITY
+=====================================================
+
+- Optimize queries for large data
+- Use pagination everywhere
+- Prevent loading historical data unnecessarily
+- Background jobs for emails & reports
+
+=====================================================
+DELIVERABLES REQUIRED
+=====================================================
+
+1. Refactored schema (tenant-safe)
+2. Master tables (paper, GST, permissions)
+3. Fixed paper spec generator
+4. Report navigation & versioning logic
+5. Modern UI components
+6. Migration SQL
+7. Clear comments explaining decisions
+
+DO NOT:
+- Leave paper spec blank
+- Hardcode GST
+- Use multiple sources of truth
+- Allow non-editable reports
+- Trust frontend filtering
+
+This must be ENTERPRISE-GRADE, SCALE-READY, and FUTURE-PROOF.
