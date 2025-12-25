@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw, Menu, Palette, Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { Package, FileText, Plus, Trash2, Save, Building2, MessageCircle, Mail, Copy, Download, Users, Building, Upload, ChevronDown, Settings, FileSpreadsheet, Info, Pencil, LogOut, User, Tag, Percent, DollarSign, History, RotateCcw, Menu, Palette, Eye, EyeOff, ArrowLeft, AlertTriangle } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   DropdownMenu,
@@ -76,6 +76,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const PLY_OPTIONS = ["1", "3", "5", "7", "9"] as const;
 
@@ -1621,6 +1622,49 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   const taxRateValue = parseFloat(taxRate) || 0;
   const taxAmount = subtotal * (taxRateValue / 100);
   const grandTotal = subtotal + taxAmount;
+  
+  // Check if business profile is complete (required for quotes)
+  // All four identity fields are required: Company Name, Owner Name, Email, Phone
+  const isProfileComplete = companyProfile && 
+    companyProfile.companyName?.trim() &&
+    companyProfile.ownerName?.trim() &&
+    companyProfile.email?.trim() &&
+    companyProfile.phone?.trim();
+  
+  // Show blocking message if business profile is incomplete
+  if (!isLoadingProfile && !isProfileComplete) {
+    return (
+      <TooltipProvider>
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <Card className="max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-amber-600">
+                <AlertTriangle className="h-5 w-5" />
+                Complete Your Business Profile
+              </CardTitle>
+              <CardDescription>
+                Your business profile is incomplete. Please set up your company details before creating quotes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <Building className="h-4 w-4" />
+                <AlertDescription>
+                  Company Name, Owner Name, Email, and Phone are required to generate quotes, PDFs, and send messages to customers.
+                </AlertDescription>
+              </Alert>
+              <Link href="/settings">
+                <Button className="w-full gap-2" data-testid="button-complete-profile">
+                  <Settings className="h-4 w-4" />
+                  Complete Business Profile
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </TooltipProvider>
+    );
+  }
   
   return (
     <TooltipProvider>

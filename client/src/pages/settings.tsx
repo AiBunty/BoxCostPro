@@ -10,7 +10,7 @@ import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ArrowLeft, User, Building2, ImageIcon, Upload, Loader2, Save, MessageSquare, Mail, Copy, Star, Trash2, Eye, Edit2, Check, Columns3, AlertCircle, TrendingUp } from "lucide-react";
+import { ArrowLeft, User, Building2, ImageIcon, Upload, Loader2, Save, MessageSquare, Mail, Copy, Star, Trash2, Eye, Edit2, Check, Columns3, AlertCircle, TrendingUp, Lock, Shield, Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Link } from "wouter";
 import type { User as UserType, CompanyProfile, QuoteTemplate } from "@shared/schema";
@@ -24,7 +24,7 @@ import EmailAnalyticsTab from "@/components/EmailAnalyticsTab";
 
 export default function Settings() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("personal");
+  const [activeTab, setActiveTab] = useState("account");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [templateChannel, setTemplateChannel] = useState<"whatsapp" | "email">("whatsapp");
@@ -137,11 +137,11 @@ export default function Settings() {
   const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Validate file size (max 500KB for database storage)
-      if (file.size > 500 * 1024) {
+      // Validate file size (max 100KB as per enterprise requirements)
+      if (file.size > 100 * 1024) {
         toast({
           title: "File Too Large",
-          description: "Logo must be less than 500KB for optimal performance",
+          description: "Logo must be less than 100KB. Please compress your image and try again.",
           variant: "destructive",
         });
         return;
@@ -286,18 +286,10 @@ export default function Settings() {
 
       <main className="container mx-auto px-4 py-8 max-w-3xl">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5" data-testid="settings-tabs">
-            <TabsTrigger value="personal" className="gap-2" data-testid="tab-personal">
-              <User className="h-4 w-4" />
-              <span className="hidden sm:inline">Personal</span>
-            </TabsTrigger>
-            <TabsTrigger value="business" className="gap-2" data-testid="tab-business">
+          <TabsList className="grid w-full grid-cols-3" data-testid="settings-tabs">
+            <TabsTrigger value="account" className="gap-2" data-testid="tab-account">
               <Building2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Business</span>
-            </TabsTrigger>
-            <TabsTrigger value="branding" className="gap-2" data-testid="tab-branding">
-              <ImageIcon className="h-4 w-4" />
-              <span className="hidden sm:inline">Branding</span>
+              <span className="hidden sm:inline">Account Profile</span>
             </TabsTrigger>
             <TabsTrigger value="email" className="gap-2" data-testid="tab-email">
               <Mail className="h-4 w-4" />
@@ -309,141 +301,169 @@ export default function Settings() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="personal" className="mt-6">
+          {/* UNIFIED ACCOUNT PROFILE TAB - Single source of truth for business identity */}
+          <TabsContent value="account" className="mt-6 space-y-6">
+            {/* User Info Header */}
             <Card>
               <CardHeader>
-                <CardTitle>Personal Details</CardTitle>
-                <CardDescription>Your account information</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  Account Owner
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <Form {...personalForm}>
-                  <form className="space-y-4">
-                    <div className="flex items-center gap-4 mb-6">
-                      <Avatar className="h-20 w-20">
-                        <AvatarImage src={user?.profileImageUrl || ""} />
-                        <AvatarFallback className="text-xl">
-                          {user?.firstName?.[0] || user?.email?.[0] || "U"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{user?.firstName} {user?.lastName}</p>
-                        <p className="text-sm text-muted-foreground">{user?.email}</p>
-                        <p className="text-xs text-muted-foreground capitalize">
-                          Account type: {user?.authProvider || "google"}
-                        </p>
-                      </div>
-                    </div>
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-16 w-16">
+                    <AvatarImage src={user?.profileImageUrl || ""} />
+                    <AvatarFallback className="text-lg">
+                      {user?.firstName?.[0] || user?.email?.[0] || "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-medium text-lg">{user?.firstName} {user?.lastName}</p>
+                    <p className="text-sm text-muted-foreground">{user?.email}</p>
+                    <Badge variant="secondary" className="mt-1">
+                      <Shield className="h-3 w-3 mr-1" />
+                      {user?.authProvider || "google"} login
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <FormField
-                        control={personalForm.control}
-                        name="firstName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>First Name</FormLabel>
-                            <FormControl>
-                              <Input {...field} disabled data-testid="input-first-name" />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={personalForm.control}
-                        name="lastName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Last Name</FormLabel>
-                            <FormControl>
-                              <Input {...field} disabled data-testid="input-last-name" />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
+            {/* Core Identity Fields - Locked after registration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Lock className="h-5 w-5" />
+                  Core Business Identity
+                </CardTitle>
+                <CardDescription>
+                  These fields are locked for security. Contact support to make changes.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Alert className="mb-4">
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Company Name, Owner Name, Email, and Phone are locked to prevent unauthorized changes. 
+                    These appear on all your quotes and official documents.
+                  </AlertDescription>
+                </Alert>
+                <Form {...businessForm}>
+                  <div className="grid sm:grid-cols-2 gap-4">
                     <FormField
-                      control={personalForm.control}
+                      control={businessForm.control}
+                      name="companyName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-2">
+                            Company Name
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              disabled 
+                              className="bg-muted"
+                              data-testid="input-company-name-locked" 
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={businessForm.control}
+                      name="ownerName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-2">
+                            Owner / Contact Name
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              disabled 
+                              className="bg-muted"
+                              data-testid="input-owner-name-locked" 
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={businessForm.control}
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email</FormLabel>
+                          <FormLabel className="flex items-center gap-2">
+                            Business Email
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                          </FormLabel>
                           <FormControl>
-                            <Input {...field} disabled data-testid="input-email" />
+                            <Input 
+                              {...field} 
+                              disabled 
+                              className="bg-muted"
+                              data-testid="input-email-locked" 
+                            />
                           </FormControl>
                         </FormItem>
                       )}
                     />
-
                     <FormField
-                      control={personalForm.control}
-                      name="mobileNo"
+                      control={businessForm.control}
+                      name="phone"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Mobile Number</FormLabel>
+                          <FormLabel className="flex items-center gap-2">
+                            Phone Number
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                          </FormLabel>
                           <FormControl>
-                            <Input {...field} disabled data-testid="input-mobile" />
+                            <Input 
+                              {...field} 
+                              disabled 
+                              className="bg-muted"
+                              data-testid="input-phone-locked" 
+                            />
                           </FormControl>
                         </FormItem>
                       )}
                     />
-
-                    <p className="text-sm text-muted-foreground">
-                      Personal details are managed through your authentication provider.
-                    </p>
-                  </form>
+                  </div>
                 </Form>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <TabsContent value="business" className="mt-6">
+            {/* Editable Business Details */}
             <Card>
               <CardHeader>
-                <CardTitle>Business Details</CardTitle>
-                <CardDescription>Your company information for quotes</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Business Details
+                </CardTitle>
+                <CardDescription>
+                  Additional business information for quotes and communications
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <Form {...businessForm}>
                   <form onSubmit={businessForm.handleSubmit(handleBusinessSave)} className="space-y-4">
-                    <Alert className="mb-4">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        Fields marked with * are required for sending quotes via WhatsApp/Email.
-                      </AlertDescription>
-                    </Alert>
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <FormField
-                        control={businessForm.control}
-                        name="companyName"
-                        rules={{ required: "Company Name is required" }}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Company Name *</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Ventura Packagers Pvt. Ltd." {...field} data-testid="input-company-name" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={businessForm.control}
-                        name="ownerName"
-                        rules={{ required: "Owner Name is required" }}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Owner / Contact Name *</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Rajesh Kumar" {...field} data-testid="input-owner-name" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                    <FormField
+                      control={businessForm.control}
+                      name="gstNo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>GST Number</FormLabel>
+                          <FormControl>
+                            <Input placeholder="22AAAAA0000A1Z5" {...field} data-testid="input-gst" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
                     <FormField
                       control={businessForm.control}
@@ -452,55 +472,8 @@ export default function Settings() {
                         <FormItem>
                           <FormLabel>Address</FormLabel>
                           <FormControl>
-                            <Input placeholder="Full business address" {...field} data-testid="input-address" />
+                            <Input placeholder="123 Industrial Area, City, State - PIN" {...field} data-testid="input-address" />
                           </FormControl>
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <FormField
-                        control={businessForm.control}
-                        name="phone"
-                        rules={{ required: "Phone is required" }}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Phone *</FormLabel>
-                            <FormControl>
-                              <Input placeholder="+91 98765 43210" {...field} data-testid="input-phone" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={businessForm.control}
-                        name="email"
-                        rules={{ required: "Email is required" }}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Business Email *</FormLabel>
-                            <FormControl>
-                              <Input type="email" placeholder="sales@company.com" {...field} data-testid="input-business-email" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={businessForm.control}
-                      name="gstNo"
-                      rules={{ required: "GST Number is required" }}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>GST Number *</FormLabel>
-                          <FormControl>
-                            <Input placeholder="22AAAAA0000A1Z5" {...field} data-testid="input-gst" />
-                          </FormControl>
-                          <FormMessage />
                         </FormItem>
                       )}
                     />
@@ -518,7 +491,6 @@ export default function Settings() {
                           </FormItem>
                         )}
                       />
-
                       <FormField
                         control={businessForm.control}
                         name="mapLink"
@@ -544,19 +516,23 @@ export default function Settings() {
                       ) : (
                         <Save className="h-4 w-4" />
                       )}
-                      Save Changes
+                      Save Business Details
                     </Button>
                   </form>
                 </Form>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <TabsContent value="branding" className="mt-6">
+            {/* Branding / Logo Section */}
             <Card>
               <CardHeader>
-                <CardTitle>Company Branding</CardTitle>
-                <CardDescription>Upload your logo for quotes and messages</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <ImageIcon className="h-5 w-5" />
+                  Company Branding
+                </CardTitle>
+                <CardDescription>
+                  Upload your logo for quotes, PDFs, and messages
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="flex flex-col items-center gap-4">
@@ -580,7 +556,7 @@ export default function Settings() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/svg+xml"
+                    accept="image/png,image/jpeg,image/svg+xml,image/webp"
                     onChange={handleLogoUpload}
                     className="hidden"
                     data-testid="input-logo-file"
@@ -610,7 +586,7 @@ export default function Settings() {
                   </div>
 
                   <p className="text-sm text-muted-foreground text-center">
-                    PNG, JPG, SVG, or WebP. Max 500KB. Recommended: 200x200px
+                    PNG, JPG, SVG, or WebP. Max 100KB. Recommended: 200x200px
                   </p>
                 </div>
 
@@ -630,7 +606,7 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="email" className="mt-6">
             <Tabs defaultValue="config" className="w-full">
               <TabsList className="w-full justify-start mb-4">
