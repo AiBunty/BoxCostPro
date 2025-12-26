@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +85,44 @@ export default function AuthPage() {
     resolver: zodResolver(passwordSignupSchema),
     defaultValues: { fullName: "", email: "", password: "", confirmPassword: "" },
   });
+
+  // Handle OAuth callback from Google
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('success');
+    const error = params.get('error');
+    const token = params.get('token');
+
+    if (success === 'google_login') {
+      toast({
+        title: "Welcome Back!",
+        description: "Successfully signed in with Google",
+      });
+      // Clear URL parameters
+      window.history.replaceState({}, '', '/auth');
+      // Redirect to dashboard
+      setTimeout(() => navigate('/'), 500);
+    } else if (error) {
+      const errorMessages: Record<string, string> = {
+        'google_denied': 'You denied Google access',
+        'missing_oauth_params': 'OAuth parameters missing',
+        'invalid_state': 'Invalid security state',
+        'email_not_verified': 'Email not verified with Google',
+        'user_creation_failed': 'Failed to create user account',
+        'session_failed': 'Failed to create session',
+        'google_callback_failed': 'Google OAuth callback failed',
+        'google_oauth_failed': 'Google OAuth initialization failed',
+      };
+
+      toast({
+        title: "Google Sign In Failed",
+        description: errorMessages[error] || "Please try again",
+        variant: "destructive",
+      });
+      // Clear URL parameters
+      window.history.replaceState({}, '', '/auth');
+    }
+  }, [toast, navigate]);
 
   const handlePasswordLogin = async (data: z.infer<typeof passwordLoginSchema>) => {
     if (!isSupabaseConfigured) {
@@ -215,13 +253,10 @@ export default function AuthPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    if (!isSupabaseConfigured) {
-      toast({ title: "Authentication Not Available", variant: "destructive" });
-      return;
-    }
     try {
-      const { error } = await signInWithGoogle();
-      if (error) throw error;
+      // Use direct Google OAuth (no Supabase branding)
+      // This redirects to Google's consent screen with PaperBox ERP branding
+      window.location.href = '/api/auth/google/login';
     } catch (error: any) {
       toast({
         title: "Google Sign In Failed",
