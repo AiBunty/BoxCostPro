@@ -5,10 +5,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index-dev.ts",
-    "test": "vitest",
+    "test": "vitest --environment jsdom",
     "build": "vite build && esbuild server/index-prod.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
     "start": "NODE_ENV=production node dist/index.js",
-    "test": "vitest --environment jsdom",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
@@ -60,6 +59,7 @@
     "express": "^4.21.2",
     "express-session": "^1.18.1",
     "framer-motion": "^11.13.1",
+    "googleapis": "^169.0.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.453.0",
     "memoizee": "^0.4.17",
@@ -114,8 +114,8 @@
     "vitest": "^0.34.2"
   },
   "optionalDependencies": {
-    "vitest": "^0.34.2",
+    "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^14.0.0",
-    "@testing-library/jest-dom": "^6.0.0"
+    "vitest": "^0.34.2"
   }
 }
