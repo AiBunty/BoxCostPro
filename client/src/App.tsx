@@ -104,8 +104,9 @@ function AuthenticatedRouter() {
   const isOnCompleteProfile = location === "/complete-profile";
   const isOnAdmin = location === "/admin";
   const isOnAccount = location === "/account";
-  // Business Profile completion check (must complete Business Profile first)
-  const isBusinessProfileComplete = !!(defaultCompany && defaultCompany.companyName && (defaultCompany.phone || defaultCompany.email));
+  // Business Profile completion check - only require companyName
+  // Email/phone are now auto-filled from user profile, so guard is more lenient
+  const isBusinessProfileComplete = !!(defaultCompany && defaultCompany.companyName);
 
   if (!isProfileComplete && !isOnCompleteProfile && !isOnAdmin && !isOnAccount) {
     return (

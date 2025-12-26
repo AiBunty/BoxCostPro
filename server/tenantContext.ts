@@ -112,15 +112,22 @@ export async function createTenantForUser(
       VALUES (${tenantId}, ${userId}, 'owner', true, NOW(), NOW())
     `);
     
-    // Create a minimal default company profile for the tenant so UI has a
-    // canonical business identity immediately after signup/login.
+    // Create a complete default company profile for the tenant
+    // This prevents the "stuck at settings" bug by ensuring phone/email are set
     try {
+      const user = await storage.getUser(userId);
+
       await storage.createCompanyProfile({
         tenantId,
         userId,
-        companyName: businessName || 'My Business',
+        companyName: businessName || user?.fullName || 'My Business',
+        ownerName: user?.fullName || null,
+        email: user?.email || null,  // Use user's email to satisfy guard check
+        phone: user?.mobileNo || null,  // Use mobile if available
         isDefault: true,
       } as any);
+
+      console.log('[TenantContext] Created default company profile with email:', user?.email);
     } catch (profileErr) {
       // Non-fatal: if profile creation races or fails, continue and return tenant context
       console.warn('Failed to create default company profile for tenant', profileErr);
