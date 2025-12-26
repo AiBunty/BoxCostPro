@@ -93,6 +93,176 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // ==================== DIRECT GOOGLE OAUTH (NO SUPABASE BRANDING) ====================
+
+  // Check if direct Google OAuth is configured
+  app.get('/api/auth/google/status', (req, res) => {
+    const { directGoogleOAuth } = require('./auth/directGoogleOAuth');
+    res.json({
+      available: directGoogleOAuth.isConfigured(),
+      provider: 'PaperBox ERP'
+    });
+  });
+
+  // Initiate Google OAuth flow (redirects to Google)
+  app.get('/api/auth/google/login', (req: any, res) => {
+    try {
+      const { directGoogleOAuth } = require('./auth/directGoogleOAuth');
+
+      if (!directGoogleOAuth.isConfigured()) {
+        return res.status(400).json({
+          error: 'Google OAuth is not configured. Please contact support.'
+        });
+      }
+
+      // Generate secure state for CSRF protection
+      const state = directGoogleOAuth.generateState();
+
+      // Store state in session for validation in callback
+      req.session.googleOAuthState = state;
+
+      // Get authorization URL
+      const authUrl = directGoogleOAuth.getAuthorizationUrl(state);
+
+      // Redirect user to Google for authentication
+      res.redirect(authUrl);
+    } catch (error: any) {
+      console.error('[Google OAuth] Login initiation failed:', error);
+      res.redirect('/auth?error=google_oauth_failed');
+    }
+  });
+
+  // Google OAuth callback (user returns here after granting permissions)
+  app.get('/auth/google/callback', async (req: any, res) => {
+    try {
+      const { code, state, error: oauthError } = req.query;
+
+      // Check for OAuth errors from Google
+      if (oauthError) {
+        console.error('[Google OAuth] Error from Google:', oauthError);
+        return res.redirect('/auth?error=google_denied');
+      }
+
+      if (!code || !state) {
+        return res.redirect('/auth?error=missing_oauth_params');
+      }
+
+      const { directGoogleOAuth } = require('./auth/directGoogleOAuth');
+
+      // Validate state to prevent CSRF attacks
+      const storedState = req.session.googleOAuthState;
+      if (!storedState || !directGoogleOAuth.validateState(state as string, storedState)) {
+        console.error('[Google OAuth] State validation failed');
+        return res.redirect('/auth?error=invalid_state');
+      }
+
+      // Clear state from session
+      delete req.session.googleOAuthState;
+
+      // Exchange authorization code for access tokens
+      const tokens = await directGoogleOAuth.getTokensFromCode(code as string);
+
+      // Get user information from Google
+      const googleUser = await directGoogleOAuth.getUserInfo(tokens.access_token);
+
+      if (!googleUser.verified_email) {
+        return res.redirect('/auth?error=email_not_verified');
+      }
+
+      // Check if user exists in our database
+      let user = await storage.getUserByEmail(googleUser.email);
+
+      if (!user) {
+        // Create new user
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(
+          process.env.SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+
+        // Create user in Supabase Auth (for JWT generation)
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: googleUser.email,
+          email_confirm: true,
+          user_metadata: {
+            full_name: googleUser.name,
+            avatar_url: googleUser.picture,
+            provider: 'google_direct',
+          },
+        });
+
+        if (authError || !authData.user) {
+          console.error('[Google OAuth] Failed to create auth user:', authError);
+          return res.redirect('/auth?error=user_creation_failed');
+        }
+
+        // Create user in our database
+        user = await storage.createUser({
+          id: authData.user.id,
+          email: googleUser.email,
+          fullName: googleUser.name,
+          firstName: googleUser.given_name,
+          lastName: googleUser.family_name,
+          emailVerified: true,
+          role: 'user',
+          accountStatus: 'email_verified',
+          authProvider: 'google_direct',
+          avatarUrl: googleUser.picture,
+        });
+
+        // Log signup event
+        const { logAuthEvent } = await import('./services/authService');
+        await logAuthEvent({
+          userId: user.id,
+          email: user.email,
+          action: 'SIGNUP',
+          status: 'success',
+          provider: 'google_direct',
+          metadata: { name: googleUser.name },
+        });
+
+        console.log('[Google OAuth] New user created:', user.email);
+      } else {
+        // Existing user - log login event
+        const { logAuthEvent } = await import('./services/authService');
+        await logAuthEvent({
+          userId: user.id,
+          email: user.email,
+          action: 'LOGIN',
+          status: 'success',
+          provider: 'google_direct',
+        });
+
+        console.log('[Google OAuth] User logged in:', user.email);
+      }
+
+      // Generate session token (using Supabase for JWT, but no branding visible)
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: user.email,
+      });
+
+      if (sessionError || !sessionData) {
+        console.error('[Google OAuth] Session generation failed:', sessionError);
+        return res.redirect('/auth?error=session_failed');
+      }
+
+      // Set session cookie
+      // Note: In production, implement proper session management with httpOnly cookies
+      res.redirect(`/auth?success=google_login&token=${sessionData.properties.hashed_token}`);
+
+    } catch (error: any) {
+      console.error('[Google OAuth] Callback error:', error);
+      res.redirect('/auth?error=google_callback_failed');
+    }
+  });
+
   // User Profile routes
   app.get('/api/user-profile', combinedAuth, async (req: any, res) => {
     try {
