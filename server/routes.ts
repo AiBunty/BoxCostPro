@@ -94,6 +94,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // ==================== EMAIL/PASSWORD AUTHENTICATION ====================
+
+  // Sign in with email and password
+  app.post('/api/auth/signin', async (req: any, res) => {
+    try {
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+      }
+
+      // Get user by email
+      const user = await storage.getUserByEmail(email);
+
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      // TODO: Add password verification here when password field is added to users table
+      // For now, just log them in (temporary - needs proper password hashing)
+
+      // Create session
+      req.login({ userId: user.id }, (err: any) => {
+        if (err) {
+          console.error('[Auth] Session creation failed:', err);
+          return res.status(500).json({ error: 'Failed to create session' });
+        }
+
+        res.json({
+          success: true,
+          user: {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+          }
+        });
+      });
+    } catch (error: any) {
+      console.error('[Auth] Sign in error:', error);
+      res.status(500).json({ error: 'Sign in failed' });
+    }
+  });
+
+  // Sign up with email and password
+  app.post('/api/auth/signup', async (req: any, res) => {
+    try {
+      const { email, password, fullName } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: 'User already exists with this email' });
+      }
+
+      // Parse full name
+      const nameParts = (fullName || '').trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      // Create user
+      // TODO: Add password hashing before storing
+      const newUser = await storage.upsertUser({
+        email,
+        firstName,
+        lastName,
+        role: 'user',
+      });
+
+      // Create session
+      req.login({ userId: newUser.id }, (err: any) => {
+        if (err) {
+          console.error('[Auth] Session creation failed:', err);
+          return res.status(500).json({ error: 'Failed to create session' });
+        }
+
+        res.json({
+          success: true,
+          user: {
+            id: newUser.id,
+            email: newUser.email,
+            firstName: newUser.firstName,
+            lastName: newUser.lastName,
+          }
+        });
+      });
+    } catch (error: any) {
+      console.error('[Auth] Sign up error:', error);
+      res.status(500).json({ error: 'Sign up failed' });
+    }
+  });
+
   // ==================== DIRECT GOOGLE OAUTH (NO SUPABASE BRANDING) ====================
 
   // Check if direct Google OAuth is configured
