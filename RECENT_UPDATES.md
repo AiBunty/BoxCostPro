@@ -146,7 +146,7 @@ If you encounter any issues:
 
 | Feature | Before | Now |
 |---------|--------|-----|
-| **Sender** | Generic system email | Your own email |
+| **Sender** | noreply@paperboxerp.com | Your own email |
 | **Deliverability** | Medium | High |
 | **Customer Trust** | Lower | Higher |
 | **Replies** | Lost or manual | Direct to you |

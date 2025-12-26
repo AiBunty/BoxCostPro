@@ -282,7 +282,7 @@ All endpoints are already implemented in `server/routes.ts`:
 
 | Feature | Global Email | User Email |
 |---------|--------------|------------|
-| **Sender Address** | noreply@boxcostpro.com | user@company.com |
+| **Sender Address** | noreply@paperboxerp.com | user@company.com |
 | **Deliverability** | ⚠️ Medium | ✅ High |
 | **Spam Score** | ⚠️ Higher | ✅ Lower |
 | **Customer Trust** | ⚠️ Lower | ✅ Higher |
