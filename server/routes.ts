@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { supabaseAuthMiddleware, requireSupabaseAuth, requireOwner as requireSupabaseOwner, requireAdmin, requireSupportAgent, requireSupportManager, requireSuperAdmin, hasRoleLevel } from "./supabaseAuth";
+import { directGoogleOAuth } from "./auth/directGoogleOAuth";
 import { z } from "zod";
 import { 
   insertCompanyProfileSchema, 
@@ -97,7 +98,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Check if direct Google OAuth is configured
   app.get('/api/auth/google/status', (req, res) => {
-    const { directGoogleOAuth } = require('./auth/directGoogleOAuth');
     res.json({
       available: directGoogleOAuth.isConfigured(),
       provider: 'PaperBox ERP'
@@ -107,8 +107,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initiate Google OAuth flow (redirects to Google)
   app.get('/api/auth/google/login', (req: any, res) => {
     try {
-      const { directGoogleOAuth } = require('./auth/directGoogleOAuth');
-
       if (!directGoogleOAuth.isConfigured()) {
         return res.status(400).json({
           error: 'Google OAuth is not configured. Please contact support.'
@@ -146,8 +144,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!code || !state) {
         return res.redirect('/auth?error=missing_oauth_params');
       }
-
-      const { directGoogleOAuth } = require('./auth/directGoogleOAuth');
 
       // Validate state to prevent CSRF attacks
       const storedState = req.session.googleOAuthState;
