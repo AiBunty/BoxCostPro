@@ -231,7 +231,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/company-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertCompanyProfileSchema.partial().parse(req.body);
-      const profile = await storage.updateCompanyProfile(req.params.id, data);
+      const tenantId = req.tenantId;
+      const profile = await storage.updateCompanyProfile(req.params.id, data, tenantId);
       if (!profile) {
         return res.status(404).json({ error: "Profile not found" });
       }
@@ -292,7 +293,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/party-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertPartyProfileSchema.partial().parse(req.body);
-      const profile = await storage.updatePartyProfile(req.params.id, data);
+      const tenantId = req.tenantId;
+      const profile = await storage.updatePartyProfile(req.params.id, data, tenantId);
       if (!profile) {
         return res.status(404).json({ error: "Profile not found" });
       }
@@ -587,7 +589,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedQuote = await storage.updateQuote(quote.id, { 
         activeVersionId: version.id,
         totalValue: finalTotal  // This was missing - totalValue was always 0
-      });
+      }, tenantId);
       
       // ==================== TRACE LOG 8: QUOTE UPDATED ====================
       console.log("QUOTE UPDATED WITH TOTAL", { 
@@ -640,7 +642,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/quotes/:id", combinedAuth, async (req: any, res) => {
     try {
       const data = insertQuoteSchema.partial().parse(req.body);
-      const quote = await storage.updateQuote(req.params.id, data);
+      const tenantId = req.tenantId;
+      const quote = await storage.updateQuote(req.params.id, data, tenantId);
       if (!quote) {
         return res.status(404).json({ error: "Quote not found" });
       }
@@ -652,7 +655,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/quotes/:id", combinedAuth, async (req: any, res) => {
     try {
-      const success = await storage.deleteQuote(req.params.id);
+      const tenantId = req.tenantId;
+      const success = await storage.deleteQuote(req.params.id, tenantId);
       if (!success) {
         return res.status(404).json({ error: "Quote not found" });
       }
@@ -796,10 +800,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Update quote with new active version ID AND totalValue (CRITICAL FIX)
+      const tenantId = req.tenantId;
       await storage.updateQuote(quoteId, { 
         activeVersionId: version.id,
         totalValue: finalTotal
-      });
+      }, tenantId);
       
       // Log version creation for audit trail
       console.log("[Audit] Quote version created:", {
@@ -1188,10 +1193,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Update quote with new active version ID AND totalValue (CRITICAL FIX)
+      const tenantId2 = req.tenantId;
       await storage.updateQuote(quoteId, { 
         activeVersionId: newVersion.id,
         totalValue: newVersion.finalTotal
-      });
+      }, tenantId2);
       
       console.log("[Bulk Negotiate] Negotiation saved successfully:");
       console.log("[Bulk Negotiate] - Quote ID:", quoteId);

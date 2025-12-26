@@ -342,10 +342,11 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   // Transport Charge
   const [transportCharge, setTransportCharge] = useState<string>("");
   const [transportRemark, setTransportRemark] = useState<string>("");
-  
-  // Tax Rate (GST percentage - applied to total when quote is made)
-  const [taxRate, setTaxRate] = useState<string>("18"); // Default 18% GST
-  
+
+  // Tax Rate (GST percentage) - MUST be fetched from business_defaults (Master Settings)
+  // Calculator is READ-ONLY consumer. GST is editable only in Masters → Tax & GST tab
+  // This ensures single source of truth for GST rate across the application
+
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showQuotesDialog, setShowQuotesDialog] = useState(false);
   const [showMessageDialog, setShowMessageDialog] = useState<"whatsapp" | "email" | null>(null);
@@ -421,7 +422,19 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
   const { data: allCompanyProfilesData = [], isLoading: isLoadingProfile } = useQuery<CompanyProfile[]>({
     queryKey: ["/api/company-profiles"],
   });
-  
+
+  // Fetch business defaults (GST rate, tax settings) - SINGLE SOURCE OF TRUTH
+  // Calculator reads GST from here. Editable only in Masters → Tax & GST tab
+  const { data: businessDefaults, isLoading: isLoadingBusinessDefaults } = useQuery<{
+    defaultGstPercent: number;
+    gstRegistered: boolean;
+    gstNumber: string | null;
+    igstApplicable: boolean;
+    roundOffEnabled: boolean;
+  }>({
+    queryKey: ["/api/business-defaults"],
+  });
+
   // Fetch all party profiles
   const { data: allPartyProfilesData = [] } = useQuery<any[]>({
     queryKey: ["/api/party-profiles"],
@@ -1619,7 +1632,9 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
     }, 0);
   
   // Tax calculation (applied to total when quote is made)
-  const taxRateValue = parseFloat(taxRate) || 0;
+  // GST rate MUST come from business_defaults (Master Settings) - Single Source of Truth
+  // Default to 5% (standard GST for corrugated boxes in India) if not yet configured
+  const taxRateValue = businessDefaults?.defaultGstPercent ?? 5;
   const taxAmount = subtotal * (taxRateValue / 100);
   const grandTotal = subtotal + taxAmount;
   
@@ -3646,11 +3661,23 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                           <Input
                             type="number"
                             step="0.1"
-                            value={taxRate}
-                            onChange={(e) => setTaxRate(e.target.value)}
-                            className="w-20 h-8 text-center"
+                            value={taxRateValue}
+                            readOnly
+                            disabled
+                            className="w-20 h-8 text-center bg-muted cursor-not-allowed"
                             data-testid="input-tax-rate"
+                            title="GST rate is configured in Masters → Tax & GST. This is read-only to ensure consistency across all quotes."
                           />
+                          <Link href="/masters">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs text-muted-foreground hover:text-primary"
+                              title="Edit GST rate in Master Settings"
+                            >
+                              (Edit in Masters)
+                            </Button>
+                          </Link>
                         </div>
                         <span className="text-muted-foreground" data-testid="text-tax-amount">
                           + ₹{taxAmount.toFixed(2)}

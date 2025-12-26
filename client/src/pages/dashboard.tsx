@@ -11,7 +11,15 @@ import {
   ArrowRight,
   Package,
   IndianRupee,
+  Boxes,
+  Sparkles,
+  ShoppingCart,
+  ClipboardList,
+  FileCheck,
+  Bell,
+  Zap,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface Quote {
   id: string;
@@ -216,6 +224,129 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Coming Soon Modules Section */}
+      <div className="space-y-4">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <Zap className="h-6 w-6 text-primary" />
+            <h2 className="text-2xl font-bold tracking-tight">Coming Soon</h2>
+          </div>
+          <p className="text-muted-foreground">
+            Not just a costing tool — your <span className="font-semibold text-primary">digital Sales Representative</span>
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {/* Paper Stock Management */}
+          <Card className="shadow-sm relative overflow-hidden opacity-75 cursor-not-allowed">
+            <Badge className="absolute top-4 right-4 bg-amber-500 hover:bg-amber-500">
+              Coming Soon
+            </Badge>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Boxes className="h-5 w-5 text-primary" />
+                </div>
+                <CardTitle className="text-lg">Paper Stock Management</CardTitle>
+              </div>
+              <CardDescription className="mt-2">
+                Track paper inventory, manage BF rolls, monitor stock levels, and get low-stock alerts automatically.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* AI Suggestions */}
+          <Card className="shadow-sm relative overflow-hidden opacity-75 cursor-not-allowed">
+            <Badge className="absolute top-4 right-4 bg-amber-500 hover:bg-amber-500">
+              Coming Soon
+            </Badge>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/20">
+                  <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <CardTitle className="text-lg">AI Price Suggestions</CardTitle>
+              </div>
+              <CardDescription className="mt-2">
+                Get intelligent pricing recommendations based on market trends, material costs, and historical data.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* Purchase Order Planner */}
+          <Card className="shadow-sm relative overflow-hidden opacity-75 cursor-not-allowed">
+            <Badge className="absolute top-4 right-4 bg-amber-500 hover:bg-amber-500">
+              Coming Soon
+            </Badge>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/20">
+                  <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <CardTitle className="text-lg">Purchase Order Planner</CardTitle>
+              </div>
+              <CardDescription className="mt-2">
+                Convert quotes to purchase orders, track order status, and manage supplier relationships seamlessly.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* Job Card Generator */}
+          <Card className="shadow-sm relative overflow-hidden opacity-75 cursor-not-allowed">
+            <Badge className="absolute top-4 right-4 bg-amber-500 hover:bg-amber-500">
+              Coming Soon
+            </Badge>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/20">
+                  <ClipboardList className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <CardTitle className="text-lg">Job Card Generator</CardTitle>
+              </div>
+              <CardDescription className="mt-2">
+                Auto-generate production job cards with complete specifications, timelines, and quality checkpoints.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* PDI / COA Generator */}
+          <Card className="shadow-sm relative overflow-hidden opacity-75 cursor-not-allowed">
+            <Badge className="absolute top-4 right-4 bg-amber-500 hover:bg-amber-500">
+              Coming Soon
+            </Badge>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/20">
+                  <FileCheck className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                </div>
+                <CardTitle className="text-lg">PDI / COA Generator</CardTitle>
+              </div>
+              <CardDescription className="mt-2">
+                Generate Pre-Delivery Inspection reports and Certificates of Analysis with automated quality parameters.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* Auto Client Follow-ups */}
+          <Card className="shadow-sm relative overflow-hidden opacity-75 cursor-not-allowed">
+            <Badge className="absolute top-4 right-4 bg-amber-500 hover:bg-amber-500">
+              Coming Soon
+            </Badge>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-pink-100 dark:bg-pink-900/20">
+                  <Bell className="h-5 w-5 text-pink-600 dark:text-pink-400" />
+                </div>
+                <CardTitle className="text-lg">Auto Client Follow-ups</CardTitle>
+              </div>
+              <CardDescription className="mt-2">
+                Automated follow-up reminders via Email & WhatsApp for pending quotes, orders, and payments.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
       </div>
     </div>
   );

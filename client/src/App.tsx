@@ -22,6 +22,7 @@ import AdminUsers from "@/pages/admin-users";
 import Onboarding from "@/pages/onboarding";
 import SupportPanel from "@/pages/support";
 import NotFound from "@/pages/not-found";
+import Settings from "@/pages/settings";
 
 // Wrapper components for routes
 function Calculator() {
@@ -75,7 +76,23 @@ function AuthenticatedRouter() {
     queryKey: ["/api/paper-setup-status"],
   });
 
+  const { data: defaultCompany, isLoading: companyLoading } = useQuery<any>({
+    queryKey: ["/api/company-profiles/default"],
+    // return null on 404/401 handled by getQueryFn
+  });
+
+  const { data: fluteStatus, isLoading: fluteLoading } = useQuery<any>({
+    queryKey: ["/api/flute-settings/status"],
+  });
+
   if (userLoading || setupLoading) {
+    if (companyLoading || fluteLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -87,6 +104,8 @@ function AuthenticatedRouter() {
   const isOnCompleteProfile = location === "/complete-profile";
   const isOnAdmin = location === "/admin";
   const isOnAccount = location === "/account";
+  // Business Profile completion check (must complete Business Profile first)
+  const isBusinessProfileComplete = !!(defaultCompany && defaultCompany.companyName && (defaultCompany.phone || defaultCompany.email));
 
   if (!isProfileComplete && !isOnCompleteProfile && !isOnAdmin && !isOnAccount) {
     return (
@@ -96,12 +115,21 @@ function AuthenticatedRouter() {
       </Switch>
     );
   }
-
+  // If user hasn't set Business Profile, force them to /settings (account tab)
   const isPaperSetupComplete = paperSetupStatus?.completed ?? false;
+  const isMachineConfigured = fluteStatus?.configured ?? false;
   const isOnMasters = location.startsWith("/masters");
 
+  if (!isBusinessProfileComplete && location !== "/settings" && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
+    return <Redirect to="/settings" />;
+  }
+  // After Business Profile, ensure machine/flute settings are configured before masters/paper setup
+  if (!isMachineConfigured && !isOnMasters && !isOnAdmin && !isOnAccount && !isOnCompleteProfile && location !== "/settings") {
+    return <Redirect to="/masters?tab=flute" />;
+  }
+
   if (!isPaperSetupComplete && !isOnMasters && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
-    return <Redirect to="/masters" />;
+    return <Redirect to="/masters?tab=paper" />;
   }
 
   return (
@@ -110,6 +138,7 @@ function AuthenticatedRouter() {
         <Route path="/" component={Dashboard} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/create-quote" component={Calculator} />
+        <Route path="/settings" component={Settings} />
         <Route path="/bulk-upload" component={BulkUpload} />
         <Route path="/quotes" component={Quotes} />
         <Route path="/reports" component={Reports} />

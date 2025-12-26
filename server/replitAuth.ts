@@ -7,6 +7,7 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
+import { ensureTenantContext } from './tenantContext';
 
 const getOidcConfig = memoize(
   async () => {
@@ -65,6 +66,30 @@ export async function setupAuth(app: Express) {
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // Ensure session-authenticated requests also have tenant context resolved
+  app.use(async (req: any, res, next) => {
+    try {
+      if (req.user && !req.tenantId) {
+        const userId = req.user?.claims?.sub || req.user?.claims?.sub;
+        if (userId) {
+          try {
+            const tenantContext = await ensureTenantContext(userId);
+            if (tenantContext) {
+              req.tenantId = tenantContext.tenantId;
+              req.tenantContext = tenantContext;
+            }
+          } catch (err) {
+            // Non-fatal: continue without tenant context
+            console.warn('Failed to resolve tenant context for session user', err);
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    next();
+  });
 
   const config = await getOidcConfig();
 

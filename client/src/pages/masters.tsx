@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,7 +50,19 @@ const masterTabs: MasterTab[] = [
 ];
 
 export default function Masters() {
-  const [activeTab, setActiveTab] = useState("paper");
+  const [location] = useLocation();
+  // Read query param ?tab=flute|paper|business to choose active tab
+  let defaultTab = 'paper';
+  try {
+    const url = new URL(location, 'http://localhost');
+    const tab = url.searchParams.get('tab');
+    if (tab === 'flute' || tab === 'paper' || tab === 'business' || tab === 'tax') {
+      defaultTab = tab;
+    }
+  } catch (e) {
+    // ignore parse errors and fallback to default
+  }
+  const [activeTab, setActiveTab] = useState(defaultTab);
 
   return (
     <div className="flex flex-col min-h-full">

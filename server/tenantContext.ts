@@ -13,6 +13,7 @@
 
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { storage } from "./storage";
 
 export interface TenantContext {
   tenantId: string;
@@ -111,6 +112,20 @@ export async function createTenantForUser(
       VALUES (${tenantId}, ${userId}, 'owner', true, NOW(), NOW())
     `);
     
+    // Create a minimal default company profile for the tenant so UI has a
+    // canonical business identity immediately after signup/login.
+    try {
+      await storage.createCompanyProfile({
+        tenantId,
+        userId,
+        companyName: businessName || 'My Business',
+        isDefault: true,
+      } as any);
+    } catch (profileErr) {
+      // Non-fatal: if profile creation races or fails, continue and return tenant context
+      console.warn('Failed to create default company profile for tenant', profileErr);
+    }
+
     return {
       tenantId,
       userId,

@@ -133,14 +133,14 @@ export interface IStorage {
   getAllCompanyProfiles(userId?: string, tenantId?: string): Promise<CompanyProfile[]>;
   getDefaultCompanyProfile(userId?: string, tenantId?: string): Promise<CompanyProfile | undefined>;
   createCompanyProfile(profile: InsertCompanyProfile): Promise<CompanyProfile>;
-  updateCompanyProfile(id: string, profile: Partial<InsertCompanyProfile>): Promise<CompanyProfile | undefined>;
+  updateCompanyProfile(id: string, profile: Partial<InsertCompanyProfile>, tenantId?: string): Promise<CompanyProfile | undefined>;
   setDefaultCompanyProfile(id: string, userId?: string, tenantId?: string): Promise<void>;
   
   // Party Profiles (tenant-aware)
   getPartyProfile(id: string, tenantId?: string): Promise<PartyProfile | undefined>;
   getAllPartyProfiles(userId?: string, tenantId?: string): Promise<PartyProfile[]>;
   createPartyProfile(profile: InsertPartyProfile): Promise<PartyProfile>;
-  updatePartyProfile(id: string, profile: Partial<InsertPartyProfile>): Promise<PartyProfile | undefined>;
+  updatePartyProfile(id: string, profile: Partial<InsertPartyProfile>, tenantId?: string): Promise<PartyProfile | undefined>;
   deletePartyProfile(id: string, tenantId?: string): Promise<boolean>;
   searchPartyProfiles(userId: string, search: string, tenantId?: string): Promise<PartyProfile[]>;
   
@@ -518,10 +518,14 @@ export class DatabaseStorage implements IStorage {
     return profile;
   }
 
-  async updateCompanyProfile(id: string, updates: Partial<InsertCompanyProfile>): Promise<CompanyProfile | undefined> {
+  async updateCompanyProfile(id: string, updates: Partial<InsertCompanyProfile>, tenantId?: string): Promise<CompanyProfile | undefined> {
+    const conditions: any[] = [eq(companyProfiles.id, id)];
+    if (tenantId) {
+      conditions.push(eq(companyProfiles.tenantId, tenantId));
+    }
     const [updated] = await db.update(companyProfiles)
       .set(updates)
-      .where(eq(companyProfiles.id, id))
+      .where(and(...conditions))
       .returning();
     return updated;
   }
@@ -571,10 +575,14 @@ export class DatabaseStorage implements IStorage {
     return profile;
   }
 
-  async updatePartyProfile(id: string, updates: Partial<InsertPartyProfile>): Promise<PartyProfile | undefined> {
+  async updatePartyProfile(id: string, updates: Partial<InsertPartyProfile>, tenantId?: string): Promise<PartyProfile | undefined> {
+    const conditions: any[] = [eq(partyProfiles.id, id)];
+    if (tenantId) {
+      conditions.push(eq(partyProfiles.tenantId, tenantId));
+    }
     const [updated] = await db.update(partyProfiles)
       .set(updates)
-      .where(eq(partyProfiles.id, id))
+      .where(and(...conditions))
       .returning();
     return updated;
   }
