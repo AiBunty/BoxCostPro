@@ -11,15 +11,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  signInWithOTP, 
-  verifyOTP, 
-  signInWithGoogle, 
+import {
+  signInWithOTP,
+  verifyOTP,
   signInWithPassword,
   signUpWithPassword,
   signInWithMagicLink,
   resetPassword,
-  isSupabaseConfigured 
+  isSupabaseConfigured
 } from "@/lib/supabase";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 
@@ -455,11 +454,11 @@ export default function AuthPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button 
-            variant="outline" 
-            className="w-full gap-2" 
+          <Button
+            variant="outline"
+            className="w-full gap-2"
             onClick={handleGoogleSignIn}
-            disabled={isSubmitting || !isSupabaseConfigured}
+            disabled={isSubmitting}
             data-testid="button-google-signin"
           >
             <SiGoogle className="h-4 w-4" />
