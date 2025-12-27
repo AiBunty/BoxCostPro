@@ -2,11 +2,29 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig({
   plugins: [
     react(),
     runtimeErrorOverlay(),
+    // Copy static HTML pages to build output
+    viteStaticCopy({
+      targets: [
+        {
+          src: 'public/homepage.html',
+          dest: '.'
+        },
+        {
+          src: 'public/privacy-policy.html',
+          dest: '.'
+        },
+        {
+          src: 'public/terms.html',
+          dest: '.'
+        }
+      ]
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

@@ -36,6 +36,52 @@ export async function setupVite(app: Express, server: Server) {
   });
 
   app.use(vite.middlewares);
+
+  // Serve specific static HTML pages in dev mode
+  const publicPath = path.resolve(import.meta.dirname, "..", "client", "public");
+
+  app.get("/privacy-policy", async (_req, res) => {
+    const privacyPath = path.resolve(publicPath, "privacy-policy.html");
+    if (fs.existsSync(privacyPath)) {
+      const content = await fs.promises.readFile(privacyPath, "utf-8");
+      res.status(200).set({ "Content-Type": "text/html" }).end(content);
+    } else {
+      res.status(404).send("Privacy Policy not found");
+    }
+  });
+
+  app.get("/terms", async (_req, res) => {
+    const termsPath = path.resolve(publicPath, "terms.html");
+    if (fs.existsSync(termsPath)) {
+      const content = await fs.promises.readFile(termsPath, "utf-8");
+      res.status(200).set({ "Content-Type": "text/html" }).end(content);
+    } else {
+      res.status(404).send("Terms of Service not found");
+    }
+  });
+
+  // Serve homepage for root route (unauthenticated landing page)
+  app.get("/", async (req: any, res, next) => {
+    // If user is authenticated (has session or Supabase token), serve the React app
+    if (req.isAuthenticated && req.isAuthenticated() || req.supabaseUser || req.user) {
+      return next(); // Continue to React app rendering below
+    }
+
+    // Otherwise, serve the public homepage
+    const homepagePath = path.resolve(publicPath, "homepage.html");
+    if (fs.existsSync(homepagePath)) {
+      try {
+        const content = await fs.promises.readFile(homepagePath, "utf-8");
+        return res.status(200).set({ "Content-Type": "text/html" }).end(content);
+      } catch (e) {
+        console.error("Error serving homepage:", e);
+      }
+    }
+
+    // Fallback to React app
+    next();
+  });
+
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
