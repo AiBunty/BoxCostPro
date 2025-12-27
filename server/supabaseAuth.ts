@@ -1,23 +1,12 @@
 import { Request, Response, NextFunction } from "express";
-import { createClient } from '@supabase/supabase-js';
 import { storage } from "./storage";
 import { logAuthEventAsync, notifyAdminAsync, sendWelcomeEmail, extractClientInfo } from './services/authService';
 import { ensureTenantContext, TenantContext } from './tenantContext';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+// Supabase removed: this module now provides session-aware middleware
+// to populate `req.supabaseUser` where possible for compatibility.
 
-const supabaseAdmin = supabaseUrl && (supabaseServiceKey || supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey!, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    })
-  : null;
-
-export const isSupabaseConfigured = !!supabaseAdmin;
+export const isSupabaseConfigured = false;
 
 export interface SupabaseUser {
   id: string;
@@ -40,152 +29,53 @@ declare global {
 
 export async function supabaseAuthMiddleware(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ) {
   try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
-      : null;
+    // If request already has a session-authenticated user (passport/req.login),
+    // map that to req.supabaseUser for compatibility with routes that expect it.
 
-    if (!token) {
-      return next();
+    // Case 1: OIDC passport user with claims.sub
+    const sessionUser: any = (req as any).user;
+    let appUserId: string | undefined;
+
+    if (sessionUser && sessionUser.claims && sessionUser.claims.sub) {
+      appUserId = sessionUser.claims.sub;
+    } else if (sessionUser && sessionUser.userId) {
+      appUserId = sessionUser.userId;
     }
 
-    if (!supabaseAdmin) {
-      console.warn('Supabase not configured, skipping token verification');
-      return next();
-    }
+    if (appUserId) {
+      const appUser = await storage.getUser(appUserId);
+      if (appUser) {
+        (req as any).supabaseUser = {
+          id: appUser.id,
+          supabaseUserId: appUser.supabaseUserId || appUser.id,
+          email: appUser.email || null,
+          firstName: appUser.firstName || null,
+          lastName: appUser.lastName || null,
+          role: appUser.role || null,
+        } as SupabaseUser;
 
-    const { data: { user: supabaseUser }, error } = await supabaseAdmin.auth.getUser(token);
+        (req as any).userId = appUser.id;
 
-    if (error || !supabaseUser) {
-      return next();
-    }
-
-    let appUser = await storage.getUserBySupabaseId(supabaseUser.id);
-    const { ipAddress, userAgent } = extractClientInfo(req);
-    const isNewUser = !appUser;
-
-    if (!appUser) {
-      const signupMethod = supabaseUser.app_metadata?.provider || 'email';
-      appUser = await storage.upsertUser({
-        supabaseUserId: supabaseUser.id,
-        email: supabaseUser.email || undefined,
-        firstName: supabaseUser.user_metadata?.first_name || supabaseUser.user_metadata?.full_name?.split(' ')[0] || null,
-        lastName: supabaseUser.user_metadata?.last_name || supabaseUser.user_metadata?.full_name?.split(' ').slice(1).join(' ') || null,
-        profileImageUrl: supabaseUser.user_metadata?.avatar_url || null,
-        authProvider: signupMethod,
-        signupMethod: signupMethod,
-        emailVerified: supabaseUser.email_confirmed_at ? true : false,
-        accountStatus: 'new_user',
-      });
-
-      const userName = appUser.firstName && appUser.lastName 
-        ? `${appUser.firstName} ${appUser.lastName}`.trim() 
-        : appUser.firstName || 'Unknown';
-
-      logAuthEventAsync({
-        userId: appUser.id,
-        email: appUser.email || undefined,
-        action: 'SIGNUP',
-        status: 'success',
-        ipAddress,
-        userAgent,
-        metadata: { signupMethod, provider: supabaseUser.app_metadata?.provider },
-      });
-
-      notifyAdminAsync({
-        subject: 'New User Signup',
-        eventType: 'SIGNUP',
-        userEmail: appUser.email || undefined,
-        userName,
-        signupMethod,
-        ipAddress,
-        additionalInfo: {
-          'Provider': supabaseUser.app_metadata?.provider || 'email',
-          'Email Verified': supabaseUser.email_confirmed_at ? 'Yes' : 'No',
-        },
-      });
-
-      if (appUser.email) {
-        sendWelcomeEmail({
-          email: appUser.email,
-          userName,
-          signupMethod,
-        });
+        try {
+          const tenantContext = await ensureTenantContext(appUser.id);
+          req.tenantId = tenantContext.tenantId;
+          req.tenantContext = tenantContext;
+        } catch (tenantError) {
+          // non-fatal
+          console.warn('Failed to resolve tenant context for session user', tenantError);
+        }
       }
-    } else {
-      // Check if account is suspended or deleted
-      if (appUser.accountStatus === 'suspended' || appUser.accountStatus === 'deleted') {
-        logAuthEventAsync({
-          userId: appUser.id,
-          email: appUser.email || undefined,
-          action: 'LOGIN',
-          status: 'failed',
-          ipAddress,
-          userAgent,
-          metadata: { reason: 'account_' + appUser.accountStatus, provider: supabaseUser.app_metadata?.provider },
-        });
-        return next();
-      }
-      
-      // Check if account is locked due to failed login attempts
-      const isLocked = await storage.isAccountLocked(appUser.id);
-      if (isLocked) {
-        logAuthEventAsync({
-          userId: appUser.id,
-          email: appUser.email || undefined,
-          action: 'LOGIN',
-          status: 'failed',
-          ipAddress,
-          userAgent,
-          metadata: { reason: 'account_locked', provider: supabaseUser.app_metadata?.provider },
-        });
-        // Don't set user - they're locked out
-        return next();
-      }
-      
-      logAuthEventAsync({
-        userId: appUser.id,
-        email: appUser.email || undefined,
-        action: 'LOGIN',
-        status: 'success',
-        ipAddress,
-        userAgent,
-        metadata: { provider: supabaseUser.app_metadata?.provider },
-      });
-
-      await storage.resetFailedLoginAttempts(appUser.id);
     }
 
-    req.supabaseUser = {
-      id: appUser.id,
-      supabaseUserId: supabaseUser.id,
-      email: appUser.email,
-      firstName: appUser.firstName,
-      lastName: appUser.lastName,
-      role: appUser.role,
-    };
-    
-    // Also set req.userId for combinedAuth middleware compatibility
-    (req as any).userId = appUser.id;
-    
-    // Resolve tenant context for multi-tenant data isolation
-    try {
-      const tenantContext = await ensureTenantContext(appUser.id);
-      req.tenantId = tenantContext.tenantId;
-      req.tenantContext = tenantContext;
-    } catch (tenantError) {
-      console.error('Failed to establish tenant context:', tenantError);
-      // Continue without tenant context - some routes may not need it
-    }
-
-    next();
+    // Otherwise, do nothing (bearer token/Supabase token verification disabled)
+    return next();
   } catch (error) {
-    console.error('Supabase auth middleware error:', error);
-    next();
+    console.error('Supabase auth middleware error (stubbed):', error);
+    return next();
   }
 }
 
@@ -194,7 +84,8 @@ export function requireSupabaseAuth(
   res: Response,
   next: NextFunction
 ) {
-  if (!req.supabaseUser) {
+  // Accept either supabaseUser or session-authenticated user
+  if (!(req as any).supabaseUser && !(req as any).userId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
   next();
@@ -205,10 +96,11 @@ export function requireOwner(
   res: Response,
   next: NextFunction
 ) {
-  if (!req.supabaseUser) {
+  const role = (req as any).supabaseUser?.role || (req as any).user?.role || null;
+  if (!role) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  if (req.supabaseUser.role !== 'owner' && req.supabaseUser.role !== 'super_admin') {
+  if (role !== 'owner' && role !== 'super_admin') {
     return res.status(403).json({ message: "Forbidden: Owner access required" });
   }
   next();
@@ -221,7 +113,7 @@ export const ROLE_LEVELS: Record<string, number> = {
   'support_manager': 2,
   'admin': 3,
   'super_admin': 4,
-  'owner': 4, // Legacy 'owner' maps to super_admin level
+  'owner': 4,
 };
 
 export type UserRole = 'user' | 'support_agent' | 'support_manager' | 'admin' | 'super_admin' | 'owner';
@@ -234,18 +126,19 @@ export function hasRoleLevel(userRole: string | null, requiredRole: UserRole): b
 
 export function requireRole(minRole: UserRole) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.supabaseUser) {
+    const role = (req as any).supabaseUser?.role || (req as any).user?.role || null;
+    if (!role) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    
-    if (!hasRoleLevel(req.supabaseUser.role, minRole)) {
+
+    if (!hasRoleLevel(role, minRole)) {
       return res.status(403).json({ 
         message: `Forbidden: ${minRole} role or higher required`,
         requiredRole: minRole,
-        currentRole: req.supabaseUser.role || 'user'
+        currentRole: role || 'user'
       });
     }
-    
+
     next();
   };
 }

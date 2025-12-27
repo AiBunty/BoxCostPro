@@ -1,44 +1,13 @@
-import { createClient } from '@supabase/supabase-js';
+// Supabase integration removed for direct Google OAuth mode.
+// This file exports safe stubs to preserve the previous API surface
+// so code importing these helpers does not break when Supabase is not used.
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+export const supabaseAdmin = null as any;
 
-if (!supabaseUrl) {
-  console.warn('SUPABASE_URL not configured. Supabase features will be limited.');
+export async function verifySupabaseToken(_token: string) {
+  return { user: null, error: new Error('Supabase disabled') };
 }
 
-export const supabaseAdmin = createClient(
-  supabaseUrl || '',
-  supabaseServiceKey || supabaseAnonKey || '',
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-);
-
-export async function verifySupabaseToken(token: string) {
-  try {
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-    if (error) {
-      return { user: null, error };
-    }
-    return { user, error: null };
-  } catch (err) {
-    return { user: null, error: err };
-  }
-}
-
-export async function getSupabaseUserById(userId: string) {
-  try {
-    const { data: { user }, error } = await supabaseAdmin.auth.admin.getUserById(userId);
-    if (error) {
-      return { user: null, error };
-    }
-    return { user, error: null };
-  } catch (err) {
-    return { user: null, error: err };
-  }
+export async function getSupabaseUserById(_userId: string) {
+  return { user: null, error: new Error('Supabase disabled') };
 }
