@@ -60,7 +60,12 @@ const isOwner = async (req: any, res: Response, next: NextFunction) => {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup session-based authentication (for backward compatibility)
-  await setupAuth(app);
+  // Only initialize Replit OIDC if configured (REPL_ID / ISSUER_URL)
+  if (process.env.REPL_ID && process.env.ISSUER_URL) {
+    await setupAuth(app);
+  } else {
+    console.warn('Replit OIDC not configured (REPL_ID/ISSUER_URL missing). Skipping setupAuth.');
+  }
   
   // Add Supabase JWT auth middleware globally
   app.use(supabaseAuthMiddleware);
