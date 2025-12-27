@@ -21,12 +21,17 @@ const signUpSchema = emailPasswordSchema.extend({
   fullName: z.string().min(2, "Full name is required"),
 });
 
+const forgotPasswordSchema = z.object({
+  email: z.string().email("Valid email is required"),
+});
+
 export default function AuthPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot-password'>('signin');
+  const [resetEmailSent, setResetEmailSent] = useState(false);
 
   const signInForm = useForm<z.infer<typeof emailPasswordSchema>>({
     resolver: zodResolver(emailPasswordSchema),
@@ -36,6 +41,11 @@ export default function AuthPage() {
   const signUpForm = useForm<z.infer<typeof signUpSchema>>({
     resolver: zodResolver(signUpSchema),
     defaultValues: { email: "", password: "", fullName: "" },
+  });
+
+  const forgotPasswordForm = useForm<z.infer<typeof forgotPasswordSchema>>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: { email: "" },
   });
 
   // Handle OAuth callback errors/success
@@ -147,6 +157,37 @@ export default function AuthPage() {
     }
   };
 
+  const handleForgotPassword = async (data: z.infer<typeof forgotPasswordSchema>) => {
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to send reset email');
+      }
+
+      setResetEmailSent(true);
+      toast({
+        title: "Reset Email Sent",
+        description: "Check your email for password reset instructions",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Reset Failed",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
       <Card className="w-full max-w-md shadow-2xl">
@@ -160,37 +201,123 @@ export default function AuthPage() {
           <CardDescription className="text-base">
             {authMode === 'signin'
               ? 'Sign in to access your box costing dashboard'
-              : 'Create your account to get started'}
+              : authMode === 'signup'
+              ? 'Create your account to get started'
+              : 'Enter your email to reset your password'}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Google OAuth Button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="w-full gap-3 h-12 text-base font-medium border-2 hover:bg-slate-50 dark:hover:bg-slate-800"
-            onClick={handleGoogleSignIn}
-            disabled={isSubmitting}
-          >
-            <SiGoogle className="h-5 w-5 text-red-500" />
-            Continue with Google
-          </Button>
+          {/* Forgot Password View */}
+          {authMode === 'forgot-password' ? (
+            <div className="space-y-6">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                onClick={() => {
+                  setAuthMode('signin');
+                  setResetEmailSent(false);
+                }}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to sign in
+              </Button>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground font-medium">
-                Or continue with email
-              </span>
-            </div>
-          </div>
+              {resetEmailSent ? (
+                <div className="text-center space-y-4 py-8">
+                  <div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center">
+                    <Mail className="w-8 h-8 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold">Check your email</h3>
+                    <p className="text-sm text-muted-foreground">
+                      We've sent password reset instructions to your email address.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setResetEmailSent(false);
+                      setAuthMode('signin');
+                    }}
+                  >
+                    Return to sign in
+                  </Button>
+                </div>
+              ) : (
+                <Form {...forgotPasswordForm}>
+                  <form onSubmit={forgotPasswordForm.handleSubmit(handleForgotPassword)} className="space-y-4">
+                    <FormField
+                      control={forgotPasswordForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email Address</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                {...field}
+                                type="email"
+                                placeholder="you@company.com"
+                                className="pl-10 h-11"
+                                disabled={isSubmitting}
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-          {/* Email/Password Forms */}
-          <Tabs value={authMode} onValueChange={(v) => setAuthMode(v as any)} className="w-full">
+                    <Button
+                      type="submit"
+                      className="w-full h-11"
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        'Send Reset Link'
+                      )}
+                    </Button>
+                  </form>
+                </Form>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Google OAuth Button */}
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="w-full gap-3 h-12 text-base font-medium border-2 hover:bg-slate-50 dark:hover:bg-slate-800"
+                onClick={handleGoogleSignIn}
+                disabled={isSubmitting}
+              >
+                <SiGoogle className="h-5 w-5 text-red-500" />
+                Continue with Google
+              </Button>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground font-medium">
+                    Or continue with email
+                  </span>
+                </div>
+              </div>
+
+              {/* Email/Password Forms */}
+              <Tabs value={authMode} onValueChange={(v) => setAuthMode(v as any)} className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="signin" className="text-sm font-medium">
                 Sign In
@@ -232,7 +359,16 @@ export default function AuthPage() {
                     name="password"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-sm font-medium">Password</FormLabel>
+                        <div className="flex items-center justify-between">
+                          <FormLabel className="text-sm font-medium">Password</FormLabel>
+                          <button
+                            type="button"
+                            onClick={() => setAuthMode('forgot-password')}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Forgot password?
+                          </button>
+                        </div>
                         <FormControl>
                           <div className="relative">
                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -369,8 +505,11 @@ export default function AuthPage() {
               </Form>
             </TabsContent>
           </Tabs>
+            </>
+          )}
 
-          <div className="text-center text-sm text-muted-foreground">
+          {authMode !== 'forgot-password' && (
+            <div className="text-center text-sm text-muted-foreground">
             <p>
               By continuing, you agree to our{" "}
               <a href="/terms" className="underline hover:text-foreground">
@@ -381,7 +520,8 @@ export default function AuthPage() {
                 Privacy Policy
               </a>
             </p>
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
