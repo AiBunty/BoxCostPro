@@ -20,7 +20,10 @@
       "Bash(node:*)",
       "Bash(curl:*)",
       "Bash(ls:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(for route in \"/\" \"/privacy-policy\" \"/terms\" \"/auth\")",
+      "Bash(do echo -n \"$route: \")",
+      "Bash(done)"
     ]
   }
 }
