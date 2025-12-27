@@ -128,11 +128,34 @@
         .back-link:hover {
             text-decoration: underline;
         }
+        .nav-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .sign-in-btn {
+            display: inline-block;
+            padding: 10px 24px;
+            background: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: 500;
+            font-size: 0.95em;
+        }
+        .sign-in-btn:hover {
+            background: #45a049;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <a href="/" class="back-link">← Back to Home</a>
+        <div class="nav-header">
+            <a href="/" class="back-link">← Back to Home</a>
+            <a href="/auth" class="sign-in-btn">Sign In</a>
+        </div>
 
         <header>
             <img src="/logo.png" alt="BoxCost Pro Logo">
