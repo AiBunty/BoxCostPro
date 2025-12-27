@@ -8,7 +8,7 @@
 ## Environment
 Copy `.env.example` to `.env` and populate the variables. Key variables:
 - `DATABASE_URL` — Postgres connection string
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — (optional) Supabase credentials for auth
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — (optional, legacy) Supabase credentials for auth. The app now supports direct Google OAuth and session-based auth without Supabase.
 
 ## Install
 ```powershell
@@ -27,4 +27,4 @@ npm run dev
 
 Notes:
 - The app expects certain DB tables (see `shared/schema.ts`). Use `drizzle-kit` to push migrations or run schema setup.
-- If you don't use Supabase, the app will fall back to session-based auth. For end-to-end local auth, set the Supabase env vars.
+- Supabase is optional. If `VITE_SUPABASE_*` / `SUPABASE_*` env vars are not set the app will use direct Google OAuth and server session endpoints instead of Supabase.

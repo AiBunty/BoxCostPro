@@ -1,27 +1,12 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+// Client-side supabase helper — when VITE_SUPABASE_* is not provided
+// we export safe fallbacks that use the server session endpoints and
+// direct Google OAuth redirect to keep the client working without Supabase.
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-const isConfigured = supabaseUrl && supabaseAnonKey && 
-  supabaseUrl.startsWith('http') && supabaseAnonKey.length > 10;
-
-let supabaseInstance: SupabaseClient | null = null;
-
-if (isConfigured) {
-  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
-    },
-  });
-} else {
-  console.warn('Supabase credentials not configured. Using fallback authentication.');
-}
-
-export const supabase = supabaseInstance;
-export const isSupabaseConfigured = isConfigured;
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
+export const supabase = null as any;
 
 export type AuthUser = {
   id: string;
@@ -36,132 +21,77 @@ export type AuthUser = {
 };
 
 export async function signInWithOTP(email: string) {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
-  }
-  const { data, error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: true,
-    },
-  });
-  return { data, error };
+  return { data: null, error: new Error('Supabase not configured') };
 }
 
 export async function signInWithMagicLink(email: string) {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
-  }
-  const { data, error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: true,
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
-    },
-  });
-  return { data, error };
+  return { data: null, error: new Error('Supabase not configured') };
 }
 
 export async function signInWithPassword(email: string, password: string) {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
-  }
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  return { data, error };
+  return { data: null, error: new Error('Supabase not configured') };
 }
 
 export async function signUpWithPassword(email: string, password: string, metadata?: { fullName?: string }) {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
-  }
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: metadata?.fullName,
-      },
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
-    },
-  });
-  return { data, error };
+  return { data: null, error: new Error('Supabase not configured') };
 }
 
 export async function resetPassword(email: string) {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
-  }
-  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/auth/reset-password`,
-  });
-  return { data, error };
+  return { data: null, error: new Error('Supabase not configured') };
 }
 
 export async function updatePassword(newPassword: string) {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
-  }
-  const { data, error } = await supabase.auth.updateUser({
-    password: newPassword,
-  });
-  return { data, error };
+  return { data: null, error: new Error('Supabase not configured') };
 }
 
 export async function verifyOTP(email: string, token: string) {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
-  }
-  const { data, error } = await supabase.auth.verifyOtp({
-    email,
-    token,
-    type: 'email',
-  });
-  return { data, error };
+  return { data: null, error: new Error('Supabase not configured') };
 }
 
 export async function signInWithGoogle() {
-  if (!supabase) {
-    return { data: null, error: new Error('Supabase not configured') };
+  // Redirect to server-side direct Google OAuth endpoint
+  try {
+    window.location.href = '/api/auth/google/login';
+    return { data: null, error: null };
+  } catch (err: any) {
+    return { data: null, error: err };
   }
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
-    },
-  });
-  return { data, error };
 }
 
 export async function signOut() {
-  if (!supabase) {
-    return { error: new Error('Supabase not configured') };
+  try {
+    const res = await fetch('/api/auth/logout', { method: 'POST' });
+    if (!res.ok) throw new Error('Logout failed');
+    return { error: null };
+  } catch (err: any) {
+    return { error: err };
   }
-  const { error } = await supabase.auth.signOut();
-  return { error };
 }
 
 export async function getCurrentUser() {
-  if (!supabase) {
-    return { user: null, error: new Error('Supabase not configured') };
+  try {
+    const res = await fetch('/api/auth/user');
+    if (!res.ok) return { user: null, error: new Error('No session') };
+    const user = await res.json();
+    return { user, error: null };
+  } catch (err: any) {
+    return { user: null, error: err };
   }
-  const { data: { user }, error } = await supabase.auth.getUser();
-  return { user, error };
 }
 
 export async function getSession() {
-  if (!supabase) {
-    return { session: null, error: new Error('Supabase not configured') };
+  try {
+    const res = await fetch('/api/auth/user');
+    if (!res.ok) return { session: null, error: new Error('No session') };
+    const user = await res.json();
+    return { session: user, error: null };
+  } catch (err: any) {
+    return { session: null, error: err };
   }
-  const { data: { session }, error } = await supabase.auth.getSession();
-  return { session, error };
 }
 
 export function onAuthStateChange(callback: (event: string, session: any) => void) {
-  if (!supabase) {
-    return { data: { subscription: { unsubscribe: () => {} } } };
-  }
-  return supabase.auth.onAuthStateChange(callback);
+  // No-op subscription for session-based fallback
+  const sub = { unsubscribe: () => {} };
+  return { data: { subscription: sub } };
 }

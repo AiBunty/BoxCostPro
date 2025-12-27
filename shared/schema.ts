@@ -42,7 +42,7 @@ export type UserAccountStatus = z.infer<typeof userAccountStatus>;
 // User storage table for Supabase Auth
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  supabaseUserId: varchar("supabase_user_id").unique(), // Supabase Auth user ID
+  supabaseUserId: varchar("supabase_user_id").unique(), // Optional: external provider user ID (kept for legacy compatibility)
   email: varchar("email").unique(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
@@ -55,7 +55,7 @@ export const users = pgTable("users", {
   mobileNo: varchar("mobile_no"), // User's mobile number
   countryCode: varchar("country_code").default("+91"), // Country code for mobile
   companyName: varchar("company_name"), // User's company name
-  authProvider: varchar("auth_provider").default("supabase"), // 'supabase', 'google', 'email_password', 'magic_link'
+  authProvider: varchar("auth_provider").default("google_direct"), // 'google_direct', 'supabase'(legacy), 'email_password', 'magic_link'
   signupMethod: varchar("signup_method"), // 'email_otp', 'email_password', 'magic_link', 'google', 'microsoft', 'linkedin', 'apple'
   emailVerified: boolean("email_verified").default(false), // Email verification status
   mobileVerified: boolean("mobile_verified").default(false), // Mobile verification status
