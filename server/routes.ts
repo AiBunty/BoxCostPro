@@ -265,89 +265,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let user = await storage.getUserByEmail(googleUser.email);
 
       if (!user) {
-        // Create new user
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabase = createClient(
-          process.env.SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!
-        );
-
-        // Create user in Supabase Auth (for JWT generation)
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        // Create or upsert user in our own database (no Supabase dependency)
+        user = await storage.upsertUser({
           email: googleUser.email,
-          email_confirm: true,
-          user_metadata: {
-            full_name: googleUser.name,
-            avatar_url: googleUser.picture,
-            provider: 'google_direct',
-          },
-        });
-
-        if (authError || !authData.user) {
-          console.error('[Google OAuth] Failed to create auth user:', authError);
-          return res.redirect('/auth?error=user_creation_failed');
-        }
-
-        // Create user in our database
-        user = await storage.createUser({
-          id: authData.user.id,
-          email: googleUser.email,
-          fullName: googleUser.name,
           firstName: googleUser.given_name,
           lastName: googleUser.family_name,
-          emailVerified: true,
-          role: 'user',
-          accountStatus: 'email_verified',
+          profileImageUrl: googleUser.picture,
           authProvider: 'google_direct',
-          avatarUrl: googleUser.picture,
         });
 
-        // Log signup event
-        const { logAuthEvent } = await import('./services/authService');
-        await logAuthEvent({
-          userId: user.id,
-          email: user.email,
-          action: 'SIGNUP',
-          status: 'success',
-          provider: 'google_direct',
-          metadata: { name: googleUser.name },
-        });
+        // Log signup event if authService available
+        try {
+          const { logAuthEvent } = await import('./services/authService');
+          await logAuthEvent({
+            userId: user.id,
+            email: user.email,
+            action: 'SIGNUP',
+            status: 'success',
+            provider: 'google_direct',
+            metadata: { name: googleUser.name },
+          });
+        } catch (_) {
+          // non-fatal
+        }
 
         console.log('[Google OAuth] New user created:', user.email);
       } else {
         // Existing user - log login event
-        const { logAuthEvent } = await import('./services/authService');
-        await logAuthEvent({
-          userId: user.id,
-          email: user.email,
-          action: 'LOGIN',
-          status: 'success',
-          provider: 'google_direct',
-        });
+        try {
+          const { logAuthEvent } = await import('./services/authService');
+          await logAuthEvent({
+            userId: user.id,
+            email: user.email,
+            action: 'LOGIN',
+            status: 'success',
+            provider: 'google_direct',
+          });
+        } catch (_) {
+          // non-fatal
+        }
 
         console.log('[Google OAuth] User logged in:', user.email);
       }
 
-      // Generate session token (using Supabase for JWT, but no branding visible)
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(
-        process.env.SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
+      // Create a session via express-session / passport
+      req.login({ userId: user.id }, (err: any) => {
+        if (err) {
+          console.error('[Google OAuth] Session creation failed:', err);
+          return res.redirect('/auth?error=session_failed');
+        }
 
-      const { data: sessionData, error: sessionError } = await supabase.auth.admin.generateLink({
-        type: 'magiclink',
-        email: user.email,
+        // Redirect to application after successful login
+        const redirectAfter = process.env.APP_AFTER_LOGIN || '/';
+        return res.redirect(redirectAfter);
       });
-
-      if (sessionError || !sessionData) {
-        console.error('[Google OAuth] Session generation failed:', sessionError);
-        return res.redirect('/auth?error=session_failed');
-      }
-
-      // Set session cookie
-      // Note: In production, implement proper session management with httpOnly cookies
-      res.redirect(`/auth?success=google_login&token=${sessionData.properties.hashed_token}`);
 
     } catch (error: any) {
       console.error('[Google OAuth] Callback error:', error);
