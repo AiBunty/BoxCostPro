@@ -59,12 +59,27 @@ const isOwner = async (req: any, res: Response, next: NextFunction) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup session-based authentication (for backward compatibility)
-  // Only initialize Replit OIDC if configured (REPL_ID / ISSUER_URL)
+  // CRITICAL: Always setup session middleware (required for Google OAuth)
+  app.set("trust proxy", 1);
+
+  // Import and configure session
+  const { getSession } = await import('./replitAuth');
+  app.use(getSession());
+
+  // Setup passport for session serialization
+  const passport = await import('passport');
+  app.use(passport.default.initialize());
+  app.use(passport.default.session());
+
+  // Basic passport serialization (for Google OAuth sessions)
+  passport.default.serializeUser((user: any, cb) => cb(null, user));
+  passport.default.deserializeUser((user: any, cb) => cb(null, user));
+
+  // Setup Replit OIDC only if configured (optional, for Replit-hosted auth)
   if (process.env.REPL_ID && process.env.ISSUER_URL) {
     await setupAuth(app);
   } else {
-    console.warn('Replit OIDC not configured (REPL_ID/ISSUER_URL missing). Skipping setupAuth.');
+    console.warn('Replit OIDC not configured (REPL_ID/ISSUER_URL missing). Using session-only mode for Google OAuth.');
   }
   
   // Add Supabase JWT auth middleware globally
