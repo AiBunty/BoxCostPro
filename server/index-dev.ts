@@ -9,6 +9,10 @@ import { createServer as createViteServer, createLogger } from "vite";
 import viteConfig from "../vite.config";
 import runApp from "./app";
 
+// Guard against EPIPE errors when stdout/stderr are closed
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
+
 export async function setupVite(app: Express, server: Server) {
   const viteLogger = createLogger();
   const serverOptions = {

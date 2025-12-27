@@ -5,6 +5,10 @@ import { type Server } from "node:http";
 import express, { type Express } from "express";
 import runApp from "./app";
 
+// Guard against EPIPE errors when stdout/stderr are closed
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
+
 export async function serveStatic(app: Express, _server: Server) {
   const distPath = path.resolve(import.meta.dirname, "public");
 
