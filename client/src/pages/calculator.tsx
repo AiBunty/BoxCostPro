@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import DOMPurify from "dompurify";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -2972,9 +2973,9 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                   </div>
                   <div className="space-y-2 flex-1 overflow-hidden flex flex-col">
                     <Label className="text-sm">Email Preview</Label>
-                    <div 
+                    <div
                       className="flex-1 overflow-auto border rounded-md p-4 bg-white text-sm"
-                      dangerouslySetInnerHTML={{ __html: editableEmailBody }}
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(editableEmailBody) }}
                       data-testid="div-email-preview"
                     />
                   </div>
@@ -2998,7 +2999,7 @@ export default function Calculator({ initialShowBulkUpload = false }: Calculator
                           toast({ title: "Copied", description: "Email copied as rich text. Paste in your email client." });
                         } catch (err) {
                           const temp = document.createElement('div');
-                          temp.innerHTML = editableEmailBody;
+                          temp.innerHTML = DOMPurify.sanitize(editableEmailBody);
                           const plainText = temp.textContent || temp.innerText || '';
                           await navigator.clipboard.writeText(`Subject: ${editableEmailSubject}\n\n${plainText}`);
                           toast({ title: "Copied", description: "Email copied as plain text" });

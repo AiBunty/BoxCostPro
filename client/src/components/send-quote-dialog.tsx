@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -245,7 +246,7 @@ export function SendQuoteDialog({ quoteId, partyPhone, partyEmail, isOpen, onClo
               </div>
               <ScrollArea className="h-[200px] border rounded-lg p-3 bg-muted/30">
                 {channel === "email" ? (
-                  <div dangerouslySetInnerHTML={{ __html: previewContent }} className="text-sm" />
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewContent) }} className="text-sm" />
                 ) : (
                   <pre className="whitespace-pre-wrap text-sm font-sans">{previewContent}</pre>
                 )}

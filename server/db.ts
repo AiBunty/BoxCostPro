@@ -4,6 +4,9 @@ import * as schema from "@shared/schema";
 
 const { Pool } = pg;
 
+let pool: any;
+let db: any;
+
 if (!process.env.DATABASE_URL) {
   console.warn("DATABASE_URL not set — running in DB-less test mode. Many features will be disabled.");
   // Provide a minimal in-memory stub for pool and db so the server can start for testing OAuth flows.
@@ -13,11 +16,11 @@ if (!process.env.DATABASE_URL) {
     end: async () => {},
   };
 
-  export const pool = dummyPool as any;
-  export const db = {} as any;
+  pool = dummyPool;
+  db = {};
 } else {
-  export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  export const db = drizzle(pool, { schema });
+  pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  db = drizzle(pool, { schema });
 
   // Create partial unique index to ensure only one owner exists
   // This prevents race conditions in first-user-becomes-owner logic
@@ -30,3 +33,5 @@ if (!process.env.DATABASE_URL) {
     console.log('Owner index creation note:', err.message);
   });
 }
+
+export { pool, db };

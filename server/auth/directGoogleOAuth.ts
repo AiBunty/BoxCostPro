@@ -48,6 +48,7 @@ interface GoogleTokens {
 class DirectGoogleOAuth {
   private oauth2Client: any;
   private redirectUrl: string;
+  private configured: boolean = false;
 
   constructor() {
     const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
@@ -56,7 +57,10 @@ class DirectGoogleOAuth {
                        `${process.env.APP_URL || 'http://localhost:5000'}/auth/google/callback`;
 
     if (!clientId || !clientSecret) {
-      safeLog('[DirectGoogleOAuth] Google OAuth credentials not configured. Google sign-in will be disabled.');
+      safeWarn('[DirectGoogleOAuth] Google OAuth credentials not configured. Google sign-in will be disabled.');
+      safeWarn('[DirectGoogleOAuth] Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET to enable Google OAuth.');
+      this.configured = false;
+      this.oauth2Client = null;
       return;
     }
 
@@ -67,6 +71,7 @@ class DirectGoogleOAuth {
       this.redirectUrl
     );
 
+    this.configured = true;
     safeLog('[DirectGoogleOAuth] Initialized with redirect URL:', this.redirectUrl);
   }
 
@@ -74,7 +79,7 @@ class DirectGoogleOAuth {
    * Check if Google OAuth is properly configured
    */
   isConfigured(): boolean {
-    return !!(
+    return this.configured && this.oauth2Client !== null && !!(
       process.env.GOOGLE_OAUTH_CLIENT_ID &&
       process.env.GOOGLE_OAUTH_CLIENT_SECRET
     );

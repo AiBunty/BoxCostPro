@@ -21,6 +21,25 @@ const getOidcConfig = memoize(
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+
+  // CRITICAL: Validate SESSION_SECRET in production
+  const sessionSecret = process.env.SESSION_SECRET;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (!sessionSecret && isProduction) {
+    throw new Error(
+      'CRITICAL: SESSION_SECRET environment variable is required in production. ' +
+      'Generate a strong secret with: openssl rand -base64 32'
+    );
+  }
+
+  // Use dev-secret only in development/test environments
+  const secret = sessionSecret || 'dev-secret-only-for-local-testing';
+
+  if (!sessionSecret) {
+    console.warn('[Security] Using default SESSION_SECRET in development mode. This is insecure for production!');
+  }
+
   const pgStore = connectPg(session);
   if (process.env.DATABASE_URL) {
     const sessionStore = new pgStore({
@@ -30,7 +49,7 @@ export function getSession() {
       tableName: "sessions",
     });
     return session({
-      secret: process.env.SESSION_SECRET || 'dev-secret',
+      secret,
       store: sessionStore,
       resave: false,
       saveUninitialized: false,
@@ -44,7 +63,7 @@ export function getSession() {
 
   // Fallback to in-memory sessions for local/test runs when DATABASE_URL is not set
   return session({
-    secret: process.env.SESSION_SECRET || 'dev-secret',
+    secret,
     resave: false,
     saveUninitialized: false,
     cookie: {

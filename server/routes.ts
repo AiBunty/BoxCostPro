@@ -321,10 +321,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Redirect to application after successful login
-        // Try multiple fallback URLs in order of preference
-        const redirectAfter = process.env.APP_AFTER_LOGIN ||
-                             process.env.GOOGLE_OAUTH_SUCCESS_REDIRECT ||
-                             '/auth?success=google_login';
+        // Whitelist of allowed redirect URLs to prevent open redirect vulnerability
+        const ALLOWED_REDIRECTS = [
+          '/',
+          '/dashboard',
+          '/calculator',
+          '/quotes',
+          '/settings',
+          '/account',
+          '/auth?success=google_login'
+        ];
+
+        // Get configured redirect URL
+        const configuredRedirect = process.env.APP_AFTER_LOGIN ||
+                                   process.env.GOOGLE_OAUTH_SUCCESS_REDIRECT ||
+                                   '/auth?success=google_login';
+
+        // Validate redirect URL is in whitelist or is a relative path starting with /
+        const isAllowed = ALLOWED_REDIRECTS.includes(configuredRedirect) ||
+                         (configuredRedirect.startsWith('/') && !configuredRedirect.startsWith('//'));
+
+        const redirectAfter = isAllowed ? configuredRedirect : '/auth?success=google_login';
+
+        if (!isAllowed) {
+          console.warn('[Security] Blocked potentially unsafe redirect:', configuredRedirect);
+        }
+
         console.log('[Google OAuth] Redirecting to:', redirectAfter);
         return res.redirect(redirectAfter);
       });
