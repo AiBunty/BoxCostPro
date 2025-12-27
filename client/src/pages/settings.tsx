@@ -359,16 +359,18 @@ export default function Settings() {
                         <FormItem>
                           <FormLabel className="flex items-center gap-2">
                             Company Name
-                            <Lock className="h-3 w-3 text-muted-foreground" />
+                            {defaultProfile && <Lock className="h-3 w-3 text-muted-foreground" />}
                           </FormLabel>
                           <FormControl>
-                            <Input 
-                              {...field} 
-                              disabled 
-                              className="bg-muted"
-                              data-testid="input-company-name-locked" 
+                            <Input
+                              {...field}
+                              disabled={!!defaultProfile}
+                              className={defaultProfile ? "bg-muted" : ""}
+                              placeholder="Enter your company name"
+                              data-testid="input-company-name"
                             />
                           </FormControl>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
