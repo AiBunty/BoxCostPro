@@ -190,7 +190,19 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
-      <Card className="w-full max-w-md shadow-2xl">
+      <div className="w-full max-w-md">
+        {/* Back to Home link */}
+        <div className="mb-4">
+          <a
+            href="/"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Home
+          </a>
+        </div>
+
+        <Card className="w-full shadow-2xl">
         <CardHeader className="space-y-3 text-center pb-6">
           <div className="mx-auto w-24 h-24 flex items-center justify-center">
             <img src="/logo.png" alt="PaperBox ERP Logo" className="w-full h-full object-contain" />
@@ -524,6 +536,7 @@ export default function AuthPage() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
