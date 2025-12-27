@@ -13,14 +13,18 @@
 import { google } from 'googleapis';
 import crypto from 'crypto';
 
-// Safe console logging that handles EPIPE errors
-const safeLog = (...args: any[]) => {
+// Safe console helpers to avoid EPIPE crashes when stdout/stderr is closed
+function safeConsole(method: 'log' | 'warn' | 'error', ...args: any[]) {
   try {
-    console.log(...args);
-  } catch (err) {
-    // Silently ignore EPIPE and other stdout errors
+    // tslint:disable-next-line: no-console
+    (console as any)[method](...args);
+  } catch (_) {
+    // ignore write errors (EPIPE)
   }
-};
+}
+const safeLog = (...args: any[]) => safeConsole('log', ...args);
+const safeWarn = (...args: any[]) => safeConsole('warn', ...args);
+const safeError = (...args: any[]) => safeConsole('error', ...args);
 
 interface GoogleUser {
   id: string;
@@ -128,7 +132,7 @@ class DirectGoogleOAuth {
         id_token: tokens.id_token,
       };
     } catch (error: any) {
-      console.error('[DirectGoogleOAuth] Token exchange failed:', error.message);
+      safeError('[DirectGoogleOAuth] Token exchange failed:', error?.message ?? error);
       throw new Error('Failed to exchange authorization code for tokens');
     }
   }
@@ -165,7 +169,7 @@ class DirectGoogleOAuth {
         locale: data.locale || 'en',
       };
     } catch (error: any) {
-      console.error('[DirectGoogleOAuth] Failed to get user info:', error.message);
+      safeError('[DirectGoogleOAuth] Failed to get user info:', error?.message ?? error);
       throw new Error('Failed to retrieve user information from Google');
     }
   }
@@ -190,7 +194,7 @@ class DirectGoogleOAuth {
         expiry_date: credentials.expiry_date!,
       };
     } catch (error: any) {
-      console.error('[DirectGoogleOAuth] Token refresh failed:', error.message);
+      safeError('[DirectGoogleOAuth] Token refresh failed:', error?.message ?? error);
       throw new Error('Failed to refresh access token');
     }
   }
@@ -215,7 +219,7 @@ class DirectGoogleOAuth {
 
       return ticket.getPayload();
     } catch (error: any) {
-      console.error('[DirectGoogleOAuth] ID token verification failed:', error.message);
+      safeError('[DirectGoogleOAuth] ID token verification failed:', error?.message ?? error);
       throw new Error('Invalid ID token');
     }
   }
@@ -232,9 +236,9 @@ class DirectGoogleOAuth {
 
     try {
       await this.oauth2Client.revokeToken(accessToken);
-      console.log('[DirectGoogleOAuth] Token revoked successfully');
+      safeLog('[DirectGoogleOAuth] Token revoked successfully');
     } catch (error: any) {
-      console.error('[DirectGoogleOAuth] Token revocation failed:', error.message);
+      safeError('[DirectGoogleOAuth] Token revocation failed:', error?.message ?? error);
       // Don't throw - revocation failure shouldn't block logout
     }
   }
