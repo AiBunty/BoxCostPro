@@ -18,8 +18,8 @@ export async function serveStatic(app: Express, _server: Server) {
     );
   }
 
-  // Serve static assets (JS, CSS, images, etc.)
-  app.use(express.static(distPath));
+  // IMPORTANT: Define specific routes BEFORE static middleware
+  // Otherwise express.static will serve index.html for "/" before our custom logic runs
 
   // Serve specific static HTML pages
   app.get("/privacy-policy", (_req, res) => {
@@ -46,6 +46,9 @@ export async function serveStatic(app: Express, _server: Server) {
     // Fallback to React app if homepage.html doesn't exist
     res.sendFile(path.resolve(distPath, "index.html"));
   });
+
+  // Serve static assets (JS, CSS, images, etc.) - after specific routes
+  app.use(express.static(distPath));
 
   // All other routes serve the React app (for authenticated app routes)
   app.use("*", (_req, res) => {

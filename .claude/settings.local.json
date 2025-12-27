@@ -11,7 +11,16 @@
       "Bash(npm ci:*)",
       "Bash(npm test:*)",
       "Bash(npm run build:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(pkill:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill -9)",
+      "Bash(xargs:*)",
+      "Bash(npm start)",
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(ls:*)",
+      "Bash(cp:*)"
     ]
   }
 }
