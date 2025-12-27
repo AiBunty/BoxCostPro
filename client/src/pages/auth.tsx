@@ -192,8 +192,8 @@ export default function AuthPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="space-y-3 text-center pb-6">
-          <div className="mx-auto w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
-            <Package className="w-10 h-10 text-primary" />
+          <div className="mx-auto w-24 h-24 flex items-center justify-center">
+            <img src="/logo.png" alt="PaperBox ERP Logo" className="w-full h-full object-contain" />
           </div>
           <CardTitle className="text-3xl font-bold tracking-tight">
             PaperBox ERP

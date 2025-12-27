@@ -131,10 +131,10 @@ export function AppShell({ children }: AppShellProps) {
         <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
           <div className="flex items-center justify-between px-4 h-14">
             <div className="flex items-center gap-2 min-w-0">
-              <Package className="h-6 w-6 text-primary shrink-0" />
+              <img src="/logo.png" alt="Logo" className="h-8 w-8 shrink-0 object-contain" />
               <div className="min-w-0">
                 <span className="font-semibold text-sm block truncate">
-                  {user?.companyName || "BoxCost"}
+                  {user?.companyName || "PaperBox ERP"}
                 </span>
               </div>
             </div>
@@ -216,8 +216,8 @@ export function AppShell({ children }: AppShellProps) {
     <div className="min-h-screen bg-background flex">
       <aside className="sticky top-0 h-screen w-60 border-r bg-card/50 flex flex-col">
         <div className="flex items-center gap-2 h-14 px-4 border-b">
-          <Package className="h-6 w-6 text-primary shrink-0" />
-          <span className="font-semibold truncate">BoxCost Pro</span>
+          <img src="/logo.png" alt="Logo" className="h-8 w-8 shrink-0 object-contain" />
+          <span className="font-semibold truncate">PaperBox ERP</span>
         </div>
 
         <nav className="flex-1 py-4 px-2 space-y-1">
