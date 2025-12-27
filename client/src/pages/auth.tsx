@@ -57,8 +57,12 @@ export default function AuthPage() {
         'google_denied': 'You denied Google access permissions',
         'invalid_state': 'Invalid security state. Please try again',
         'google_oauth_failed': 'Google authentication failed. Please try again',
+        'google_not_configured': 'Google OAuth is not configured. Please contact support.',
         'missing_oauth_params': 'OAuth parameters missing. Please try again',
         'user_creation_failed': 'Failed to create user account',
+        'session_failed': 'Session creation failed. Please try again',
+        'email_not_verified': 'Please verify your Google email first',
+        'google_callback_failed': 'Google callback failed. Please try again',
       };
 
       toast({

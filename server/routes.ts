@@ -209,9 +209,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/auth/google/login', (req: any, res) => {
     try {
       if (!directGoogleOAuth.isConfigured()) {
-        return res.status(400).json({
-          error: 'Google OAuth is not configured. Please contact support.'
-        });
+        console.error('[Google OAuth] Not configured - missing credentials');
+        return res.redirect('/auth?error=google_not_configured');
       }
 
       // Generate secure state for CSRF protection
@@ -223,6 +222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get authorization URL
       const authUrl = directGoogleOAuth.getAuthorizationUrl(state);
 
+      console.log('[Google OAuth] Redirecting to Google consent screen');
       // Redirect user to Google for authentication
       res.redirect(authUrl);
     } catch (error: any) {
@@ -321,7 +321,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Redirect to application after successful login
-        const redirectAfter = process.env.APP_AFTER_LOGIN || '/';
+        // Try multiple fallback URLs in order of preference
+        const redirectAfter = process.env.APP_AFTER_LOGIN ||
+                             process.env.GOOGLE_OAUTH_SUCCESS_REDIRECT ||
+                             '/auth?success=google_login';
+        console.log('[Google OAuth] Redirecting to:', redirectAfter);
         return res.redirect(redirectAfter);
       });
 
