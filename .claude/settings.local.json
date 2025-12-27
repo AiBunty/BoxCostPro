@@ -23,7 +23,9 @@
       "Bash(cp:*)",
       "Bash(for route in \"/\" \"/privacy-policy\" \"/terms\" \"/auth\")",
       "Bash(do echo -n \"$route: \")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)"
     ]
   }
 }
