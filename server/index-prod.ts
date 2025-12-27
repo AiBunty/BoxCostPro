@@ -32,18 +32,26 @@ export async function serveStatic(app: Express, _server: Server) {
 
   // Serve homepage for root route (unauthenticated landing page)
   app.get("/", (req: any, res, next) => {
+    console.log('[Homepage Route] Handling / route');
+    console.log('[Homepage Route] isAuthenticated:', typeof req.isAuthenticated === 'function' ? req.isAuthenticated() : 'N/A');
+    console.log('[Homepage Route] supabaseUser:', !!req.supabaseUser);
+    console.log('[Homepage Route] user:', !!req.user);
+
     // If user is authenticated (has session or Supabase token), serve the React app
     if (req.isAuthenticated && req.isAuthenticated() || req.supabaseUser || req.user) {
+      console.log('[Homepage Route] User authenticated, serving React app');
       return res.sendFile(path.resolve(distPath, "index.html"));
     }
 
     // Otherwise, serve the public homepage
     const homepagePath = path.resolve(distPath, "homepage.html");
     if (fs.existsSync(homepagePath)) {
+      console.log('[Homepage Route] Serving homepage.html');
       return res.sendFile(homepagePath);
     }
 
     // Fallback to React app if homepage.html doesn't exist
+    console.log('[Homepage Route] homepage.html not found, serving React app');
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 
