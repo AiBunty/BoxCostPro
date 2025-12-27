@@ -13,6 +13,15 @@
 import { google } from 'googleapis';
 import crypto from 'crypto';
 
+// Safe console logging that handles EPIPE errors
+const safeLog = (...args: any[]) => {
+  try {
+    console.log(...args);
+  } catch (err) {
+    // Silently ignore EPIPE and other stdout errors
+  }
+};
+
 interface GoogleUser {
   id: string;
   email: string;
@@ -43,7 +52,7 @@ class DirectGoogleOAuth {
                        `${process.env.APP_URL || 'http://localhost:5000'}/auth/google/callback`;
 
     if (!clientId || !clientSecret) {
-      console.warn('[DirectGoogleOAuth] Google OAuth credentials not configured. Google sign-in will be disabled.');
+      safeLog('[DirectGoogleOAuth] Google OAuth credentials not configured. Google sign-in will be disabled.');
       return;
     }
 
@@ -54,7 +63,7 @@ class DirectGoogleOAuth {
       this.redirectUrl
     );
 
-    console.log('[DirectGoogleOAuth] Initialized with redirect URL:', this.redirectUrl);
+    safeLog('[DirectGoogleOAuth] Initialized with redirect URL:', this.redirectUrl);
   }
 
   /**
