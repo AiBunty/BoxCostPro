@@ -418,6 +418,38 @@ SELECT * FROM company_profiles WHERE email IS NULL LIMIT 1;
 # Or paste the SQL directly (from Step 2 above)
 ```
 
+### Issue 6: Drizzle Push — Safe Mode
+
+**Goal**: Avoid data loss and fix type cast errors (e.g., `created_at`).
+
+**Steps**:
+```bash
+# 1) Print the SQL Drizzle would run (no changes applied)
+npx drizzle-kit push --print > /tmp/drizzle_migration.sql
+
+# 2) Inspect for destructive changes (drops/truncates)
+sed -n '1,200p' /tmp/drizzle_migration.sql
+
+# 3) Fix common cast error for quotes.created_at
+# Detect current type
+psql $DATABASE_URL -c "SELECT data_type FROM information_schema.columns WHERE table_name='quotes' AND column_name='created_at';"
+
+# If ISO text timestamps
+psql $DATABASE_URL -c "ALTER TABLE quotes ALTER COLUMN created_at TYPE timestamp without time zone USING created_at::timestamp;"
+
+# If epoch seconds
+psql $DATABASE_URL -c "ALTER TABLE quotes ALTER COLUMN created_at TYPE timestamp without time zone USING to_timestamp(created_at);"
+
+# If epoch milliseconds
+psql $DATABASE_URL -c "ALTER TABLE quotes ALTER COLUMN created_at TYPE timestamp without time zone USING to_timestamp(created_at/1000.0);"
+
+# 4) Re-run push (or manually apply only safe statements from the printed SQL)
+npx drizzle-kit push
+```
+
+**Tip**: Use `scripts/db-inspect.sql` to quickly check column types and table counts.
+
+
 ### Issue 6: OAuth redirect URI mismatch
 
 **Symptoms**: Google OAuth fails with "redirect_uri_mismatch"
