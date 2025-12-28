@@ -25,7 +25,13 @@
       "Bash(do echo -n \"$route: \")",
       "Bash(done)",
       "Bash(netstat:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(npm run dev:*)",
+      "Bash(taskkill /PID 22208 /F)",
+      "Bash(taskkill:*)",
+      "Bash(exit 0)",
+      "Bash(powershell:*)"
     ]
   }
 }

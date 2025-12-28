@@ -199,12 +199,11 @@
                 <li>Bank account details (optional, for payment instructions on quotations)</li>
             </ul>
 
-            <h3>2.3 Google Account Data (Optional)</h3>
-            <p>If you choose to sign in with Google or enable Gmail integration, we access:</p>
+            <h3>2.3 Google Account Data</h3>
+            <p>If you choose to sign in with Google, we access only basic profile scopes required for authentication:</p>
             <ul>
-                <li><strong>Email address:</strong> For authentication and as sender address for quotations</li>
-                <li><strong>Profile information:</strong> Name and profile picture (if available)</li>
-                <li><strong>Gmail send permission (gmail.send scope):</strong> Only if you enable email quotation sending. We do NOT read, access, or store your existing emails. We only send new emails when you explicitly click "Send Quotation".</li>
+                <li><strong>Email address:</strong> For authentication and account notices</li>
+                <li><strong>Basic profile information:</strong> Name and profile picture (if available)</li>
             </ul>
 
             <h3>2.4 Customer & Business Data</h3>
@@ -327,7 +326,7 @@
                 <p><strong>Service Providers (Data Processors):</strong></p>
                 <ul>
                     <li><strong>Cloud hosting providers:</strong> To store and serve the application</li>
-                    <li><strong>Email service (Gmail API):</strong> Only if you authorize email sending (Google acts as processor)</li>
+                    <li><strong>Email service provider:</strong> For transactional emails like password reset (no access to your Gmail)</li>
                     <li><strong>Payment gateway (if implemented):</strong> For processing subscription payments</li>
                 </ul>
                 <p>All service providers are bound by strict data protection agreements and process data only on our instructions.</p>

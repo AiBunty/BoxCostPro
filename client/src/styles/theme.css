@@ -1,0 +1,80 @@
+:root {
+  --brand-500: #E63946; /* Ninja Red - primary accent */
+  --brand-600: #C5303D; /* darker red for hover/active */
+  --accent-100: #F1F4F9; /* Cool Grey - chips / subtle bg */
+  --accent-200: #F1F4F9; /* Section background */
+  --accent-steel: #457B9D; /* Soft Steel - secondary accents */
+  --surface: #FFFFFF;     /* card */
+  --surface-2: #F1F4F9;   /* page sections */
+  --text: #1D3557;        /* Deep Slate headings */
+  --muted: #64748B;       /* body */
+  --border: #E5E7EB;      /* subtle borders */
+  --shadow-md: 0 10px 30px rgba(220, 38, 38, 0.12);
+}
+
+/* Dark theme overrides using Tailwind's .dark class on <html> */
+.dark {
+  --brand-500: #E63946;
+  --brand-600: #C5303D;
+  --accent-100: #243447; /* darker chip bg */
+  --accent-200: #0F172A; /* section background */
+  --accent-steel: #93C5FD; /* softer blue accent in dark */
+  --surface: #0B1220;     /* card bg */
+  --surface-2: #0F172A;   /* page bg */
+  --text: #E5E7EB;        /* headings */
+  --muted: #94A3B8;       /* body */
+  --border: #1F2937;      /* borders */
+}
+
+.theme-erp { color: var(--text); background: var(--surface-2); }
+
+.hero-gradient {
+  background: linear-gradient(135deg, #fff5f5 0%, var(--accent-200) 45%, #ffffff 100%);
+}
+
+.cta-gradient {
+  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%);
+  color: #fff;
+  border-radius: 14px;
+  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.25);
+}
+
+.btn-brand {
+  background: var(--brand-600);
+  color: #fff;
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-weight: 600;
+  box-shadow: 0 8px 16px rgba(220, 38, 38, 0.25);
+}
+.btn-brand:hover { background: var(--brand-500); }
+
+.btn-secondary {
+  border: 1px solid var(--accent-steel);
+  color: var(--accent-steel);
+}
+
+.chip-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-100);
+  color: var(--accent-steel);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 600;
+}
+
+.link-brand { color: var(--brand-600); }
+.link-brand:hover { color: var(--brand-500); }
+
+/* Gentle up-down float for center logo */
+@keyframes logo-float {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+  100% { transform: translateY(0); }
+}
+.logo-float {
+  animation: logo-float 3s ease-in-out infinite;
+  will-change: transform;
+}

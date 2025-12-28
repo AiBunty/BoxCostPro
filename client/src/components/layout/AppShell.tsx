@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth, signOut } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -125,6 +128,18 @@ export function AppShell({ children }: AppShellProps) {
     return location === path || location.startsWith(path + "/");
   };
 
+  // Fetch onboarding and subscription status to show "Awaiting approval" badge when needed
+  const { data: onboardingStatus } = useQuery<any>({ queryKey: ["/api/onboarding/status"] });
+  const adminRoles = ['admin', 'super_admin', 'owner'];
+  const isAdmin = adminRoles.includes(user?.role || '');
+  const { data: pendingApprovals } = useQuery<any[]>({
+    queryKey: ["/api/admin/verifications/pending"],
+    enabled: isAdmin,
+  });
+  const pendingCount = isAdmin ? (pendingApprovals?.length || 0) : 0;
+  const isPaidActive = !!onboardingStatus?.paidActive;
+  const showAwaitingBadge = !isPaidActive;
+
   if (isMobile) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -148,6 +163,9 @@ export function AppShell({ children }: AppShellProps) {
                 </TooltipTrigger>
                 <TooltipContent>Help</TooltipContent>
               </Tooltip>
+
+              {/* Theme toggle for mobile */}
+              <ThemeToggle />
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -194,13 +212,24 @@ export function AppShell({ children }: AppShellProps) {
 
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t safe-area-inset-bottom">
           <div className="flex items-center justify-around h-16 px-2">
-            {[
-              { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-              { label: "Quotes", path: "/quotes", icon: FileText },
-              { label: "Reports", path: "/reports", icon: BarChart3 },
-              { label: "Support", path: "/support", icon: Headphones },
-              { label: "Account", path: "/account", icon: User },
-            ].map((item) => {
+            {(
+              isAdmin
+                ? [
+                    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+                    { label: "Quotes", path: "/quotes", icon: FileText },
+                    { label: "Reports", path: "/reports", icon: BarChart3 },
+                    { label: "Admin", path: "/admin", icon: Shield },
+                    { label: "Support", path: "/support", icon: Headphones },
+                    { label: "Account", path: "/account", icon: User },
+                  ]
+                : [
+                    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+                    { label: "Quotes", path: "/quotes", icon: FileText },
+                    { label: "Reports", path: "/reports", icon: BarChart3 },
+                    { label: "Support", path: "/support", icon: Headphones },
+                    { label: "Account", path: "/account", icon: User },
+                  ]
+            ).map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
               return (
@@ -215,7 +244,12 @@ export function AppShell({ children }: AppShellProps) {
                     data-testid={`nav-${item.label.toLowerCase().replace(" ", "-")}`}
                   >
                     <Icon className="h-5 w-5" />
-                    <span className="text-[10px] font-medium">{item.label}</span>
+                    <span className="text-[10px] font-medium flex items-center gap-1">
+                      {item.label}
+                      {item.label === "Admin" && pendingCount > 0 && (
+                        <Badge variant="secondary" className="px-1 py-0 text-[9px]">{pendingCount}</Badge>
+                      )}
+                    </span>
                   </button>
                 </Link>
               );
@@ -266,7 +300,12 @@ export function AppShell({ children }: AppShellProps) {
                     >
                       <div className="flex items-center gap-3">
                         <Icon className="h-5 w-5 shrink-0" />
-                        <span className="truncate">{item.label}</span>
+                        <span className="truncate flex items-center gap-2">
+                          {item.label}
+                          {item.label === "Admin" && pendingCount > 0 && (
+                            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{pendingCount}</Badge>
+                          )}
+                        </span>
                       </div>
                       {isOpen ? (
                         <ChevronDown className="h-4 w-4" />
@@ -289,7 +328,12 @@ export function AppShell({ children }: AppShellProps) {
                             )}
                             data-testid={`nav-${subItem.label.toLowerCase().replace(" ", "-")}`}
                           >
-                            <span className="truncate">{subItem.label}</span>
+                            <span className="truncate flex items-center gap-2">
+                              {subItem.label}
+                              {item.label === "Admin" && subItem.label === "User Management" && pendingCount > 0 && (
+                                <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{pendingCount}</Badge>
+                              )}
+                            </span>
                           </button>
                         </Link>
                       );
@@ -364,6 +408,15 @@ export function AppShell({ children }: AppShellProps) {
                 </TooltipTrigger>
                 <TooltipContent>Help & Support</TooltipContent>
               </Tooltip>
+
+              {/* Theme toggle for desktop */}
+              <ThemeToggle />
+
+              {showAwaitingBadge && (
+                <Badge variant="secondary" className="gap-1" data-testid="badge-awaiting-approval">
+                  Pending Verification
+                </Badge>
+              )}
 
               <Tooltip>
                 <TooltipTrigger asChild>

@@ -101,25 +101,63 @@ export default function AdminUsers() {
     queryKey: ['/api/admin/users'],
   });
 
+  async function stepUpReauth() {
+    try {
+      await apiRequest('POST', '/api/auth/step-up', {});
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   const approveMutation = useMutation({
-    mutationFn: (userId: string) => apiRequest('POST', `/api/admin/users/${userId}/approve`),
+    mutationFn: async (userId: string) => {
+      try {
+        return await apiRequest('POST', `/api/admin/users/${userId}/approve`);
+      } catch (err: any) {
+        const msg = err?.message || '';
+        if (msg.includes('step_up_required')) {
+          const ok = await stepUpReauth();
+          if (ok) {
+            return await apiRequest('POST', `/api/admin/users/${userId}/approve`);
+          }
+        } else if (msg.includes('mfa_required')) {
+          throw new Error('mfa_required');
+        }
+        throw err;
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin'] });
       toast({ title: "User Approved", description: "The user now has full access." });
       setSelectedUser(null);
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Approval Failed", 
-        description: error.message || "Could not approve user.",
-        variant: "destructive"
-      });
+      if (error?.message === 'mfa_required') {
+        toast({ title: 'MFA Required', description: 'Please enable MFA to perform approvals.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Approval Failed', description: error?.message || 'Could not approve user.', variant: 'destructive' });
+      }
     },
   });
 
   const rejectMutation = useMutation({
-    mutationFn: ({ userId, reason }: { userId: string; reason: string }) => 
-      apiRequest('POST', `/api/admin/users/${userId}/reject`, { reason }),
+    mutationFn: async ({ userId, reason }: { userId: string; reason: string }) => {
+      try {
+        return await apiRequest('POST', `/api/admin/users/${userId}/reject`, { reason });
+      } catch (err: any) {
+        const msg = err?.message || '';
+        if (msg.includes('step_up_required')) {
+          const ok = await stepUpReauth();
+          if (ok) {
+            return await apiRequest('POST', `/api/admin/users/${userId}/reject`, { reason });
+          }
+        } else if (msg.includes('mfa_required')) {
+          throw new Error('mfa_required');
+        }
+        throw err;
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin'] });
       toast({ title: "User Rejected", description: "The user has been notified." });
@@ -128,11 +166,11 @@ export default function AdminUsers() {
       setSelectedUser(null);
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Rejection Failed", 
-        description: error.message || "Could not reject user.",
-        variant: "destructive"
-      });
+      if (error?.message === 'mfa_required') {
+        toast({ title: 'MFA Required', description: 'Please enable MFA to perform rejections.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Rejection Failed', description: error?.message || 'Could not reject user.', variant: 'destructive' });
+      }
     },
   });
 
@@ -205,6 +243,15 @@ export default function AdminUsers() {
       </header>
 
       <main className="p-4 md:p-6 space-y-6">
+        {/* Notify admins when new approval requests arrive */}
+        {pendingVerifications.length > 0 && (
+          <Alert>
+            <AlertDescription className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              A new approval request has arrived. Review pending accounts below.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

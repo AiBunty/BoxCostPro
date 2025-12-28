@@ -18,8 +18,10 @@ import {
   FileCheck,
   Bell,
   Zap,
+  UserCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Quote {
   id: string;
@@ -36,6 +38,7 @@ interface DashboardStats {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const { data: quotes, isLoading: quotesLoading } = useQuery<Quote[]>({
     queryKey: ["/api/quotes"],
   });
@@ -52,6 +55,17 @@ export default function Dashboard() {
 
   const totalValue = quotes?.reduce((sum, q) => sum + (q.totalAmount || 0), 0) || 0;
 
+  // Show subtle card linking to onboarding when approval is pending and subscription is not paid-active
+  const { data: onboardingStatus } = useQuery<any>({ queryKey: ["/api/onboarding/status"] });
+  const isPaidActive = !!onboardingStatus?.paidActive;
+  const showPendingApprovalCard = !isPaidActive;
+
+  // Admin: show approvals shortcut if there are pending verifications
+  const adminRoles = ["admin", "super_admin", "owner"];
+  const isAdmin = adminRoles.includes(user?.role || "");
+  const { data: pendingApprovals } = useQuery<any[]>({ queryKey: ["/api/admin/verifications/pending"] });
+  const hasPendingApprovals = isAdmin && (pendingApprovals?.length || 0) > 0;
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex flex-col gap-2">
@@ -60,6 +74,50 @@ export default function Dashboard() {
           Welcome back! Here's an overview of your business.
         </p>
       </div>
+
+      {showPendingApprovalCard && (
+        <Card className="shadow-sm border-primary/20 bg-primary/5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">Pending Approval</Badge>
+              <CardTitle className="text-sm font-medium">Account awaiting verification</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Admin will review within 24–48 hours. Track status or submit if not yet done.
+            </p>
+            <Link href="/onboarding">
+              <Button variant="outline" size="sm" className="gap-1">
+                View status
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasPendingApprovals && (
+        <Card className="shadow-sm border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <CardTitle className="text-sm font-medium">Admin: Approvals pending ({pendingApprovals!.length})</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              New verification requests are awaiting review.
+            </p>
+            <Link href="/admin/users">
+              <Button variant="outline" size="sm" className="gap-1">
+                View approvals
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-sm">
@@ -282,8 +340,8 @@ export default function Dashboard() {
             </Badge>
             <CardHeader>
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/20">
-                  <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/20">
+                  <ShoppingCart className="h-5 w-5 text-red-600 dark:text-red-400" />
                 </div>
                 <CardTitle className="text-lg">Purchase Order Planner</CardTitle>
               </div>

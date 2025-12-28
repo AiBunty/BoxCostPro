@@ -6,6 +6,23 @@
     <title>PaperBox ERP - Box Costing & Manufacturing Management</title>
     <meta name="description" content="Professional ERP solution for paper box manufacturing, costing, and quotation management" />
 
+    <script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('theme');
+          var theme = (stored === 'light' || stored === 'dark') ? stored : 'dark';
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {
+          // If localStorage isn't accessible, default to dark
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/logo.png" />

@@ -44,7 +44,7 @@ const onboardingSteps = [
     title: 'Business Profile',
     description: 'Set up your company information',
     icon: Building2,
-    href: '/settings',
+    href: '/account',
     actionText: 'Set Up Profile'
   },
   {
@@ -189,6 +189,8 @@ export default function Onboarding() {
             <AlertTitle>Pending Verification</AlertTitle>
             <AlertDescription>
               Your account is being reviewed by our team. You'll be notified once approved.
+              <span className="block text-xs mt-1">Typical review time: 24–48 hours.</span>
+              <span className="block text-xs mt-1">We also send emails to you and the admin when you submit and when a decision is made.</span>
               <span className="block text-xs mt-1 text-muted-foreground">
                 Submitted on {onboardingStatus?.submittedAt ? new Date(onboardingStatus.submittedAt).toLocaleDateString() : 'recently'}
               </span>

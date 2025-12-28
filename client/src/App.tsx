@@ -22,7 +22,13 @@ import AdminUsers from "@/pages/admin-users";
 import Onboarding from "@/pages/onboarding";
 import SupportPanel from "@/pages/support";
 import NotFound from "@/pages/not-found";
+import Terms from "@/pages/terms";
+import Privacy from "@/pages/privacy";
+import About from "@/pages/about";
+import Pricing from "@/pages/pricing";
+import Contact from "@/pages/contact";
 import Settings from "@/pages/settings";
+// (duplicate import removed)
 
 // Wrapper components for routes
 function Calculator() {
@@ -85,6 +91,10 @@ function AuthenticatedRouter() {
     queryKey: ["/api/flute-settings/status"],
   });
 
+  const { data: onboardingStatus } = useQuery<any>({
+    queryKey: ["/api/onboarding/status"],
+  });
+
   if (userLoading || setupLoading) {
     if (companyLoading || fluteLoading) {
       return (
@@ -100,6 +110,7 @@ function AuthenticatedRouter() {
     );
   }
 
+  const sessionOnlyAuth = !isSupabaseConfigured; // In session-only/DB-less mode, be lenient
   const isProfileComplete = user?.mobileNo && user?.firstName;
   const isOnCompleteProfile = location === "/complete-profile";
   const isOnAdmin = location === "/admin";
@@ -108,7 +119,7 @@ function AuthenticatedRouter() {
   // Email/phone are now auto-filled from user profile, so guard is more lenient
   const isBusinessProfileComplete = !!(defaultCompany && defaultCompany.companyName);
 
-  if (!isProfileComplete && !isOnCompleteProfile && !isOnAdmin && !isOnAccount) {
+  if (!sessionOnlyAuth && !isProfileComplete && !isOnCompleteProfile && !isOnAdmin && !isOnAccount) {
     return (
       <Switch>
         <Route path="/complete-profile" component={CompleteProfilePage} />
@@ -116,21 +127,28 @@ function AuthenticatedRouter() {
       </Switch>
     );
   }
-  // If user hasn't set Business Profile, force them to /settings (account tab)
+  // If user hasn't set Business Profile, force them to /account (single source of truth)
   const isPaperSetupComplete = paperSetupStatus?.completed ?? false;
   const isMachineConfigured = fluteStatus?.configured ?? false;
   const isOnMasters = location.startsWith("/masters");
 
-  if (!isBusinessProfileComplete && location !== "/settings" && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
-    return <Redirect to="/settings" />;
+  if (!sessionOnlyAuth && !isBusinessProfileComplete && location !== "/account" && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
+    return <Redirect to="/account" />;
   }
-  // After Business Profile, ensure machine/flute settings are configured before masters/paper setup
-  if (!isMachineConfigured && !isOnMasters && !isOnAdmin && !isOnAccount && !isOnCompleteProfile && location !== "/settings") {
+  // After Business Profile, ensure Paper Pricing is configured BEFORE Flute settings
+  if (!sessionOnlyAuth && !isPaperSetupComplete && !isOnMasters && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
+    return <Redirect to="/masters?tab=paper" />;
+  }
+
+  if (!sessionOnlyAuth && !isMachineConfigured && !isOnMasters && !isOnAdmin && !isOnAccount && !isOnCompleteProfile && location !== "/account") {
     return <Redirect to="/masters?tab=flute" />;
   }
 
-  if (!isPaperSetupComplete && !isOnMasters && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
-    return <Redirect to="/masters?tab=paper" />;
+  // After setup steps, if not paid-active, send to Onboarding page for submission/wait
+  const isPaidActive = !!onboardingStatus?.paidActive;
+  const isOnOnboarding = location === "/onboarding";
+  if (!sessionOnlyAuth && !isPaidActive && !isOnOnboarding && !isOnAdmin && !isOnAccount && !isOnCompleteProfile) {
+    return <Redirect to="/onboarding" />;
   }
 
   return (
@@ -145,10 +163,16 @@ function AuthenticatedRouter() {
         <Route path="/reports" component={Reports} />
         <Route path="/masters" component={Masters} />
         <Route path="/account" component={Account} />
+        <Route path="/onboarding" component={Onboarding} />
         <Route path="/admin" component={AdminPanel} />
         <Route path="/admin/users" component={AdminUsers} />
         <Route path="/onboarding" component={Onboarding} />
         <Route path="/support" component={SupportPanel} />
+        <Route path="/about" component={About} />
+        <Route path="/pricing" component={Pricing} />
+        <Route path="/contact" component={Contact} />
+        <Route path="/terms" component={Terms} />
+        <Route path="/privacy" component={Privacy} />
         <Route path="/complete-profile" component={CompleteProfilePage} />
         <Route component={NotFound} />
       </Switch>
@@ -174,6 +198,11 @@ function Router() {
         <Route path="/auth" component={AuthPage} />
         <Route path="/auth/callback" component={AuthCallback} />
         <Route path="/auth/reset-password" component={ResetPasswordPage} />
+        <Route path="/about" component={About} />
+        <Route path="/pricing" component={Pricing} />
+        <Route path="/contact" component={Contact} />
+        <Route path="/terms" component={Terms} />
+        <Route path="/privacy" component={Privacy} />
         <Route component={NotFound} />
       </Switch>
     );

@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,27 +27,85 @@ import {
 interface CompanyProfile {
   id: string;
   userId: string;
-  name: string;
+  companyName: string;
+  ownerName?: string;
   address?: string;
   phone?: string;
   email?: string;
-  gstNumber?: string;
-  panNumber?: string;
+  gstNo?: string;
+  panNo?: string;
   website?: string;
-  logo?: string;
+  logoUrl?: string;
   isDefault: boolean;
 }
 
 export default function Account() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("personal");
+  const [companyName, setCompanyName] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [website, setWebsite] = useState("");
+  const [gstNumber, setGstNumber] = useState("");
+  const [panNumber, setPanNumber] = useState("");
+  const [address, setAddress] = useState("");
 
   const { data: companyProfiles, isLoading: profilesLoading } = useQuery<CompanyProfile[]>({
     queryKey: ["/api/company-profiles"],
   });
 
   const defaultProfile = companyProfiles?.find((p) => p.isDefault) || companyProfiles?.[0];
+
+  useEffect(() => {
+    if (defaultProfile) {
+      setCompanyName(defaultProfile.companyName || "");
+      setOwnerName(defaultProfile.ownerName || "");
+      setPhone(defaultProfile.phone || "");
+      setWebsite(defaultProfile.website || "");
+      setGstNumber(defaultProfile.gstNo || "");
+      setPanNumber(defaultProfile.panNo || "");
+      setAddress(defaultProfile.address || "");
+    }
+  }, [defaultProfile]);
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (defaultProfile) {
+        return apiRequest("PATCH", `/api/company-profiles/${defaultProfile.id}`, data);
+      } else {
+        return apiRequest("POST", "/api/company-profiles", { ...data, isDefault: true });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profiles"] });
+      toast({ title: "Business Profile Saved", description: "Your company details have been updated." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to save business profile", variant: "destructive" });
+    }
+  });
+
+  const handleSaveBusiness = () => {
+    // Validate required fields: Owner Name, Mobile No (phone), Company Name, GST No
+    if (!companyName.trim() || !ownerName.trim() || !phone.trim() || !gstNumber.trim()) {
+      toast({
+        title: "Missing Required Fields",
+        description: "Owner Name, Mobile No, Company Name, and GST No are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+    updateProfileMutation.mutate({
+      companyName,
+      ownerName,
+      phone,
+      email: user?.email || "",
+      website,
+      gstNo: gstNumber,
+      panNo: panNumber,
+      address,
+    });
+  };
 
   const getInitials = () => {
     if (user?.firstName && user?.lastName) {
@@ -69,23 +126,8 @@ export default function Account() {
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
-          <TabsTrigger value="personal" className="gap-2">
-            <User className="h-4 w-4 hidden sm:inline" />
-            Personal
-          </TabsTrigger>
-          <TabsTrigger value="business" className="gap-2">
-            <Building2 className="h-4 w-4 hidden sm:inline" />
-            Business
-          </TabsTrigger>
-          <TabsTrigger value="branding" className="gap-2">
-            <Palette className="h-4 w-4 hidden sm:inline" />
-            Branding
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="personal" className="mt-6">
+      {/* Personal Details */}
+        <div className="mt-6">
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle>Personal Details</CardTitle>
@@ -135,13 +177,13 @@ export default function Account() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="business" className="mt-6">
+        </div>
+      {/* Business Profile - Single source of truth */}
+        <div className="mt-6">
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle>Business Details</CardTitle>
-              <CardDescription>Your company profile used in quotes</CardDescription>
+              <CardDescription>Master business profile used in quotes and documents</CardDescription>
             </CardHeader>
             <CardContent>
               {profilesLoading ? (
@@ -150,23 +192,34 @@ export default function Account() {
                   <Skeleton className="h-10 w-full" />
                   <Skeleton className="h-20 w-full" />
                 </div>
-              ) : defaultProfile ? (
+              ) : (
                 <div className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
+                   <div className="grid gap-4 sm:grid-cols-2">
+                     <div className="space-y-2">
+                       <Label htmlFor="ownerName">Owner / Contact Name<span className="text-red-600">*</span></Label>
+                       <Input
+                         id="ownerName"
+                         value={ownerName}
+                         onChange={(e) => setOwnerName(e.target.value)}
+                         placeholder="Owner or primary contact"
+                       />
+                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="companyName">Company Name</Label>
+                       <Label htmlFor="companyName">Company Name<span className="text-red-600">*</span></Label>
                       <Input
                         id="companyName"
-                        defaultValue={defaultProfile.name}
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
                         placeholder="Your company name"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="phone">Phone</Label>
+                       <Label htmlFor="phone">Mobile No<span className="text-red-600">*</span></Label>
                       <Input
                         id="phone"
-                        defaultValue={defaultProfile.phone || ""}
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
                         placeholder="Contact number"
                       />
                     </div>
@@ -176,8 +229,10 @@ export default function Account() {
                       <Input
                         id="email"
                         type="email"
-                        defaultValue={defaultProfile.email || ""}
-                        placeholder="Business email"
+                        value={user?.email || ""}
+                        disabled
+                        className="bg-muted"
+                        placeholder="Fetched from signup"
                       />
                     </div>
 
@@ -185,16 +240,18 @@ export default function Account() {
                       <Label htmlFor="website">Website</Label>
                       <Input
                         id="website"
-                        defaultValue={defaultProfile.website || ""}
+                        value={website}
+                        onChange={(e) => setWebsite(e.target.value)}
                         placeholder="https://yourwebsite.com"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="gst">GST Number</Label>
+                       <Label htmlFor="gst">GST No<span className="text-red-600">*</span></Label>
                       <Input
                         id="gst"
-                        defaultValue={defaultProfile.gstNumber || ""}
+                        value={gstNumber}
+                        onChange={(e) => setGstNumber(e.target.value)}
                         placeholder="GST number"
                       />
                     </div>
@@ -203,7 +260,8 @@ export default function Account() {
                       <Label htmlFor="pan">PAN Number</Label>
                       <Input
                         id="pan"
-                        defaultValue={defaultProfile.panNumber || ""}
+                        value={panNumber}
+                        onChange={(e) => setPanNumber(e.target.value)}
                         placeholder="PAN number"
                       />
                     </div>
@@ -213,29 +271,24 @@ export default function Account() {
                     <Label htmlFor="address">Address</Label>
                     <Textarea
                       id="address"
-                      defaultValue={defaultProfile.address || ""}
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
                       placeholder="Full business address"
                       rows={3}
                     />
                   </div>
 
-                  <Button className="gap-2">
+                  <Button className="gap-2" onClick={handleSaveBusiness} disabled={updateProfileMutation.isPending}>
                     <Save className="h-4 w-4" />
                     Save Changes
                   </Button>
                 </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Building2 className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
-                  <p className="text-muted-foreground mb-4">No business profile found</p>
-                  <Button>Create Profile</Button>
-                </div>
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="branding" className="mt-6">
+        </div>
+      {/* Branding */}
+        <div className="mt-6">
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle>Branding</CardTitle>
@@ -272,8 +325,7 @@ export default function Account() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
     </div>
   );
 }
