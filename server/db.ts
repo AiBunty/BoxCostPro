@@ -6,6 +6,7 @@ const { Pool } = pg;
 
 let pool: any;
 let db: any;
+let isDbAvailable = false;
 
 if (!process.env.DATABASE_URL) {
   console.warn("DATABASE_URL not set — running in DB-less test mode. Many features will be disabled.");
@@ -18,15 +19,17 @@ if (!process.env.DATABASE_URL) {
 
   pool = dummyPool;
   db = {};
+  isDbAvailable = false;
 } else {
   pool = new Pool({ connectionString: process.env.DATABASE_URL });
   db = drizzle(pool, { schema });
+  isDbAvailable = true;
 
   // Create partial unique index to ensure only one owner exists
   // This prevents race conditions in first-user-becomes-owner logic
   pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS users_single_owner_idx 
-    ON users (role) 
+    CREATE UNIQUE INDEX IF NOT EXISTS users_single_owner_idx
+    ON users (role)
     WHERE role = 'owner'
   `).catch(err => {
     // Index may already exist or table doesn't exist yet - safe to ignore
@@ -34,4 +37,4 @@ if (!process.env.DATABASE_URL) {
   });
 }
 
-export { pool, db };
+export { pool, db, isDbAvailable };

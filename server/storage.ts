@@ -2123,4 +2123,126 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+// In-memory storage for local development without database
+class InMemoryStorage implements Partial<IStorage> {
+  private users: Map<string, User> = new Map();
+  private usersByEmail: Map<string, User> = new Map();
+  private userProfiles: Map<string, UserProfile> = new Map();
+
+  async getUser(id: string): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return this.usersByEmail.get(email.toLowerCase());
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const existingUser = userData.email ? await this.getUserByEmail(userData.email) : undefined;
+
+    if (existingUser) {
+      // Update existing user
+      const updatedUser: User = {
+        ...existingUser,
+        ...userData,
+        updatedAt: new Date(),
+      };
+      this.users.set(existingUser.id, updatedUser);
+      if (updatedUser.email) {
+        this.usersByEmail.set(updatedUser.email.toLowerCase(), updatedUser);
+      }
+      return updatedUser;
+    }
+
+    // Create new user
+    const newUser: User = {
+      id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      email: userData.email || '',
+      firstName: userData.firstName || '',
+      lastName: userData.lastName || '',
+      role: userData.role || 'user',
+      companyName: userData.companyName || null,
+      gstNumber: userData.gstNumber || null,
+      address: userData.address || null,
+      phone: userData.phone || null,
+      logoUrl: userData.logoUrl || null,
+      profileImageUrl: userData.profileImageUrl || null,
+      supabaseUserId: userData.supabaseUserId || null,
+      emailVerified: userData.emailVerified || false,
+      isActive: userData.isActive !== undefined ? userData.isActive : true,
+      isSuspended: userData.isSuspended || false,
+      suspensionReason: userData.suspensionReason || null,
+      failedLoginAttempts: userData.failedLoginAttempts || 0,
+      lockedUntil: userData.lockedUntil || null,
+      lastLoginAt: userData.lastLoginAt || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.users.set(newUser.id, newUser);
+    if (newUser.email) {
+      this.usersByEmail.set(newUser.email.toLowerCase(), newUser);
+    }
+
+    console.log(`[InMemoryStorage] Created user: ${newUser.email} (${newUser.id})`);
+    return newUser;
+  }
+
+  async updateUser(id: string, updates: Partial<UpsertUser>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+
+    const updatedUser: User = {
+      ...user,
+      ...updates,
+      updatedAt: new Date(),
+    };
+
+    this.users.set(id, updatedUser);
+    if (updatedUser.email) {
+      this.usersByEmail.set(updatedUser.email.toLowerCase(), updatedUser);
+    }
+
+    return updatedUser;
+  }
+
+  async getUserProfile(userId: string): Promise<UserProfile | undefined> {
+    return this.userProfiles.get(userId);
+  }
+
+  async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
+    const newProfile: UserProfile = {
+      id: `profile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      userId: profile.userId,
+      onboardingCompleted: profile.onboardingCompleted || false,
+      onboardingStep: profile.onboardingStep || null,
+      onboardingData: profile.onboardingData || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.userProfiles.set(profile.userId, newProfile);
+    console.log(`[InMemoryStorage] Created user profile for: ${profile.userId}`);
+    return newProfile;
+  }
+
+  async updateUserProfile(userId: string, updates: Partial<InsertUserProfile>): Promise<UserProfile | undefined> {
+    const profile = this.userProfiles.get(userId);
+    if (!profile) return undefined;
+
+    const updatedProfile: UserProfile = {
+      ...profile,
+      ...updates,
+      updatedAt: new Date(),
+    };
+
+    this.userProfiles.set(userId, updatedProfile);
+    return updatedProfile;
+  }
+}
+
+// Export the appropriate storage based on database availability
+import { isDbAvailable } from './db';
+export const storage: IStorage = isDbAvailable
+  ? new DatabaseStorage()
+  : new InMemoryStorage() as IStorage;

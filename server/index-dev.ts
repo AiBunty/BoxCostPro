@@ -37,7 +37,7 @@ export async function setupVite(app: Express, server: Server) {
 
   app.use(vite.middlewares);
 
-  // Serve specific static HTML pages in dev mode
+  // Serve specific static HTML pages for Google OAuth compliance
   const publicPath = path.resolve(import.meta.dirname, "..", "client", "public");
 
   app.get("/privacy-policy", async (_req, res) => {
@@ -60,28 +60,7 @@ export async function setupVite(app: Express, server: Server) {
     }
   });
 
-  // Serve homepage for root route (unauthenticated landing page)
-  app.get("/", async (req: any, res, next) => {
-    // If user is authenticated (has session or Supabase token), serve the React app
-    if (req.isAuthenticated && req.isAuthenticated() || req.supabaseUser || req.user) {
-      return next(); // Continue to React app rendering below
-    }
-
-    // Otherwise, serve the public homepage
-    const homepagePath = path.resolve(publicPath, "homepage.html");
-    if (fs.existsSync(homepagePath)) {
-      try {
-        const content = await fs.promises.readFile(homepagePath, "utf-8");
-        return res.status(200).set({ "Content-Type": "text/html" }).end(content);
-      } catch (e) {
-        console.error("Error serving homepage:", e);
-      }
-    }
-
-    // Fallback to React app
-    next();
-  });
-
+  // Serve React app for all other routes
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 

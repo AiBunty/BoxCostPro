@@ -11,7 +11,7 @@
  * - Users can only access data for tenants they belong to
  */
 
-import { db } from "./db";
+import { db, isDbAvailable } from "./db";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
 
@@ -26,6 +26,15 @@ export interface TenantContext {
  * Each user belongs to exactly one tenant (for now - future: multi-tenant membership)
  */
 export async function getTenantContextForUser(userId: string): Promise<TenantContext | null> {
+  // Skip tenant context in DB-less mode
+  if (!isDbAvailable) {
+    return {
+      tenantId: `tenant_${userId}`,
+      userId: userId,
+      role: 'owner',
+    };
+  }
+
   try {
     const result = await db.execute(sql`
       SELECT tu.tenant_id, tu.user_id, tu.role
@@ -34,7 +43,7 @@ export async function getTenantContextForUser(userId: string): Promise<TenantCon
         AND tu.is_active = true
       LIMIT 1
     `);
-    
+
     if (result.rows && result.rows.length > 0) {
       const row = result.rows[0] as any;
       return {
@@ -43,7 +52,7 @@ export async function getTenantContextForUser(userId: string): Promise<TenantCon
         role: row.role as 'owner' | 'admin' | 'staff',
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error('Error getting tenant context:', error);
@@ -63,6 +72,11 @@ export async function getTenantIdForUser(userId: string): Promise<string | null>
  * Check if a user has access to a specific tenant
  */
 export async function userHasTenantAccess(userId: string, tenantId: string): Promise<boolean> {
+  // In DB-less mode, assume user has access to their own tenant
+  if (!isDbAvailable) {
+    return tenantId === `tenant_${userId}`;
+  }
+
   try {
     const result = await db.execute(sql`
       SELECT 1 FROM tenant_users
@@ -71,7 +85,7 @@ export async function userHasTenantAccess(userId: string, tenantId: string): Pro
         AND is_active = true
       LIMIT 1
     `);
-    
+
     return result.rows && result.rows.length > 0;
   } catch (error) {
     console.error('Error checking tenant access:', error);
@@ -86,26 +100,35 @@ export async function createTenantForUser(
   userId: string,
   businessName?: string
 ): Promise<TenantContext | null> {
+  // In DB-less mode, just return a mock tenant context
+  if (!isDbAvailable) {
+    return {
+      tenantId: `tenant_${userId}`,
+      userId: userId,
+      role: 'owner',
+    };
+  }
+
   try {
     // Check if user already has a tenant
     const existing = await getTenantContextForUser(userId);
     if (existing) {
       return existing;
     }
-    
+
     // Create new tenant
     const tenantResult = await db.execute(sql`
       INSERT INTO tenants (id, business_name, owner_user_id, is_active, created_at, updated_at)
       VALUES (gen_random_uuid()::VARCHAR, ${businessName || 'My Business'}, ${userId}, true, NOW(), NOW())
       RETURNING id
     `);
-    
+
     if (!tenantResult.rows || tenantResult.rows.length === 0) {
       throw new Error('Failed to create tenant');
     }
-    
+
     const tenantId = (tenantResult.rows[0] as any).id;
-    
+
     // Add user as owner of the tenant
     await db.execute(sql`
       INSERT INTO tenant_users (tenant_id, user_id, role, is_active, joined_at, created_at)

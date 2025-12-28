@@ -174,9 +174,23 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         </header>
 
-        <main className="flex-1 pb-16 overflow-auto">
+        <main className="flex-1 pb-24 overflow-auto">
           {children}
         </main>
+
+        <div className="fixed bottom-16 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t">
+          <div className="px-4 py-2 text-xs text-muted-foreground">
+            <div className="flex gap-3 justify-center">
+              <a href="/privacy-policy" target="_blank" className="hover:text-foreground transition-colors">
+                Privacy Policy
+              </a>
+              <span>•</span>
+              <a href="/terms" target="_blank" className="hover:text-foreground transition-colors">
+                Terms
+              </a>
+            </div>
+          </div>
+        </div>
 
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t safe-area-inset-bottom">
           <div className="flex items-center justify-around h-16 px-2">
@@ -305,16 +319,29 @@ export function AppShell({ children }: AppShellProps) {
           })}
         </nav>
 
-        <div className="border-t p-2">
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-3 h-10 text-muted-foreground"
-            onClick={signOut}
-            data-testid="button-signout"
-          >
-            <LogOut className="h-5 w-5" />
-            <span>Sign Out</span>
-          </Button>
+        <div className="border-t">
+          <div className="p-2">
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 h-10 text-muted-foreground"
+              onClick={signOut}
+              data-testid="button-signout"
+            >
+              <LogOut className="h-5 w-5" />
+              <span>Sign Out</span>
+            </Button>
+          </div>
+          <div className="px-4 py-2 text-xs text-muted-foreground border-t">
+            <div className="flex gap-3 justify-center">
+              <a href="/privacy-policy" target="_blank" className="hover:text-foreground transition-colors">
+                Privacy Policy
+              </a>
+              <span>•</span>
+              <a href="/terms" target="_blank" className="hover:text-foreground transition-colors">
+                Terms of Service
+              </a>
+            </div>
+          </div>
         </div>
       </aside>
 

@@ -8,13 +8,9 @@ export default defineConfig({
   plugins: [
     react(),
     runtimeErrorOverlay(),
-    // Copy static HTML pages to build output
+    // Copy static HTML pages for Google OAuth compliance
     viteStaticCopy({
       targets: [
-        {
-          src: 'public/homepage.html',
-          dest: '.'
-        },
         {
           src: 'public/privacy-policy.html',
           dest: '.'

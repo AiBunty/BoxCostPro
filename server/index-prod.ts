@@ -18,10 +18,7 @@ export async function serveStatic(app: Express, _server: Server) {
     );
   }
 
-  // IMPORTANT: Define specific routes BEFORE static middleware
-  // Otherwise express.static will serve index.html for "/" before our custom logic runs
-
-  // Serve specific static HTML pages
+  // Serve specific static HTML pages for Google OAuth compliance
   app.get("/privacy-policy", (_req, res) => {
     res.sendFile(path.resolve(distPath, "privacy-policy.html"));
   });
@@ -30,32 +27,7 @@ export async function serveStatic(app: Express, _server: Server) {
     res.sendFile(path.resolve(distPath, "terms.html"));
   });
 
-  // Serve homepage for root route (unauthenticated landing page)
-  app.get("/", (req: any, res, next) => {
-    console.log('[Homepage Route] Handling / route');
-    console.log('[Homepage Route] isAuthenticated:', typeof req.isAuthenticated === 'function' ? req.isAuthenticated() : 'N/A');
-    console.log('[Homepage Route] supabaseUser:', !!req.supabaseUser);
-    console.log('[Homepage Route] user:', !!req.user);
-
-    // If user is authenticated (has session or Supabase token), serve the React app
-    if (req.isAuthenticated && req.isAuthenticated() || req.supabaseUser || req.user) {
-      console.log('[Homepage Route] User authenticated, serving React app');
-      return res.sendFile(path.resolve(distPath, "index.html"));
-    }
-
-    // Otherwise, serve the public homepage
-    const homepagePath = path.resolve(distPath, "homepage.html");
-    if (fs.existsSync(homepagePath)) {
-      console.log('[Homepage Route] Serving homepage.html');
-      return res.sendFile(homepagePath);
-    }
-
-    // Fallback to React app if homepage.html doesn't exist
-    console.log('[Homepage Route] homepage.html not found, serving React app');
-    res.sendFile(path.resolve(distPath, "index.html"));
-  });
-
-  // Serve static assets (JS, CSS, images, etc.) - after specific routes
+  // Serve static assets and React app
   app.use(express.static(distPath));
 
   // All other routes serve the React app (for authenticated app routes)
