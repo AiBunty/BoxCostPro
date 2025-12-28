@@ -1,3 +1,30 @@
+## **Deploy to Replit**
+ - **Push to GitHub:** Initialize and push this workspace to your GitHub repo (`main` branch recommended).
+ - **Import in Replit:** Use "Import from GitHub" to create a Replit project from your repo.
+ - **Set Secrets:** In Replit, add required environment variables in the Secrets panel:
+	 - `DATABASE_URL` → e.g., `postgresql://postgres:password@helium/heliumdb?sslmode=disable`
+	 - `JWT_SECRET`, `SESSION_SECRET`
+	 - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` (if using Google OAuth)
+ - **Install & Run:** In the Replit shell:
+	 - `npm install`
+	 - `npm run dev`
+ - **Migrate DB schema:** Apply the same Drizzle migration used locally:
+	 - Quick option: `npm run db:push`
+	 - Or use the helpers:
+		 - PowerShell: see [scripts/replit-migrate.ps1](scripts/replit-migrate.ps1)
+		 - Bash: see [scripts/replit-migrate.sh](scripts/replit-migrate.sh)
+
+### **Workflow to keep DB in sync**
+ - Make schema changes locally, then:
+	 - Locally: set `DATABASE_URL` and run `npm run db:push`
+	 - Push code to GitHub
+	 - In Replit: Pull/import latest, ensure `DATABASE_URL` is set, then run `npm run db:push`
+
+### **Troubleshooting**
+ - If you see TLS errors on Replit Postgres, switch to `?sslmode=require`.
+ - If the server complains about unset env vars, add them in Replit Secrets and restart.
+ - Replit provides its own `PORT`; the server reads `process.env.PORT` in [server/app.ts](server/app.ts).
+
 # BoxCostPro — Local Setup
 
 ## Prerequisites
