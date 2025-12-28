@@ -10,7 +10,9 @@
     "start": "NODE_ENV=production node dist/index.js",
     "db:push": "drizzle-kit push",
     "replit:migrate": "bash scripts/replit-migrate.sh",
-    "replit:migrate:ps": "powershell -ExecutionPolicy Bypass -File scripts/replit-migrate.ps1"
+    "replit:migrate:ps": "powershell -ExecutionPolicy Bypass -File scripts/replit-migrate.ps1",
+    "db:schema": "bash scripts/db-schema-dump.sh",
+    "db:schema:ps": "powershell -ExecutionPolicy Bypass -File scripts/db-schema-dump.ps1"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

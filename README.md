@@ -14,6 +14,16 @@
 		 - PowerShell: see [scripts/replit-migrate.ps1](scripts/replit-migrate.ps1)
 		 - Bash: see [scripts/replit-migrate.sh](scripts/replit-migrate.sh)
 
+### **Scripts Reference**
+- Schema dump:
+	- Bash: `npm run db:schema` → saves schema to [attached_assets/schema.sql](attached_assets/schema.sql) (or tables/columns text if `pg_dump` missing)
+	- PowerShell: `npm run db:schema:ps`
+- DB inspect:
+	- `psql $DATABASE_URL -f scripts/db-inspect.sql` → column types, counts, missing emails
+- Safe migration:
+	- `npm run replit:migrate` → runs Drizzle push (review prompts carefully to avoid data loss)
+	- See “Issue 6: Drizzle Push — Safe Mode” in [REPLIT_DEPLOYMENT_GUIDE.md](REPLIT_DEPLOYMENT_GUIDE.md)
+
 ### **Workflow to keep DB in sync**
  - Make schema changes locally, then:
 	 - Locally: set `DATABASE_URL` and run `npm run db:push`

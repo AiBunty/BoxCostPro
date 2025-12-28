@@ -449,6 +449,44 @@ npx drizzle-kit push
 
 **Tip**: Use `scripts/db-inspect.sql` to quickly check column types and table counts.
 
+#### One-shot fix (recommended): dedupe + constraints + cast
+
+```bash
+# Run the helper script
+psql $DATABASE_URL -f scripts/db-dedupe-and-constraints.sql
+
+# Then print and review drizzle SQL
+npx drizzle-kit push --print > /tmp/drizzle_migration.sql
+sed -n '1,200p' /tmp/drizzle_migration.sql
+
+# Only proceed if no destructive drops are proposed
+npx drizzle-kit push
+```
+
+This approach:
+- Backs up legacy `quotes` columns to `quotes_legacy`
+- Casts `quotes.created_at` to timestamp
+- Dedupes rows to satisfy uniqueness
+- Adds unique constraints safely (skips if they exist)
+
+#### Backfill legacy quotes into versioned tables
+
+Use this to migrate existing `quotes` rows (with legacy fields) into `quote_versions` and `quote_item_versions` without losing data.
+
+```bash
+# Run backfill (idempotent; only processes quotes without active versions)
+psql $DATABASE_URL -f scripts/backfill-legacy-quotes.sql
+
+# Verify results
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM quote_versions;"
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM quote_item_versions;"
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM quotes WHERE active_version_id IS NULL;"  # should go down
+```
+
+After backfill:
+- Keep legacy columns for now; they won't break current logic
+- When ready, archive/export legacy data and drop columns via a controlled migration (avoid `drizzle-kit` destructive drops until verified)
+
 
 ### Issue 6: OAuth redirect URI mismatch
 
