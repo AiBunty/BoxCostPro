@@ -10,6 +10,35 @@ Your setup:
 
 ---
 
+## 🔄 Quick Sync Checklist
+
+Use this anytime Replit shows "Missing script" or stale files.
+
+```bash
+# 1) Pull latest code
+git pull origin main
+
+# 2) Install deps (first time or after package updates)
+npm install
+
+# 3) Verify scripts exist
+npm run
+
+# 4) Run DB migration (requires $DATABASE_URL in Replit Secrets)
+npm run replit:migrate
+
+# 5) Restart app
+pkill -f node
+npm run dev
+```
+
+Tips:
+- If `npm run replit:migrate` is missing, your Replit code is outdated → run `git pull origin main`.
+- If `DATABASE_URL` is empty, set it in Replit Secrets and re-run.
+- Prefer `replit:migrate` (Bash) on Replit; use `replit:migrate:ps` for PowerShell environments.
+
+---
+
 ## 📋 Step-by-Step Deployment Process
 
 ### Step 1: Sync Code from GitHub to Replit
