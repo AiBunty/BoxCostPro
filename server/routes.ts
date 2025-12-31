@@ -3,7 +3,19 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { supabaseAuthMiddleware, requireSupabaseAuth, requireOwner as requireSupabaseOwner, requireAdmin, requireSupportAgent, requireSupportManager, requireSuperAdmin, hasRoleLevel } from "./supabaseAuth";
-import { directGoogleOAuth } from "./auth/directGoogleOAuth";
+import { createOnboardingGuard } from "./middleware/onboardingGuard";
+import { getNeonAuthUser } from "./neonAuth";
+import { getClerkUser } from "./clerkAuth";
+import { logAuthEventAsync, notifyAdminAsync, sendWelcomeEmail } from "./services/authService";
+import { registerAdminRoutes } from "./routes/adminRoutes";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
+import { validateGSTIN, extractPANFromGST, getStateFromGST, LOCKED_LEGAL_FIELDS, type LockedLegalField } from "./utils/gstValidation";
+import { generateInvoiceNumber, getCurrentFinancialYear } from "./services/invoiceNumbering";
+import { calculateGST, type GSTBreakdown } from "./services/gstCalculation";
+import { initializeRazorpay, createRazorpayOrder, verifyRazorpaySignature, fetchPaymentDetails } from "./services/razorpayService";
+import { generateInvoicePDF } from "./services/pdfInvoiceService";
+import { sendWelcomeEmail as sendSignupWelcomeEmail, sendInvoiceEmail } from "./services/signupEmailService";
 import { z } from "zod";
 import { 
   insertCompanyProfileSchema, 
@@ -28,20 +40,99 @@ import {
   insertSupportMessageSchema
 } from "@shared/schema";
 
-// Combined auth middleware - checks both Supabase JWT and session-based auth
+// Combined auth middleware - checks Clerk, Neon Auth, Supabase JWT, and session-based auth
 const combinedAuth = async (req: any, res: Response, next: NextFunction) => {
-  // First check Supabase auth
+  // First check Clerk Auth
+  const clerkUser = await getClerkUser(req);
+  if (clerkUser) {
+    let appUser = await storage.getUserByClerkId(clerkUser.id);
+
+    // If user doesn't exist in our database, create them
+    if (!appUser) {
+      console.log('[Clerk Auth] Creating new user for Clerk user:', clerkUser.email);
+
+      // Check if this is the first user (should be super admin)
+      const existingUsers = await storage.getAllUsers();
+      const isFirstUser = existingUsers.length === 0;
+
+      // Create user in our database
+      appUser = await storage.upsertUser({
+        email: clerkUser.email,
+        clerkUserId: clerkUser.id,
+        firstName: clerkUser.firstName,
+        lastName: clerkUser.lastName,
+        profileImageUrl: clerkUser.profileImageUrl,
+        role: isFirstUser ? 'super_admin' : 'user', // First user is super admin
+        emailVerified: clerkUser.emailVerified,
+      });
+
+      console.log('[Clerk Auth] Created user:', appUser.id, 'Role:', appUser.role);
+    }
+
+    req.userId = appUser.id;
+    req.clerkUser = clerkUser;
+    req.user = appUser;
+    return next();
+  }
+
+  // Then check Neon Auth (legacy, will be removed)
+  const neonUser = await getNeonAuthUser(req);
+  if (neonUser) {
+    let appUser = await storage.getUserByNeonAuthId(neonUser.id);
+
+    // If user doesn't exist in our database, create them
+    if (!appUser) {
+      console.log('[Neon Auth] Creating new user for Neon Auth user:', neonUser.email);
+
+      // Check if this is the first user (should be super admin)
+      const existingUsers = await storage.getAllUsers();
+      const isFirstUser = existingUsers.length === 0;
+
+      // Extract name from Neon Auth user
+      const nameParts = (neonUser.name || neonUser.email?.split('@')[0] || 'User').split(' ');
+      const firstName = nameParts[0] || 'User';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      // Create user in our database
+      appUser = await storage.upsertUser({
+        email: neonUser.email || '',
+        neonAuthUserId: neonUser.id,
+        firstName,
+        lastName,
+        profileImageUrl: neonUser.image || null,
+        role: isFirstUser ? 'super_admin' : 'user', // First user is super admin
+        emailVerified: neonUser.emailVerified || false,
+      });
+
+      console.log('[Neon Auth] Created user:', appUser.id, 'Role:', appUser.role);
+    }
+
+    req.userId = appUser.id;
+    req.neonAuthUser = neonUser;
+    req.user = appUser;
+    return next();
+  }
+
+  // Then check Supabase auth
   if (req.supabaseUser) {
     req.userId = req.supabaseUser.id;
     return next();
   }
-  
+
   // Fall back to session-based auth
   if (req.user?.claims?.sub) {
     req.userId = req.user.claims.sub;
     return next();
   }
-  
+  if (req.user?.userId) {
+    req.userId = req.user.userId;
+    return next();
+  }
+  if (req.user?.id) {
+    req.userId = req.user.id;
+    return next();
+  }
+
   return res.status(401).json({ message: "Unauthorized" });
 };
 
@@ -61,6 +152,13 @@ const isOwner = async (req: any, res: Response, next: NextFunction) => {
 export async function registerRoutes(app: Express): Promise<Server> {
   // CRITICAL: Always setup session middleware (required for Google OAuth)
   app.set("trust proxy", 1);
+
+  // Setup Clerk authentication middleware
+  const { clerkMiddleware } = await import('@clerk/express');
+  app.use(clerkMiddleware({
+    secretKey: process.env.CLERK_SECRET_KEY,
+    publishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY,
+  }));
 
   // Import and configure session
   const { getSession } = await import('./replitAuth');
@@ -85,6 +183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Add Supabase JWT auth middleware globally
   app.use(supabaseAuthMiddleware);
 
+  // ========== CRITICAL: ONBOARDING GUARD ==========
+  // BLOCKS all protected routes until user is verified
+  // This is BACKEND enforcement - users CANNOT bypass via API calls
+  app.use(createOnboardingGuard(storage));
+
   // Auth routes - unified for both Supabase JWT and session auth
   app.get('/api/auth/user', combinedAuth, async (req: any, res) => {
     try {
@@ -108,10 +211,222 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Logout route
-  app.post('/api/auth/logout', (req: any, res) => {
+  app.post('/api/auth/logout', async (req: any, res) => {
+    // Clear Neon Auth session if present
+    const sessionToken = (req as any).cookies?.['neon-session'];
+    if (sessionToken) {
+      try {
+        const { neonAuthClient } = await import('./neonAuth');
+        await neonAuthClient.signOut();
+      } catch (error) {
+        console.error('[Neon Auth] Logout error:', error);
+      }
+    }
+
+    // Clear traditional session
     req.logout(() => {
+      res.clearCookie('neon-session');
       res.json({ message: "Logged out successfully" });
     });
+  });
+
+  // ==================== NEON AUTH WEBHOOK ====================
+
+  // Webhook handler for Neon Auth events (user.created, user.email_verified, etc.)
+  app.post('/api/webhooks/neon-auth', async (req, res) => {
+    try {
+      const { event, data } = req.body;
+
+      console.log('[Neon Auth Webhook] Received event:', event, data);
+
+      if (event === 'user.created') {
+        // Create BoxCostPro user linked to Neon Auth user
+        const nameParts = (data.name || '').split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+
+        const createdUser = await storage.upsertUser({
+          email: data.email,
+          firstName,
+          lastName,
+          neonAuthUserId: data.id,
+          emailVerified: data.emailVerified || false,
+          accountStatus: data.emailVerified ? 'email_verified' : 'pending_verification',
+        });
+
+        console.log('[Neon Auth Webhook] User created:', data.email);
+
+        sendWelcomeEmail({
+          email: data.email,
+          userName: data.name,
+          signupMethod: 'neon_email_otp'
+        }).catch((err) => console.error('WELCOME_EMAIL_WEBHOOK_FAILED', err));
+
+        logAuthEventAsync({
+          userId: createdUser?.id,
+          email: data.email,
+          action: 'SIGNUP',
+          status: 'success',
+          metadata: {
+            provider: 'neon_email_otp'
+          }
+        });
+
+        notifyAdminAsync({
+          subject: 'New User Signup (Neon Auth)',
+          eventType: 'SIGNUP',
+          userEmail: data.email,
+          userName: data.name,
+          signupMethod: 'Neon Auth',
+          timestamp: new Date(),
+        });
+      }
+
+      if (event === 'user.email_verified') {
+        await storage.updateUserByNeonAuthId(data.userId, {
+          emailVerified: true,
+          accountStatus: 'email_verified',
+        });
+
+        console.log('[Neon Auth Webhook] Email verified for user:', data.userId);
+      }
+
+      if (event === 'user.updated') {
+        // Sync any profile updates from Neon Auth
+        const updates: any = {};
+        if (data.name) {
+          const nameParts = data.name.split(' ');
+          updates.firstName = nameParts[0] || '';
+          updates.lastName = nameParts.slice(1).join(' ') || '';
+        }
+        if (data.emailVerified !== undefined) {
+          updates.emailVerified = data.emailVerified;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await storage.updateUserByNeonAuthId(data.id, updates);
+          console.log('[Neon Auth Webhook] User updated:', data.id);
+        }
+      }
+
+      res.json({ received: true });
+    } catch (error: any) {
+      console.error('[Neon Auth Webhook] Error processing webhook:', error);
+      res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
+  // ==================== NEON AUTH API PROXY ====================
+
+  // Proxy route for Neon Auth API calls (enables same-origin requests)
+  app.all('/api/neon-auth/*', async (req, res) => {
+    try {
+      const neonBaseUrl = (process.env.VITE_NEON_AUTH_URL || process.env.NEON_AUTH_URL || '').replace(/\/$/, '');
+      if (!neonBaseUrl) {
+        console.error('[Neon Auth Proxy] Missing VITE_NEON_AUTH_URL/NEON_AUTH_URL');
+        return res.status(500).json({ error: 'Neon Auth base URL not configured' });
+      }
+
+      const neonAuthPath = req.path.replace('/api/neon-auth', '') || '/';
+      const normalizedPath = neonAuthPath.startsWith('/') ? neonAuthPath : `/${neonAuthPath}`;
+      const neonAuthUrl = `${neonBaseUrl}${normalizedPath}`;
+
+      console.log('[Neon Auth Proxy] Forwarding request to:', neonAuthUrl, 'Method:', req.method);
+
+      // Build headers for the upstream request
+      const headers: Record<string, string> = {};
+
+      // Forward Content-Type if present
+      if (req.headers['content-type']) {
+        headers['content-type'] = req.headers['content-type'];
+      } else if (req.body) {
+        // Default to JSON for requests with body
+        headers['content-type'] = 'application/json';
+      }
+
+      // Forward cookies from client to Neon Auth
+      if (req.headers.cookie) {
+        headers['cookie'] = req.headers.cookie;
+      }
+
+      // CRITICAL: Forward origin header for OAuth callbacks
+      if (req.headers['origin']) {
+        headers['origin'] = req.headers['origin'];
+      }
+
+      // Forward other important headers
+      if (req.headers['user-agent']) {
+        headers['user-agent'] = req.headers['user-agent'];
+      }
+      if (req.headers['referer']) {
+        headers['referer'] = req.headers['referer'];
+      }
+      if (req.headers['accept']) {
+        headers['accept'] = req.headers['accept'];
+      }
+      if (req.headers['authorization']) {
+        headers['authorization'] = req.headers['authorization'];
+      }
+
+      const response = await fetch(neonAuthUrl, {
+        method: req.method,
+        headers,
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      });
+
+      // Forward Set-Cookie headers from Neon Auth to client
+      const setCookieHeaders = response.headers.getSetCookie?.() || [];
+      if (setCookieHeaders.length > 0) {
+        setCookieHeaders.forEach(cookie => {
+          console.log('[Neon Auth Proxy] Original cookie:', cookie);
+
+          // Modify cookie to work with localhost
+          // Remove __Secure- or __Host- prefix from cookie name
+          // These prefixes require Secure flag which doesn't work on localhost
+          let modifiedCookie = cookie.replace(/^(__Secure-|__Host-)/i, '');
+
+          // Remove Domain attribute
+          modifiedCookie = modifiedCookie.replace(/;\s*Domain=[^;]+/gi, '');
+
+          // Remove Secure attribute (only works with HTTPS)
+          modifiedCookie = modifiedCookie.replace(/;\s*Secure/gi, '');
+
+          // Remove SameSite=None (requires Secure flag)
+          modifiedCookie = modifiedCookie.replace(/;\s*SameSite=None/gi, '');
+
+          // Remove Partitioned attribute (requires Secure flag)
+          modifiedCookie = modifiedCookie.replace(/;\s*Partitioned/gi, '');
+
+          // Add SameSite=Lax for localhost compatibility
+          modifiedCookie += '; SameSite=Lax';
+
+          console.log('[Neon Auth Proxy] Modified cookie:', modifiedCookie);
+          res.append('Set-Cookie', modifiedCookie);
+        });
+        console.log('[Neon Auth Proxy] Forwarding', setCookieHeaders.length, 'Set-Cookie headers (modified for localhost)');
+      }
+
+      // Forward other response headers
+      response.headers.forEach((value, key) => {
+        if (key.toLowerCase() !== 'set-cookie' && key.toLowerCase() !== 'content-length') {
+          res.setHeader(key, value);
+        }
+      });
+
+      // Check content type and handle accordingly
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        res.status(response.status).json(data);
+      } else {
+        // For non-JSON responses (HTML, text, etc), forward as-is
+        const text = await response.text();
+        res.status(response.status).send(text);
+      }
+    } catch (error: any) {
+      console.error('[Neon Auth Proxy] Error:', error);
+      res.status(500).json({ error: 'Proxy request failed', message: error.message });
+    }
   });
 
   // ==================== EMAIL/PASSWORD AUTHENTICATION ====================
@@ -167,6 +482,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Email and password are required' });
       }
 
+      // Validate password strength
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+      }
+
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
@@ -178,13 +498,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Create user
-      // TODO: Add password hashing before storing
+      // Hash password before storing
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      // Create user with hashed password
       const newUser = await storage.upsertUser({
         email,
         firstName,
         lastName,
         role: 'user',
+        passwordHash,
       });
 
       // Create session
@@ -210,165 +533,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ==================== DIRECT GOOGLE OAUTH (NO SUPABASE BRANDING) ====================
-
-  // Check if direct Google OAuth is configured
-  app.get('/api/auth/google/status', (req, res) => {
-    res.json({
-      available: directGoogleOAuth.isConfigured(),
-      provider: 'PaperBox ERP'
-    });
-  });
-
-  // Initiate Google OAuth flow (redirects to Google)
-  app.get('/api/auth/google/login', (req: any, res) => {
+  // Sign in with email and password
+  app.post('/api/auth/signin', async (req: any, res) => {
     try {
-      if (!directGoogleOAuth.isConfigured()) {
-        console.error('[Google OAuth] Not configured - missing credentials');
-        return res.redirect('/auth?error=google_not_configured');
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
       }
 
-      // Generate secure state for CSRF protection
-      const state = directGoogleOAuth.generateState();
-
-      // Store state in session for validation in callback
-      req.session.googleOAuthState = state;
-
-      // Get authorization URL
-      const authUrl = directGoogleOAuth.getAuthorizationUrl(state);
-
-      console.log('[Google OAuth] Redirecting to Google consent screen');
-      // Redirect user to Google for authentication
-      res.redirect(authUrl);
-    } catch (error: any) {
-      console.error('[Google OAuth] Login initiation failed:', error);
-      res.redirect('/auth?error=google_oauth_failed');
-    }
-  });
-
-  // Google OAuth callback (user returns here after granting permissions)
-  app.get('/auth/google/callback', async (req: any, res) => {
-    try {
-      const { code, state, error: oauthError } = req.query;
-
-      // Check for OAuth errors from Google
-      if (oauthError) {
-        console.error('[Google OAuth] Error from Google:', oauthError);
-        return res.redirect('/auth?error=google_denied');
-      }
-
-      if (!code || !state) {
-        return res.redirect('/auth?error=missing_oauth_params');
-      }
-
-      // Validate state to prevent CSRF attacks
-      const storedState = req.session.googleOAuthState;
-      if (!storedState || !directGoogleOAuth.validateState(state as string, storedState)) {
-        console.error('[Google OAuth] State validation failed');
-        return res.redirect('/auth?error=invalid_state');
-      }
-
-      // Clear state from session
-      delete req.session.googleOAuthState;
-
-      // Exchange authorization code for access tokens
-      const tokens = await directGoogleOAuth.getTokensFromCode(code as string);
-
-      // Get user information from Google
-      const googleUser = await directGoogleOAuth.getUserInfo(tokens.access_token);
-
-      if (!googleUser.verified_email) {
-        return res.redirect('/auth?error=email_not_verified');
-      }
-
-      // Check if user exists in our database
-      let user = await storage.getUserByEmail(googleUser.email);
-
+      // Get user by email
+      const user = await storage.getUserByEmail(email);
       if (!user) {
-        // Create or upsert user in our own database (no Supabase dependency)
-        user = await storage.upsertUser({
-          email: googleUser.email,
-          firstName: googleUser.given_name,
-          lastName: googleUser.family_name,
-          profileImageUrl: googleUser.picture,
-          authProvider: 'google_direct',
-        });
-
-        // Log signup event if authService available
-        try {
-          const { logAuthEvent } = await import('./services/authService');
-          await logAuthEvent({
-            userId: user.id,
-            email: user.email,
-            action: 'SIGNUP',
-            status: 'success',
-            provider: 'google_direct',
-            metadata: { name: googleUser.name },
-          });
-        } catch (_) {
-          // non-fatal
-        }
-
-        console.log('[Google OAuth] New user created:', user.email);
-      } else {
-        // Existing user - log login event
-        try {
-          const { logAuthEvent } = await import('./services/authService');
-          await logAuthEvent({
-            userId: user.id,
-            email: user.email,
-            action: 'LOGIN',
-            status: 'success',
-            provider: 'google_direct',
-          });
-        } catch (_) {
-          // non-fatal
-        }
-
-        console.log('[Google OAuth] User logged in:', user.email);
+        return res.status(401).json({ error: 'Invalid email or password' });
       }
 
-      // Create a session via express-session / passport
+      // Check if user has a password (might be Google OAuth only user)
+      if (!user.passwordHash) {
+        return res.status(400).json({ error: 'This account uses Google sign-in. Please sign in with Google.' });
+      }
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      // Create session
       req.login({ userId: user.id }, (err: any) => {
         if (err) {
-          console.error('[Google OAuth] Session creation failed:', err);
-          return res.redirect('/auth?error=session_failed');
+          console.error('[Auth] Session creation failed:', err);
+          return res.status(500).json({ error: 'Failed to create session' });
         }
 
-        // Redirect to application after successful login
-        // Whitelist of allowed redirect URLs to prevent open redirect vulnerability
-        const ALLOWED_REDIRECTS = [
-          '/',
-          '/dashboard',
-          '/calculator',
-          '/quotes',
-          '/settings',
-          '/account',
-          '/auth?success=google_login'
-        ];
-
-        // Get configured redirect URL
-        const configuredRedirect = process.env.APP_AFTER_LOGIN ||
-                                   process.env.GOOGLE_OAUTH_SUCCESS_REDIRECT ||
-                                   '/auth?success=google_login';
-
-        // Validate redirect URL is in whitelist or is a relative path starting with /
-        const isAllowed = ALLOWED_REDIRECTS.includes(configuredRedirect) ||
-                         (configuredRedirect.startsWith('/') && !configuredRedirect.startsWith('//'));
-
-        const redirectAfter = isAllowed ? configuredRedirect : '/auth?success=google_login';
-
-        if (!isAllowed) {
-          console.warn('[Security] Blocked potentially unsafe redirect:', configuredRedirect);
-        }
-
-        console.log('[Google OAuth] Redirecting to:', redirectAfter);
-        return res.redirect(redirectAfter);
+        res.json({
+          success: true,
+          user: {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+          }
+        });
       });
-
     } catch (error: any) {
-      console.error('[Google OAuth] Callback error:', error);
-      res.redirect('/auth?error=google_callback_failed');
+      console.error('[Auth] Sign in error:', error);
+      res.status(500).json({ error: 'Sign in failed' });
     }
   });
 
@@ -455,6 +665,761 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================================
+  // SIGNUP FLOW HELPER FUNCTIONS
+  // ========================================
+
+  // Helper: Complete Signup Flow (creates user + subscription + invoice + sends emails)
+  async function completeSignupFlow(params: {
+    tempProfile: any;
+    plan: any;
+    billingCycle: string;
+    couponCode?: string;
+    paymentMethod: 'razorpay' | 'coupon';
+    razorpayPaymentId?: string | null;
+    razorpayOrderId?: string | null;
+    transactionId?: string | null;
+  }): Promise<{ userId: string; invoiceId: string }> {
+    const { tempProfile, plan, billingCycle, couponCode, paymentMethod, razorpayPaymentId, razorpayOrderId, transactionId } = params;
+
+    // 1. Create User Account with hashed password
+    const randomPassword = crypto.randomBytes(16).toString('hex');
+    const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+    const nameParts = tempProfile.authorizedPersonName.split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    const user = await storage.upsertUser({
+      email: tempProfile.businessEmail,
+      passwordHash: hashedPassword,
+      firstName,
+      lastName,
+      mobileNo: tempProfile.mobileNumber,
+      companyName: tempProfile.businessName,
+      role: 'user',
+      emailVerified: true,
+      paymentCompleted: true,
+      temporaryProfileId: tempProfile.id,
+    });
+
+    // 2. Convert Temporary Profile → Master Company Profile
+    const companyProfile = await storage.createCompanyProfile({
+      userId: user.id,
+      companyName: tempProfile.businessName,
+      ownerName: tempProfile.authorizedPersonName,
+      email: tempProfile.businessEmail,
+      phone: tempProfile.mobileNumber,
+      gstNo: tempProfile.gstin,
+      panNo: tempProfile.panNo,
+      stateCode: tempProfile.stateCode,
+      stateName: tempProfile.stateName,
+      address: tempProfile.fullBusinessAddress,
+      website: tempProfile.website,
+      isDefault: true,
+    });
+
+    // 3. Create User Subscription
+    const currentPeriodStart = new Date();
+    const currentPeriodEnd = new Date(currentPeriodStart);
+    if (billingCycle === 'monthly') {
+      currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1);
+    } else {
+      currentPeriodEnd.setFullYear(currentPeriodEnd.getFullYear() + 1);
+    }
+
+    const subscription = await storage.createUserSubscription({
+      userId: user.id,
+      planId: plan.id,
+      status: 'active',
+      billingCycle,
+      currentPeriodStart,
+      currentPeriodEnd,
+      razorpaySubscriptionId: null,
+      couponApplied: couponCode || null,
+    });
+
+    // 4. Generate Invoice
+    const invoice = await generateSubscriptionInvoice({
+      user,
+      companyProfile,
+      subscription,
+      plan,
+      billingCycle,
+      couponCode,
+      razorpayPaymentId,
+      razorpayOrderId,
+      transactionId,
+    });
+
+    // 5. Update payment transaction with user and subscription IDs
+    if (transactionId) {
+      await storage.updatePaymentTransaction(transactionId, {
+        userId: user.id,
+        subscriptionId: subscription.id,
+      });
+    }
+
+    // 6. Increment coupon usage
+    if (couponCode) {
+      const coupon = await storage.getCouponByCode(couponCode);
+      if (coupon) {
+        await storage.incrementCouponUsage(coupon.id);
+      }
+    }
+
+    // 7. Send Welcome Email
+    if (user.email) {
+      await sendSignupWelcomeEmail(user.email, {
+        firstName: user.firstName || 'User',
+        email: user.email,
+        temporaryPassword: randomPassword,
+        planName: plan.name,
+      });
+    }
+
+    // 8. Send Invoice Email
+    if (user.email) {
+      await sendInvoiceEmail(storage, user.email, invoice.id);
+    }
+
+    // 9. Delete Temporary Profile
+    await storage.deleteTempProfile(tempProfile.id);
+
+    // 10. Notify Admin (fire-and-forget)
+    notifyAdminAsync({
+      subject: 'New Paid Signup',
+      eventType: 'SIGNUP',
+      userEmail: user.email || undefined,
+      userName: `${user.firstName} ${user.lastName}`.trim() || undefined,
+      signupMethod: 'payment_first',
+      additionalInfo: {
+        planName: plan.name,
+        billingCycle,
+        paymentMethod,
+        amount: paymentMethod === 'razorpay' ? plan[billingCycle === 'monthly' ? 'priceMonthly' : 'priceYearly'] : 0,
+        couponCode: couponCode || null,
+      },
+    });
+
+    return {
+      userId: user.id,
+      invoiceId: invoice.id,
+    };
+  }
+
+  // Helper: Generate Subscription Invoice
+  async function generateSubscriptionInvoice(params: {
+    user: any;
+    companyProfile: any;
+    subscription: any;
+    plan: any;
+    billingCycle: string;
+    couponCode?: string;
+    razorpayPaymentId?: string | null;
+    razorpayOrderId?: string | null;
+    transactionId?: string | null;
+  }): Promise<any> {
+    const { user, companyProfile, subscription, plan, billingCycle, couponCode, razorpayPaymentId, razorpayOrderId, transactionId } = params;
+
+    // Get seller details (your company)
+    const sellerCompanyProfile = await storage.getSellerProfile();
+    if (!sellerCompanyProfile) {
+      throw new Error('Seller company profile not configured. Please set up seller profile in admin panel.');
+    }
+
+    // Calculate pricing
+    const subtotal = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+    let discountAmount = 0;
+
+    if (couponCode) {
+      const coupon = await storage.getCouponByCode(couponCode);
+      if (coupon) {
+        if (coupon.discountType === 'percentage') {
+          discountAmount = (subtotal * coupon.discountValue) / 100;
+        } else {
+          discountAmount = coupon.discountValue;
+        }
+      }
+    }
+
+    const taxableValue = Math.max(0, subtotal - discountAmount);
+
+    // Calculate GST
+    const gstBreakdown = calculateGST(
+      subtotal,
+      sellerCompanyProfile.stateCode,
+      companyProfile.stateCode,
+      discountAmount
+    );
+
+    // Generate invoice number
+    const invoiceNumber = await generateInvoiceNumber(storage);
+    const financialYear = getCurrentFinancialYear();
+
+    // Get default invoice template
+    const template = await storage.getDefaultInvoiceTemplate();
+    if (!template) {
+      throw new Error('Default invoice template not found. Please create an invoice template in admin panel.');
+    }
+
+    // Create invoice record
+    const invoice = await storage.createInvoice({
+      invoiceNumber,
+      invoiceDate: new Date(),
+      financialYear,
+
+      sellerCompanyName: sellerCompanyProfile.companyName,
+      sellerGstin: sellerCompanyProfile.gstin,
+      sellerAddress: sellerCompanyProfile.address,
+      sellerStateCode: sellerCompanyProfile.stateCode,
+      sellerStateName: sellerCompanyProfile.stateName,
+
+      buyerCompanyName: companyProfile.companyName,
+      buyerGstin: companyProfile.gstNo,
+      buyerAddress: companyProfile.address,
+      buyerStateCode: companyProfile.stateCode,
+      buyerStateName: companyProfile.stateName,
+      buyerEmail: companyProfile.email,
+      buyerPhone: companyProfile.phone,
+
+      userId: user.id,
+      subscriptionId: subscription.id,
+      planName: plan.name,
+      billingCycle,
+
+      lineItems: JSON.stringify([
+        {
+          description: `${plan.name} - ${billingCycle === 'monthly' ? 'Monthly' : 'Yearly'} Subscription`,
+          hsnSac: '998314', // HSN/SAC for SaaS services
+          quantity: 1,
+          unitPrice: subtotal,
+          taxableValue: taxableValue,
+        },
+      ]),
+
+      subtotal,
+      discountAmount,
+      taxableValue,
+
+      cgstRate: gstBreakdown.cgstRate,
+      cgstAmount: gstBreakdown.cgstAmount,
+      sgstRate: gstBreakdown.sgstRate,
+      sgstAmount: gstBreakdown.sgstAmount,
+      igstRate: gstBreakdown.igstRate,
+      igstAmount: gstBreakdown.igstAmount,
+
+      totalTax: gstBreakdown.totalTax,
+      grandTotal: gstBreakdown.grandTotal,
+
+      paymentTransactionId: transactionId || null,
+      razorpayPaymentId,
+      razorpayOrderId,
+      couponCode: couponCode || null,
+      couponDiscount: discountAmount,
+
+      invoiceTemplateId: template.id,
+      status: 'generated',
+    });
+
+    // Generate PDF
+    const pdfBuffer = await generateInvoicePDF(storage, invoice.id);
+
+    // Save PDF to local storage
+    const fs = await import('fs');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+
+    const uploadsDir = path.join(__dirname, '../uploads/invoices');
+
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const pdfPath = path.join(uploadsDir, `${invoiceNumber.replace(/\//g, '_')}.pdf`);
+    fs.writeFileSync(pdfPath, pdfBuffer);
+
+    // Update invoice with PDF path
+    await storage.updateInvoice(invoice.id, {
+      pdfUrl: pdfPath,
+      pdfGeneratedAt: new Date(),
+    });
+
+    return invoice;
+  }
+
+  // ========================================
+  // SIGNUP FLOW ENDPOINTS (Payment-First)
+  // ========================================
+
+  // STEP 1: Create Temporary Business Profile
+  app.post("/api/signup/business-profile", async (req: any, res) => {
+    try {
+      const data = req.body;
+
+      // Validate GSTIN
+      if (data.gstin) {
+        const gstValidation = validateGSTIN(data.gstin);
+        if (!gstValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            error: gstValidation.error,
+          });
+        }
+      }
+
+      // Check if email already exists in users or temp profiles
+      const existingUser = await storage.getUserByEmail(data.businessEmail);
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          error: 'An account with this email already exists',
+        });
+      }
+
+      const existingTemp = await storage.getTempProfileByEmail(data.businessEmail);
+      if (existingTemp) {
+        // Reuse existing temp profile if within 24 hours
+        if (new Date(existingTemp.expiresAt) > new Date()) {
+          return res.json({
+            success: true,
+            sessionToken: existingTemp.sessionToken,
+            tempProfileId: existingTemp.id,
+          });
+        } else {
+          // Delete expired temp profile
+          await storage.deleteTempProfile(existingTemp.id);
+        }
+      }
+
+      // Create temporary business profile
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      const tempProfile = await storage.createTempBusinessProfile({
+        ...data,
+        sessionToken,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+        gstinValidated: true,
+      });
+
+      res.json({
+        success: true,
+        sessionToken: tempProfile.sessionToken,
+        tempProfileId: tempProfile.id,
+      });
+
+    } catch (error: any) {
+      console.error('Error creating temp business profile:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // STEP 2: Create Payment Order (with coupon support)
+  app.post("/api/signup/create-payment-order", async (req: any, res) => {
+    try {
+      const { sessionToken, planId, billingCycle, couponCode } = req.body;
+
+      // Verify session token
+      const tempProfile = await storage.getTempProfileBySession(sessionToken);
+      if (!tempProfile) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid or expired session',
+        });
+      }
+
+      // Get plan
+      const plan = await storage.getSubscriptionPlan(planId);
+      if (!plan || !plan.isActive) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid subscription plan',
+        });
+      }
+
+      // Calculate amount
+      let amount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+      let couponDiscount = 0;
+
+      // Apply coupon
+      if (couponCode) {
+        const coupon = await storage.getCouponByCode(couponCode);
+        if (coupon && coupon.isActive) {
+          // Check validity dates
+          const now = new Date();
+          if (coupon.validFrom && new Date(coupon.validFrom) > now) {
+            return res.status(400).json({ success: false, error: 'Coupon not yet valid' });
+          }
+          if (coupon.validUntil && new Date(coupon.validUntil) < now) {
+            return res.status(400).json({ success: false, error: 'Coupon expired' });
+          }
+
+          // Check usage limit
+          if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
+            return res.status(400).json({ success: false, error: 'Coupon usage limit reached' });
+          }
+
+          // Calculate discount
+          if (coupon.discountType === 'percentage') {
+            couponDiscount = (amount * coupon.discountValue) / 100;
+          } else {
+            couponDiscount = coupon.discountValue;
+          }
+
+          amount = Math.max(0, amount - couponDiscount);
+        }
+      }
+
+      // If amount is 0, return immediately (free subscription via coupon)
+      if (amount === 0) {
+        return res.json({
+          success: true,
+          isFree: true,
+          couponCode,
+        });
+      }
+
+      // Get Razorpay credentials from environment
+      const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
+      const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+      if (!razorpayKeyId || !razorpayKeySecret) {
+        return res.status(500).json({
+          success: false,
+          error: 'Payment gateway not configured',
+        });
+      }
+
+      // Initialize Razorpay
+      initializeRazorpay(razorpayKeyId, razorpayKeySecret);
+
+      // Create Razorpay order
+      const amountInPaise = Math.round(amount * 100);
+      const receipt = `signup_${tempProfile.id}_${Date.now()}`;
+
+      const razorpayOrder = await createRazorpayOrder(amountInPaise, 'INR', receipt, {
+        sessionToken,
+        planId,
+        billingCycle,
+        couponCode: couponCode || '',
+      });
+
+      // Store order in payment_transactions
+      await storage.createPaymentTransaction({
+        userId: null, // User doesn't exist yet
+        subscriptionId: null,
+        razorpayOrderId: razorpayOrder.id,
+        amount,
+        currency: 'INR',
+        status: 'pending',
+      });
+
+      res.json({
+        success: true,
+        razorpayKeyId: razorpayKeyId,
+        orderId: razorpayOrder.id,
+        amount: amountInPaise,
+        currency: 'INR',
+      });
+
+    } catch (error: any) {
+      console.error('Error creating payment order:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // STEP 3: Complete Signup (Free - 100% Coupon)
+  app.post("/api/signup/complete-free", async (req: any, res) => {
+    try {
+      const { sessionToken, planId, billingCycle, couponCode } = req.body;
+
+      // Verify session
+      const tempProfile = await storage.getTempProfileBySession(sessionToken);
+      if (!tempProfile) {
+        return res.status(400).json({ success: false, error: 'Invalid session' });
+      }
+
+      // Verify coupon gives 100% discount
+      const plan = await storage.getSubscriptionPlan(planId);
+      if (!plan) {
+        return res.status(400).json({ success: false, error: 'Invalid plan' });
+      }
+
+      let amount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+
+      const coupon = await storage.getCouponByCode(couponCode);
+      if (!coupon) {
+        return res.status(400).json({ success: false, error: 'Invalid coupon' });
+      }
+
+      let discount = 0;
+      if (coupon.discountType === 'percentage') {
+        discount = (amount * coupon.discountValue) / 100;
+      } else {
+        discount = coupon.discountValue;
+      }
+
+      const finalAmount = amount - discount;
+      if (finalAmount !== 0) {
+        return res.status(400).json({ success: false, error: 'Coupon does not provide 100% discount' });
+      }
+
+      // Create user, subscription, invoice, send emails
+      const result = await completeSignupFlow({
+        tempProfile,
+        plan,
+        billingCycle,
+        couponCode,
+        paymentMethod: 'coupon',
+        razorpayPaymentId: null,
+        razorpayOrderId: null,
+      });
+
+      res.json({
+        success: true,
+        userId: result.userId,
+        invoiceId: result.invoiceId,
+      });
+
+    } catch (error: any) {
+      console.error('Error completing free signup:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // STEP 3: Complete Signup (Paid - Razorpay)
+  app.post("/api/signup/complete-payment", async (req: any, res) => {
+    try {
+      const { sessionToken, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+
+      // Verify session
+      const tempProfile = await storage.getTempProfileBySession(sessionToken);
+      if (!tempProfile) {
+        return res.status(400).json({ success: false, error: 'Invalid session' });
+      }
+
+      // Verify Razorpay signature
+      const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!razorpayKeySecret) {
+        return res.status(500).json({ success: false, error: 'Payment gateway not configured' });
+      }
+
+      const isValid = verifyRazorpaySignature(
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature,
+        razorpayKeySecret
+      );
+
+      if (!isValid) {
+        return res.status(400).json({ success: false, error: 'Invalid payment signature' });
+      }
+
+      // Get payment transaction
+      const transaction = await storage.getPaymentTransactionByOrderId(razorpayOrderId);
+      if (!transaction) {
+        return res.status(400).json({ success: false, error: 'Payment transaction not found' });
+      }
+
+      // Update transaction status
+      await storage.updatePaymentTransaction(transaction.id, {
+        razorpayPaymentId,
+        razorpaySignature,
+        status: 'success',
+      });
+
+      // Get plan from Razorpay payment details
+      const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
+      if (razorpayKeyId) {
+        initializeRazorpay(razorpayKeyId, razorpayKeySecret);
+      }
+
+      const paymentDetails = await fetchPaymentDetails(razorpayPaymentId);
+      const planId = paymentDetails.notes?.planId;
+      const billingCycle = paymentDetails.notes?.billingCycle || 'monthly';
+      const couponCode = paymentDetails.notes?.couponCode || null;
+
+      const plan = await storage.getSubscriptionPlan(planId);
+      if (!plan) {
+        return res.status(400).json({ success: false, error: 'Plan not found' });
+      }
+
+      // Create user, subscription, invoice, send emails
+      const result = await completeSignupFlow({
+        tempProfile,
+        plan,
+        billingCycle,
+        couponCode,
+        paymentMethod: 'razorpay',
+        razorpayPaymentId,
+        razorpayOrderId,
+        transactionId: transaction.id,
+      });
+
+      res.json({
+        success: true,
+        userId: result.userId,
+        invoiceId: result.invoiceId,
+      });
+
+    } catch (error: any) {
+      console.error('Error completing paid signup:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ========================================
+  // INVOICE ENDPOINTS
+  // ========================================
+
+  // Get invoice by ID
+  app.get("/api/invoices/:id", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const invoiceId = req.params.id;
+
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      // Verify user owns this invoice
+      if (invoice.userId !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      res.json(invoice);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch invoice' });
+    }
+  });
+
+  // Download invoice PDF
+  app.get("/api/invoices/:id/download", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const invoiceId = req.params.id;
+
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      // Verify user owns this invoice
+      if (invoice.userId !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      if (!invoice.pdfUrl) {
+        return res.status(404).json({ error: 'Invoice PDF not generated' });
+      }
+
+      // Read PDF file
+      const fs = await import('fs');
+      const pdfBuffer = fs.readFileSync(invoice.pdfUrl);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${invoice.invoiceNumber.replace(/\//g, '_')}.pdf"`);
+      res.send(pdfBuffer);
+
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to download invoice' });
+    }
+  });
+
+  // Get all invoices for user
+  app.get("/api/invoices", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const invoices = await storage.getInvoicesByUser(userId);
+      res.json(invoices);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch invoices' });
+    }
+  });
+
+  // Admin: Get all invoices
+  app.get("/api/admin/invoices", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const invoices = await storage.getAllInvoices();
+      res.json(invoices);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch invoices' });
+    }
+  });
+
+  // Admin: Resend invoice email
+  app.post("/api/admin/invoices/:id/resend-email", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const invoiceId = req.params.id;
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      await sendInvoiceEmail(storage, invoice.buyerEmail, invoiceId);
+
+      await storage.updateInvoice(invoiceId, {
+        emailSent: true,
+        emailSentAt: new Date(),
+      });
+
+      res.json({ success: true, message: 'Invoice email sent' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to resend email' });
+    }
+  });
+
+  // ========================================
+  // SELLER PROFILE ENDPOINTS (Admin Only)
+  // ========================================
+
+  // Get seller profile
+  app.get("/api/admin/seller-profile", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const seller = await storage.getSellerProfile();
+      if (!seller) {
+        return res.status(404).json({ error: 'Seller profile not configured' });
+      }
+      res.json(seller);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch seller profile' });
+    }
+  });
+
+  // Create or update seller profile
+  app.post("/api/admin/seller-profile", combinedAuth, requireAdmin, async (req: any, res) => {
+    try {
+      const data = req.body;
+
+      // Validate GSTIN
+      const gstValidation = validateGSTIN(data.gstin);
+      if (!gstValidation.valid) {
+        return res.status(400).json({ error: gstValidation.error });
+      }
+
+      // Check if seller profile already exists
+      const existingSeller = await storage.getSellerProfile();
+
+      if (existingSeller) {
+        // Update existing
+        const updated = await storage.updateSellerProfile(existingSeller.id, data);
+        res.json({ success: true, profile: updated });
+      } else {
+        // Create new
+        const created = await storage.createSellerProfile(data);
+        res.json({ success: true, profile: created });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Company Profiles (protected, tenant-scoped)
   app.get("/api/company-profiles", combinedAuth, async (req: any, res) => {
     try {
@@ -497,27 +1462,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/company-profiles", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const tenantId = req.tenantId;
-      // Include tenantId in creation - never accept from frontend
+      const tenantId = req.tenantId || userId; // Fallback to userId if no tenantId (single-tenant mode)
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
       const data = insertCompanyProfileSchema.parse({ ...req.body, userId, tenantId });
+
+      // GSTIN VALIDATION (if provided)
+      if (data.gstNo) {
+        const gstValidation = validateGSTIN(data.gstNo);
+        if (!gstValidation.valid) {
+          return res.status(400).json({
+            message: "Invalid GSTIN",
+            error: gstValidation.error
+          });
+        }
+
+        // Auto-derive PAN and State from GSTIN
+        data.panNo = extractPANFromGST(data.gstNo);
+        const stateInfo = getStateFromGST(data.gstNo);
+        if (stateInfo) {
+          data.stateCode = stateInfo.code;
+          data.stateName = stateInfo.name;
+        }
+      }
+
+      // Check if financial documents exist (for this tenant)
+      const existingQuotes = await storage.getQuotesByTenant(tenantId);
+      const hasSentQuotes = existingQuotes.some((q: any) => q.status === 'sent' || q.status === 'accepted');
+
+      if (hasSentQuotes) {
+        data.hasFinancialDocs = true;
+        data.lockedAt = new Date();
+        data.lockedReason = 'Quote already sent to customer';
+      }
+
       const profile = await storage.createCompanyProfile(data);
       res.status(201).json(profile);
-    } catch (error) {
-      res.status(400).json({ error: "Invalid profile data" });
+    } catch (error: any) {
+      console.error("Error creating company profile:", error);
+      res.status(500).json({ message: error.message || "Failed to create profile" });
     }
   });
 
   app.patch("/api/company-profiles/:id", combinedAuth, async (req: any, res) => {
     try {
-      const data = insertCompanyProfileSchema.partial().parse(req.body);
-      const tenantId = req.tenantId;
-      const profile = await storage.updateCompanyProfile(req.params.id, data, tenantId);
-      if (!profile) {
-        return res.status(404).json({ error: "Profile not found" });
+      const userId = req.userId;
+      const tenantId = req.tenantId || userId; // Fallback to userId if no tenantId (single-tenant mode)
+      const profileId = req.params.id;
+
+      // Fetch existing profile to check lock status
+      const existingProfile = await storage.getCompanyProfile(profileId, tenantId);
+
+      if (!existingProfile) {
+        return res.status(404).json({ message: "Profile not found" });
       }
-      res.json(profile);
-    } catch (error) {
-      res.status(400).json({ error: "Failed to update profile" });
+
+      // Check onboarding status to determine if ownership check should be bypassed
+      const onboardingStatus = await storage.getOnboardingStatus(userId);
+      const isOnboarding = onboardingStatus && onboardingStatus.verificationStatus !== 'approved';
+
+      if (isOnboarding) {
+        // During onboarding: Allow creator to edit their own profile
+        if (existingProfile.userId !== userId) {
+          return res.status(403).json({
+            message: "You can only edit your own business profile during onboarding"
+          });
+        }
+      } else {
+        // After verification: Only profile owner or super_admin can edit
+        const user = (req as any).user;
+        const isSuperAdmin = user?.role === 'super_admin' || user?.role === 'admin';
+        const isProfileOwner = existingProfile.userId === userId;
+
+        if (!isSuperAdmin && !isProfileOwner) {
+          return res.status(403).json({
+            message: "Only the account owner can edit business profile details"
+          });
+        }
+      }
+
+      const updates = insertCompanyProfileSchema.partial().parse(req.body);
+
+      // INVOICE-SAFE LOCKING ENFORCEMENT
+      if (existingProfile.hasFinancialDocs) {
+        const attemptedLockedFields = Object.keys(updates).filter(key =>
+          LOCKED_LEGAL_FIELDS.includes(key as LockedLegalField)
+        );
+
+        if (attemptedLockedFields.length > 0) {
+          return res.status(403).json({
+            message: "Cannot modify legal fields after financial documents have been issued",
+            lockedFields: attemptedLockedFields,
+            lockedReason: existingProfile.lockedReason,
+            lockedAt: existingProfile.lockedAt,
+          });
+        }
+      }
+
+      // GSTIN VALIDATION (if GSTIN is being updated)
+      if (updates.gstNo) {
+        const gstValidation = validateGSTIN(updates.gstNo);
+        if (!gstValidation.valid) {
+          return res.status(400).json({
+            message: "Invalid GSTIN",
+            error: gstValidation.error
+          });
+        }
+
+        // Auto-derive PAN and State from new GSTIN
+        updates.panNo = extractPANFromGST(updates.gstNo);
+        const stateInfo = getStateFromGST(updates.gstNo);
+        if (stateInfo) {
+          updates.stateCode = stateInfo.code;
+          updates.stateName = stateInfo.name;
+        }
+      }
+
+      // PREVENT MANUAL OVERRIDE of auto-derived fields
+      if (existingProfile.gstNo && !updates.gstNo) {
+        // If GST exists and not being changed, don't allow PAN/state manual edit
+        delete updates.panNo;
+        delete updates.stateCode;
+        delete updates.stateName;
+      }
+
+      const updatedProfile = await storage.updateCompanyProfile(
+        profileId,
+        updates,
+        tenantId
+      );
+
+      res.json(updatedProfile);
+    } catch (error: any) {
+      console.error("Error updating company profile:", error);
+      res.status(500).json({ message: error.message || "Failed to update profile" });
     }
   });
 
@@ -529,6 +1610,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(400).json({ error: "Failed to set default profile" });
+    }
+  });
+
+  // Lock company profile after first financial document
+  app.post("/api/company-profiles/:id/lock", combinedAuth, async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId;
+      const profileId = req.params.id;
+      const { reason } = req.body;
+
+      const profile = await storage.getCompanyProfile(profileId, tenantId);
+
+      if (!profile) {
+        return res.status(404).json({ message: "Profile not found" });
+      }
+
+      if (profile.hasFinancialDocs) {
+        return res.status(400).json({ message: "Profile already locked" });
+      }
+
+      const updatedProfile = await storage.updateCompanyProfile(
+        profileId,
+        {
+          hasFinancialDocs: true,
+          lockedAt: new Date(),
+          lockedReason: reason || 'Financial document issued',
+        },
+        tenantId
+      );
+
+      res.json({
+        success: true,
+        message: 'Legal fields locked successfully',
+        profile: updatedProfile
+      });
+    } catch (error: any) {
+      console.error("Error locking profile:", error);
+      res.status(500).json({ message: error.message || "Failed to lock profile" });
     }
   });
 
@@ -2756,15 +3875,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.userId;
       const status = await storage.getOnboardingStatus(userId);
-      
+
       if (!status) {
         return res.status(400).json({ error: "Please complete onboarding first" });
       }
-      
+
       // Check if all onboarding steps are complete
-      if (!status.businessProfileDone || !status.paperSetupDone || !status.fluteSetupDone || 
+      if (!status.businessProfileDone || !status.paperSetupDone || !status.fluteSetupDone ||
           !status.taxSetupDone || !status.termsSetupDone) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Please complete all onboarding steps before submitting for verification",
           missingSteps: {
             businessProfile: !status.businessProfileDone,
@@ -2775,8 +3894,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
       }
-      
+
       const updatedStatus = await storage.submitForVerification(userId);
+
+      // Send email notification to admin
+      try {
+        const user = await storage.getUser(userId);
+        const companyProfile = await storage.getCompanyProfileByUserId(userId);
+
+        if (user && companyProfile) {
+          const { sendSystemEmailAsync } = await import('./services/adminEmailService');
+          const { getAdminVerificationSubmittedEmailHTML, getAdminVerificationSubmittedEmailText } = await import('./services/emailTemplates/verificationEmails');
+
+          const adminEmail = process.env.ADMIN_EMAIL || 'admin@boxcostpro.com';
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+
+          await sendSystemEmailAsync(storage, {
+            to: adminEmail,
+            subject: `🔔 Business Ready for Verification: ${companyProfile.companyName}`,
+            html: getAdminVerificationSubmittedEmailHTML({
+              businessName: companyProfile.companyName,
+              ownerName: `${user.firstName} ${user.lastName}`,
+              email: user.email,
+              submittedAt: new Date().toLocaleString(),
+              verificationUrl: `${frontendUrl}/admin/users`,
+            }),
+            text: getAdminVerificationSubmittedEmailText({
+              businessName: companyProfile.companyName,
+              ownerName: `${user.firstName} ${user.lastName}`,
+              email: user.email,
+              submittedAt: new Date().toLocaleString(),
+              verificationUrl: `${frontendUrl}/admin/users`,
+            }),
+            emailType: 'verification_submitted',
+            relatedEntityId: userId,
+          });
+
+          console.log(`[Verification] Admin notification sent for user ${userId}`);
+        }
+      } catch (emailError) {
+        // Don't fail the request if email fails
+        console.error('[Verification] Failed to send admin email:', emailError);
+      }
+
       res.json(updatedStatus);
     } catch (error) {
       console.error("Error submitting for verification:", error);
@@ -2880,17 +4040,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { userId } = req.params;
       const adminUserId = req.userId;
-      
+
       const status = await storage.getOnboardingStatus(userId);
       if (!status) {
         return res.status(400).json({ error: "User has no onboarding record" });
       }
-      
+
       if (!status.submittedForVerification) {
         return res.status(400).json({ error: "User has not submitted for verification" });
       }
-      
+
       const updatedStatus = await storage.approveUser(userId, adminUserId);
+
+      // Send approval email to user
+      try {
+        const user = await storage.getUser(userId);
+
+        if (user) {
+          const { sendSystemEmailAsync } = await import('./services/adminEmailService');
+          const { getUserVerificationApprovedEmailHTML, getUserVerificationApprovedEmailText } = await import('./services/emailTemplates/verificationEmails');
+
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+
+          await sendSystemEmailAsync(storage, {
+            to: user.email,
+            subject: '🎉 Your Account is Verified!',
+            html: getUserVerificationApprovedEmailHTML({
+              firstName: user.firstName,
+              dashboardUrl: `${frontendUrl}/dashboard`,
+            }),
+            text: getUserVerificationApprovedEmailText({
+              firstName: user.firstName,
+              dashboardUrl: `${frontendUrl}/dashboard`,
+            }),
+            emailType: 'verification_approved',
+            relatedEntityId: userId,
+          });
+
+          console.log(`[Verification] Approval email sent to user ${userId}`);
+        }
+      } catch (emailError) {
+        // Don't fail the request if email fails
+        console.error('[Verification] Failed to send approval email:', emailError);
+      }
+
       res.json(updatedStatus);
     } catch (error) {
       console.error("Error approving user:", error);
@@ -2904,24 +4097,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { userId } = req.params;
       const { reason } = req.body;
       const adminUserId = req.userId;
-      
+
       if (!reason || reason.trim().length < 10) {
         return res.status(400).json({ error: "Rejection reason must be at least 10 characters" });
       }
-      
+
       const status = await storage.getOnboardingStatus(userId);
       if (!status) {
         return res.status(400).json({ error: "User has no onboarding record" });
       }
-      
+
       const updatedStatus = await storage.rejectUser(userId, adminUserId, reason.trim());
+
+      // Send rejection email to user
+      try {
+        const user = await storage.getUser(userId);
+
+        if (user) {
+          const { sendSystemEmailAsync } = await import('./services/adminEmailService');
+          const { getUserVerificationRejectedEmailHTML, getUserVerificationRejectedEmailText } = await import('./services/emailTemplates/verificationEmails');
+
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+
+          await sendSystemEmailAsync(storage, {
+            to: user.email,
+            subject: '⚠️ Verification Needs Changes',
+            html: getUserVerificationRejectedEmailHTML({
+              firstName: user.firstName,
+              rejectionReason: reason.trim(),
+              setupUrl: `${frontendUrl}/onboarding`,
+            }),
+            text: getUserVerificationRejectedEmailText({
+              firstName: user.firstName,
+              rejectionReason: reason.trim(),
+              setupUrl: `${frontendUrl}/onboarding`,
+            }),
+            emailType: 'verification_rejected',
+            relatedEntityId: userId,
+          });
+
+          console.log(`[Verification] Rejection email sent to user ${userId}`);
+        }
+      } catch (emailError) {
+        // Don't fail the request if email fails
+        console.error('[Verification] Failed to send rejection email:', emailError);
+      }
+
       res.json(updatedStatus);
     } catch (error) {
       console.error("Error rejecting user:", error);
       res.status(500).json({ error: "Failed to reject user" });
     }
   });
-  
+
+  // ========== ONBOARDING REMINDER CRON JOB ==========
+  // This endpoint should be called by a cron service (e.g., GitHub Actions, Vercel Cron, or external service)
+  // Suggested schedule: Every 6 hours
+  app.post("/api/cron/onboarding-reminders", async (req: any, res) => {
+    try {
+      // Optional: Add cron secret verification for security
+      const cronSecret = req.headers['x-cron-secret'] || req.body.secret;
+      const expectedSecret = process.env.CRON_SECRET;
+
+      if (expectedSecret && cronSecret !== expectedSecret) {
+        console.error('[Cron] Unauthorized onboarding reminder request');
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log('[Cron] Starting onboarding reminder job...');
+
+      const { processOnboardingReminders } = await import('./services/onboardingReminderService');
+      const result = await processOnboardingReminders(storage);
+
+      console.log(`[Cron] Onboarding reminder job complete:`, result);
+
+      res.json({
+        success: true,
+        message: 'Onboarding reminder job completed',
+        ...result,
+      });
+    } catch (error: any) {
+      console.error('[Cron] Onboarding reminder job failed:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to run onboarding reminder job',
+      });
+    }
+  });
+
   // Update user role (super_admin only)
   app.patch("/api/admin/users/:userId/role", combinedAuth, requireSuperAdmin, async (req: any, res) => {
     try {
@@ -3520,7 +4783,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         renderedContent,
         status: 'sent'
       });
-      
+
+      // LOCK COMPANY PROFILE after first quote send (Invoice-Safe Locking)
+      if (companyProfile && !companyProfile.hasFinancialDocs) {
+        const tenantId = req.tenantId;
+        await storage.updateCompanyProfile(
+          companyProfile.id,
+          {
+            hasFinancialDocs: true,
+            lockedAt: new Date(),
+            lockedReason: `First quote sent: ${quoteData.quote.quoteNo} on ${new Date().toISOString().split('T')[0]}`,
+          },
+          tenantId
+        );
+        console.log(`[Invoice Lock] Company profile locked: ${companyProfile.id}`);
+      }
+
       // For WhatsApp, return URL to open WhatsApp with message
       if (channel === 'whatsapp') {
         const phoneNumber = recipientInfo || party?.mobileNo || '';
@@ -3669,27 +4947,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Save SMTP email settings
+  // Save SMTP email settings (with mandatory test-before-save)
   app.post("/api/email-settings/smtp", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
       const { provider, emailAddress, smtpHost, smtpPort, smtpSecure, smtpUsername, smtpPassword } = req.body;
-      
+
+      console.log(`[Email Settings] User ${userId} saving SMTP config for provider: ${provider}`);
+
       if (!provider || !emailAddress) {
-        return res.status(400).json({ error: "Provider and email address are required" });
+        return res.status(400).json({
+          code: 'MISSING_REQUIRED_FIELDS',
+          message: 'Provider and email address are required',
+        });
       }
-      
+
+      if (!smtpPassword) {
+        return res.status(400).json({
+          code: 'MISSING_PASSWORD',
+          message: 'SMTP password is required',
+        });
+      }
+
       const { encrypt } = await import('./utils/encryption');
       const { getProviderPreset } = await import('./config/emailProviderPresets');
-      
+      const { testSMTPConfiguration } = await import('./services/smtpService');
+
       // Get preset values for known providers
       const preset = getProviderPreset(provider);
-      const finalHost = smtpHost || preset?.smtpHost;
-      const finalPort = smtpPort || preset?.smtpPort || 587;
-      const finalSecure = smtpSecure !== undefined ? smtpSecure : (preset?.smtpSecure || false);
-      
+
+      if (!preset) {
+        return res.status(400).json({
+          code: 'INVALID_PROVIDER',
+          message: `Unknown email provider: ${provider}`,
+        });
+      }
+
+      const finalHost = smtpHost || preset.smtpHost;
+      const finalPort = smtpPort || preset.smtpPort || 587;
+      const finalSecure = smtpSecure !== undefined ? smtpSecure : (preset.smtpSecure || false);
+      const finalUsername = smtpUsername || emailAddress;
+
+      // CRITICAL: Test configuration BEFORE saving
+      console.log(`[Email Settings] Testing SMTP configuration before saving...`);
+
+      const testResult = await testSMTPConfiguration({
+        provider,
+        emailAddress,
+        smtpHost: finalHost,
+        smtpPort: finalPort,
+        smtpSecure: finalSecure,
+        smtpUsername: finalUsername,
+        smtpPassword,
+      });
+
+      if (!testResult.success) {
+        console.error(`[Email Settings] ✗ Test failed for ${provider}:`, testResult.code);
+        // Return HTTP 400 with structured error (NOT 500)
+        return res.status(400).json({
+          code: testResult.code,
+          provider,
+          message: testResult.message,
+          details: testResult.details,
+        });
+      }
+
+      console.log(`[Email Settings] ✓ Test successful, saving configuration...`);
+
+      // Test passed - now save the configuration
       const existing = await storage.getUserEmailSettings(userId);
-      
+
       const settingsData = {
         userId,
         provider,
@@ -3697,27 +5024,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
         smtpHost: finalHost,
         smtpPort: finalPort,
         smtpSecure: finalSecure,
-        smtpUsername: smtpUsername || emailAddress,
-        smtpPasswordEncrypted: smtpPassword ? encrypt(smtpPassword) : (existing?.smtpPasswordEncrypted || null),
+        smtpUsername: finalUsername,
+        smtpPasswordEncrypted: encrypt(smtpPassword), // Always encrypt fresh password
         oauthProvider: null,
         oauthAccessTokenEncrypted: null,
         oauthRefreshTokenEncrypted: null,
         oauthTokenExpiresAt: null,
-        isVerified: false,
+        isVerified: true, // Mark as verified since test passed
+        lastVerifiedAt: new Date(),
         isActive: true
       };
-      
+
       let settings;
       if (existing) {
         settings = await storage.updateUserEmailSettings(userId, settingsData);
       } else {
         settings = await storage.createUserEmailSettings(settingsData);
       }
-      
-      res.json({ success: true, message: "Email settings saved. Please verify your configuration." });
-    } catch (error) {
-      console.error("Error saving SMTP settings:", error);
-      res.status(500).json({ error: "Failed to save email settings" });
+
+      console.log(`[Email Settings] ✓ Configuration saved successfully for user ${userId}`);
+
+      res.json({
+        success: true,
+        message: testResult.message,
+        isVerified: true,
+      });
+    } catch (error: any) {
+      console.error("[Email Settings] ✗ Unexpected error:", error);
+      console.error("[Email Settings] ✗ Error stack:", error.stack);
+      console.error("[Email Settings] ✗ Error details:", {
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        isSmtpError: error.isSmtpError,
+      });
+
+      // NEVER return HTTP 500 for SMTP errors
+      // Check if this is a validation error from our SMTP service
+      if (error.isSmtpError) {
+        return res.status(400).json({
+          code: error.code,
+          provider: req.body.provider,
+          message: error.message,
+        });
+      }
+
+      // Handle encryption errors
+      if (error.message?.includes('ENCRYPTION_KEY') || error.message?.includes('SESSION_SECRET')) {
+        return res.status(500).json({
+          code: 'ENCRYPTION_NOT_CONFIGURED',
+          message: 'Server configuration error: Encryption key not set. Please contact support.',
+        });
+      }
+
+      // Generic fallback (should rarely happen)
+      res.status(500).json({
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred while saving email settings',
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      });
     }
   });
   
@@ -3938,6 +5304,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== USER EMAIL PROVIDERS (Multi-Provider System) ==========
+  
+  /**
+   * GET /api/user/email-providers
+   * List user's own email providers (requires maxEmailProviders feature)
+   */
+  app.get("/api/user/email-providers", combinedAuth, async (req: any, res: Response) => {
+    try {
+      const userId = req.userId;
+      
+      // Get user's providers (filtered by userId)
+      const providers = await storage.getUserEmailProviders(userId);
+      
+      res.json({ providers });
+    } catch (error: any) {
+      console.error("[routes] GET /api/user/email-providers error:", error);
+      res.status(500).json({ message: "Failed to fetch email providers", error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/user/email-providers
+   * Create new email provider for user (validates feature limits)
+   */
+  app.post("/api/user/email-providers", combinedAuth, async (req: any, res: Response) => {
+    try {
+      const userId = req.userId;
+      const { validateFeatureUsage, incrementFeatureUsage } = await import('./featureFlags.js');
+      
+      // Validate feature limit
+      try {
+        await validateFeatureUsage(userId, 'maxEmailProviders');
+      } catch (featureError: any) {
+        return res.status(403).json({
+          message: featureError.message,
+          code: featureError.code,
+          limit: featureError.limit,
+          currentUsage: featureError.currentUsage,
+          upgradeRequired: featureError.upgradeRequired,
+        });
+      }
+
+      // Create provider with userId set
+      const providerData = {
+        ...req.body,
+        userId, // Set user ownership
+        createdBy: userId,
+        updatedBy: userId,
+      };
+
+      const provider = await storage.createEmailProvider(providerData);
+      
+      // Increment usage counter
+      await incrementFeatureUsage(userId, 'emailProviders');
+
+      res.status(201).json({ provider });
+    } catch (error: any) {
+      console.error("[routes] POST /api/user/email-providers error:", error);
+      res.status(500).json({ message: "Failed to create email provider", error: error.message });
+    }
+  });
+
+  /**
+   * PATCH /api/user/email-providers/:id
+   * Update user's email provider (ownership check)
+   */
+  app.patch("/api/user/email-providers/:id", combinedAuth, async (req: any, res: Response) => {
+    try {
+      const userId = req.userId;
+      const { id } = req.params;
+
+      // Check ownership
+      const existing = await storage.getEmailProvider(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Email provider not found" });
+      }
+
+      if (existing.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to edit this provider" });
+      }
+
+      // Update provider
+      const updates = {
+        ...req.body,
+        updatedBy: userId,
+      };
+
+      const updated = await storage.updateEmailProvider(id, updates);
+
+      if (!updated) {
+        return res.status(404).json({ message: "Email provider not found" });
+      }
+
+      res.json({ provider: updated });
+    } catch (error: any) {
+      console.error("[routes] PATCH /api/user/email-providers/:id error:", error);
+      res.status(500).json({ message: "Failed to update email provider", error: error.message });
+    }
+  });
+
+  /**
+   * DELETE /api/user/email-providers/:id
+   * Delete user's email provider (ownership check, decrements usage)
+   */
+  app.delete("/api/user/email-providers/:id", combinedAuth, async (req: any, res: Response) => {
+    try {
+      const userId = req.userId;
+      const { id } = req.params;
+      const { decrementFeatureUsage } = await import('./featureFlags.js');
+
+      // Check ownership
+      const existing = await storage.getEmailProvider(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Email provider not found" });
+      }
+
+      if (existing.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to delete this provider" });
+      }
+
+      // Delete provider
+      const deleted = await storage.deleteEmailProvider(id);
+
+      if (deleted) {
+        // Decrement usage counter
+        await decrementFeatureUsage(userId, 'emailProviders');
+        res.json({ success: true, message: "Email provider deleted successfully" });
+      } else {
+        res.status(404).json({ message: "Email provider not found" });
+      }
+    } catch (error: any) {
+      console.error("[routes] DELETE /api/user/email-providers/:id error:", error);
+      res.status(500).json({ message: "Failed to delete email provider", error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/user/email-providers/:id/test
+   * Test user's email provider connection
+   */
+  app.post("/api/user/email-providers/:id/test", combinedAuth, async (req: any, res: Response) => {
+    try {
+      const userId = req.userId;
+      const { id } = req.params;
+
+      // Check ownership
+      const provider = await storage.getEmailProvider(id);
+      if (!provider) {
+        return res.status(404).json({ message: "Email provider not found" });
+      }
+
+      if (provider.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to test this provider" });
+      }
+
+      // Test connection using email tester
+      const { testEmailProvider } = await import('./email/emailTester.js');
+      const testResult = await testEmailProvider(provider);
+
+      res.json(testResult);
+    } catch (error: any) {
+      console.error("[routes] POST /api/user/email-providers/:id/test error:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Test failed", 
+        error: error.message 
+      });
+    }
+  });
+
+  /**
+   * GET /api/user/feature-limits
+   * Get user's current feature limits and usage
+   */
+  app.get("/api/user/feature-limits", combinedAuth, async (req: any, res: Response) => {
+    try {
+      const userId = req.userId;
+      const { getUserFeatures } = await import('./featureFlags.js');
+      
+      const features = await getUserFeatures(userId);
+      const usage = await storage.getUserFeatureUsage(userId);
+
+      res.json({
+        limits: features,
+        usage: usage || {
+          emailProvidersCount: 0,
+          customTemplatesCount: 0,
+          quotesThisMonth: 0,
+          partyProfilesCount: 0,
+          apiCallsThisMonth: 0,
+        },
+      });
+    } catch (error: any) {
+      console.error("[routes] GET /api/user/feature-limits error:", error);
+      res.status(500).json({ message: "Failed to fetch feature limits", error: error.message });
+    }
+  });
+
   // ========== EMAIL ANALYTICS ENDPOINTS ==========
   
   // Get email delivery stats
@@ -4000,6 +5564,350 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching bounced recipients:", error);
       res.status(500).json({ error: "Failed to fetch bounced recipients" });
+    }
+  });
+
+  // ========== EMAIL SYSTEM HEALTH CHECK (Public, Read-Only) ==========
+  app.get('/api/system/health/email', async (_req, res) => {
+    const { logEmailHealthCheck } = await import('./utils/emailLogger');
+    const { validateProviderConfig, isProviderSupported, canCreateTransporter } = await import('./utils/providerValidation');
+    
+    try {
+      // Check 1: Encryption key exists and is valid length
+      const encryptionKey = process.env.ENCRYPTION_KEY || process.env.SESSION_SECRET;
+      if (!encryptionKey) {
+        logEmailHealthCheck('unhealthy', 'EMAIL_SECRET_KEY missing in runtime');
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          reason: 'EMAIL_SECRET_KEY missing in runtime'
+        });
+      }
+
+      if (encryptionKey.length < 32) {
+        logEmailHealthCheck('unhealthy', 'EMAIL_SECRET_KEY too short (minimum 32 characters required)');
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          reason: 'EMAIL_SECRET_KEY too short (minimum 32 characters required)'
+        });
+      }
+
+      // Check 2: Active admin email settings exist
+      const emailSettings = await storage.getActiveAdminEmailSettings();
+      if (!emailSettings) {
+        logEmailHealthCheck('unhealthy', 'No active email settings configured');
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          reason: 'No active email settings configured'
+        });
+      }
+
+      // Check 3: SMTP provider configured and supported
+      if (!emailSettings.smtpProvider) {
+        logEmailHealthCheck('unhealthy', 'SMTP provider not configured');
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          reason: 'SMTP provider not configured'
+        });
+      }
+
+      if (!isProviderSupported(emailSettings.smtpProvider)) {
+        logEmailHealthCheck('unhealthy', `Unsupported provider: ${emailSettings.smtpProvider}`, emailSettings.smtpProvider);
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          reason: `Unsupported email provider: ${emailSettings.smtpProvider}`
+        });
+      }
+
+      // Check 4: Provider-specific SMTP settings validation
+      const validation = validateProviderConfig(
+        emailSettings.smtpProvider,
+        emailSettings.smtpHost,
+        emailSettings.smtpPort,
+        emailSettings.encryption
+      );
+
+      if (!validation.valid) {
+        const reason = validation.errors.join('; ');
+        logEmailHealthCheck('unhealthy', reason, emailSettings.smtpProvider);
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          provider: emailSettings.smtpProvider,
+          reason,
+          details: validation.errors
+        });
+      }
+
+      // Check 5: SMTP credentials can decrypt correctly
+      let decryptedPassword: string;
+      if (emailSettings.smtpPasswordEncrypted) {
+        try {
+          const { decrypt } = await import('./utils/encryption');
+          decryptedPassword = decrypt(emailSettings.smtpPasswordEncrypted);
+          
+          if (!decryptedPassword || decryptedPassword.length === 0) {
+            logEmailHealthCheck('unhealthy', 'SMTP password decryption failed - invalid or empty password', emailSettings.smtpProvider);
+            return res.status(503).json({
+              status: 'unhealthy',
+              configured: false,
+              provider: emailSettings.smtpProvider,
+              reason: 'SMTP password decryption failed - invalid or empty password'
+            });
+          }
+        } catch (decryptError: any) {
+          logEmailHealthCheck('unhealthy', `SMTP password decryption failed: ${decryptError.message}`, emailSettings.smtpProvider);
+          return res.status(503).json({
+            status: 'unhealthy',
+            configured: false,
+            provider: emailSettings.smtpProvider,
+            reason: `SMTP credentials cannot be decrypted: ${decryptError.message}`,
+          });
+        }
+      } else {
+        logEmailHealthCheck('unhealthy', 'No encrypted password stored', emailSettings.smtpProvider);
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          provider: emailSettings.smtpProvider,
+          reason: 'No encrypted password stored'
+        });
+      }
+
+      // Check 6: Transporter can be created (no actual send)
+      const transporterCheck = canCreateTransporter(
+        emailSettings.smtpHost,
+        emailSettings.smtpPort,
+        emailSettings.encryption,
+        emailSettings.smtpUsername,
+        decryptedPassword
+      );
+
+      if (!transporterCheck.valid) {
+        logEmailHealthCheck('unhealthy', `Transporter validation failed: ${transporterCheck.error}`, emailSettings.smtpProvider);
+        return res.status(503).json({
+          status: 'unhealthy',
+          configured: false,
+          provider: emailSettings.smtpProvider,
+          reason: transporterCheck.error || 'Failed to validate transporter configuration'
+        });
+      }
+
+      // All checks passed
+      logEmailHealthCheck('healthy', undefined, emailSettings.smtpProvider);
+      res.status(200).json({
+        status: 'healthy',
+        configured: true,
+        provider: emailSettings.smtpProvider.toUpperCase(),
+        smtp: {
+          host: emailSettings.smtpHost,
+          port: emailSettings.smtpPort,
+          encryption: emailSettings.encryption
+        },
+        env: {
+          EMAIL_SECRET_KEY: true
+        }
+      });
+    } catch (error: any) {
+      console.error('[Email Health Check] Error:', error);
+      logEmailHealthCheck('unhealthy', `Health check failed: ${error.message}`);
+      res.status(503).json({
+        status: 'unhealthy',
+        configured: false,
+        reason: `Health check failed: ${error.message}`
+      });
+    }
+  });
+
+  // ========== ADMIN PANEL ROUTES (Enterprise Admin System) ==========
+  registerAdminRoutes(app);
+
+  // Register Admin User Management routes
+  const { registerAdminUserManagement } = await import('./adminUserManagement');
+  registerAdminUserManagement(app, combinedAuth, requireAdmin);
+
+  // ========== INVOICE TEMPLATE ROUTES ==========
+
+  // Get all invoice templates
+  app.get("/api/invoice-templates", combinedAuth, async (req: any, res) => {
+    try {
+      const templates = await storage.getActiveInvoiceTemplates();
+      res.json(templates);
+    } catch (error: any) {
+      console.error("Error fetching invoice templates:", error);
+      res.status(500).json({ error: "Failed to fetch invoice templates" });
+    }
+  });
+
+  // Get invoice template by ID
+  app.get("/api/invoice-templates/:id", combinedAuth, async (req: any, res) => {
+    try {
+      const template = await storage.getInvoiceTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      console.error("Error fetching invoice template:", error);
+      res.status(500).json({ error: "Failed to fetch invoice template" });
+    }
+  });
+
+  // Generate PDF invoice for a quote
+  app.post("/api/quotes/:id/generate-invoice-pdf", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const quoteId = req.params.id;
+      const { templateKey } = req.body;
+
+      console.log(`[Invoice PDF] Generating PDF for quote ${quoteId}, template: ${templateKey || 'default'}`);
+
+      // Get the quote
+      const quote = await storage.getQuote(quoteId);
+      if (!quote) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+
+      // Verify quote belongs to user
+      if (quote.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Check if PDF already generated (immutability)
+      if (quote.isPdfGenerated && quote.pdfPath) {
+        console.log(`[Invoice PDF] PDF already exists: ${quote.pdfPath}`);
+        return res.json({
+          success: true,
+          message: "PDF already generated",
+          pdfPath: quote.pdfPath,
+          alreadyGenerated: true,
+        });
+      }
+
+      // Get template
+      let template;
+      if (templateKey) {
+        template = await storage.getInvoiceTemplateByKey(templateKey);
+      } else {
+        template = await storage.getDefaultInvoiceTemplate();
+      }
+
+      if (!template) {
+        return res.status(404).json({ error: "Invoice template not found" });
+      }
+
+      // Get quote with version and items
+      const quoteData = await storage.getQuoteWithActiveVersion(quoteId);
+      if (!quoteData || !quoteData.version) {
+        return res.status(400).json({ error: "Quote must have an active version to generate invoice" });
+      }
+
+      // Get company profile (seller details)
+      const companyProfile = await storage.getCompanyProfile(userId);
+      if (!companyProfile) {
+        return res.status(400).json({
+          error: "Company profile not found",
+          message: "Please set up your company profile in Settings before generating invoices",
+        });
+      }
+
+      // Get party profile (buyer details) - optional
+      let partyProfile = null;
+      if (quote.partyId) {
+        partyProfile = await storage.getPartyProfile(quote.partyId);
+      }
+
+      // Validate data before generation
+      const { mapQuoteToInvoiceData, validateQuoteForInvoice } = await import('./utils/quoteToInvoiceMapper');
+      const validation = validateQuoteForInvoice(
+        quoteData.quote,
+        quoteData.version,
+        quoteData.items,
+        companyProfile,
+        partyProfile
+      );
+
+      if (!validation.valid) {
+        return res.status(400).json({
+          error: "Invalid quote data for invoice generation",
+          details: validation.errors,
+        });
+      }
+
+      // Map quote to invoice data
+      console.log(`[Invoice PDF] Mapping quote data to invoice format`);
+      const invoiceData = await mapQuoteToInvoiceData(
+        quoteData.quote,
+        quoteData.version,
+        quoteData.items,
+        companyProfile,
+        partyProfile
+      );
+
+      // Generate PDF
+      console.log(`[Invoice PDF] Generating PDF with template: ${template.templateKey}`);
+      const { pdfPath, pdfBuffer } = await generateInvoicePDF(
+        invoiceData,
+        template.templateKey,
+        userId,
+        quoteId
+      );
+
+      // Save PDF path to quote
+      await storage.updateQuoteWithPDF(quoteId, template.id, pdfPath);
+
+      console.log(`[Invoice PDF] ✓ PDF generated and saved: ${pdfPath}`);
+
+      return res.json({
+        success: true,
+        pdfPath,
+        templateUsed: template.name,
+        invoiceNumber: invoiceData.invoice.number,
+      });
+
+    } catch (error: any) {
+      console.error("[Invoice PDF] Generation failed:", error);
+      res.status(500).json({ error: "Failed to generate invoice PDF", details: error.message });
+    }
+  });
+
+  // Download invoice PDF for a quote
+  app.get("/api/quotes/:id/invoice-pdf", combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const quoteId = req.params.id;
+
+      // Get the quote
+      const quote = await storage.getQuote(quoteId);
+      if (!quote) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+
+      // Verify quote belongs to user
+      if (quote.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Check if PDF was generated
+      if (!quote.isPdfGenerated || !quote.pdfPath) {
+        return res.status(404).json({ error: "Invoice PDF not generated yet" });
+      }
+
+      // Read and send PDF file
+      const { readPDFFile } = await import('./services/pdfInvoiceService');
+      const pdfBuffer = await readPDFFile(quote.pdfPath);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=Invoice_${quote.quoteNo}.pdf`);
+      res.send(pdfBuffer);
+
+    } catch (error: any) {
+      console.error("[Invoice PDF] Download failed:", error);
+      res.status(500).json({ error: "Failed to download invoice PDF", details: error.message });
     }
   });
 

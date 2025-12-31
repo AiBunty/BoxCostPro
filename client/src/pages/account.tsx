@@ -3,7 +3,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,18 +10,51 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  User,
-  Building2,
-  Palette,
-  Mail,
-  Phone,
-  MapPin,
-  Globe,
-  Upload,
-  Save,
-} from "lucide-react";
+import { Save, Lock, AlertTriangle } from "lucide-react";
+
+// GST State Code to State Name Mapping (subset - matches backend)
+const GST_STATE_CODES: Record<string, string> = {
+  '01': 'Jammu and Kashmir',
+  '02': 'Himachal Pradesh',
+  '03': 'Punjab',
+  '04': 'Chandigarh',
+  '05': 'Uttarakhand',
+  '06': 'Haryana',
+  '07': 'Delhi',
+  '08': 'Rajasthan',
+  '09': 'Uttar Pradesh',
+  '10': 'Bihar',
+  '11': 'Sikkim',
+  '12': 'Arunachal Pradesh',
+  '13': 'Nagaland',
+  '14': 'Manipur',
+  '15': 'Mizoram',
+  '16': 'Tripura',
+  '17': 'Meghalaya',
+  '18': 'Assam',
+  '19': 'West Bengal',
+  '20': 'Jharkhand',
+  '21': 'Odisha',
+  '22': 'Chhattisgarh',
+  '23': 'Madhya Pradesh',
+  '24': 'Gujarat',
+  '26': 'Dadra and Nagar Haveli and Daman and Diu',
+  '27': 'Maharashtra',
+  '29': 'Karnataka',
+  '30': 'Goa',
+  '31': 'Lakshadweep',
+  '32': 'Kerala',
+  '33': 'Tamil Nadu',
+  '34': 'Puducherry',
+  '35': 'Andaman and Nicobar Islands',
+  '36': 'Telangana',
+  '37': 'Andhra Pradesh',
+  '38': 'Ladakh',
+  '97': 'Other Territory',
+  '99': 'Centre Jurisdiction',
+};
 
 interface CompanyProfile {
   id: string;
@@ -34,21 +66,32 @@ interface CompanyProfile {
   email?: string;
   gstNo?: string;
   panNo?: string;
+  stateCode?: string;
+  stateName?: string;
   website?: string;
   logoUrl?: string;
   isDefault: boolean;
+  hasFinancialDocs?: boolean;
+  lockedAt?: string;
+  lockedReason?: string;
 }
 
 export default function Account() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [companyName, setCompanyName] = useState("");
+
   const [ownerName, setOwnerName] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [phone, setPhone] = useState("");
   const [website, setWebsite] = useState("");
-  const [gstNumber, setGstNumber] = useState("");
-  const [panNumber, setPanNumber] = useState("");
+  const [gstNo, setGstNo] = useState("");
+  const [panNo, setPanNo] = useState("");
+  const [stateCode, setStateCode] = useState("");
+  const [stateName, setStateName] = useState("");
   const [address, setAddress] = useState("");
+
+  const [gstError, setGstError] = useState<string | null>(null);
+  const [isGSTValid, setIsGSTValid] = useState(false);
 
   const { data: companyProfiles, isLoading: profilesLoading } = useQuery<CompanyProfile[]>({
     queryKey: ["/api/company-profiles"],
@@ -56,17 +99,64 @@ export default function Account() {
 
   const defaultProfile = companyProfiles?.find((p) => p.isDefault) || companyProfiles?.[0];
 
+  // Populate form when profile loads
   useEffect(() => {
     if (defaultProfile) {
-      setCompanyName(defaultProfile.companyName || "");
       setOwnerName(defaultProfile.ownerName || "");
+      setCompanyName(defaultProfile.companyName || "");
       setPhone(defaultProfile.phone || "");
       setWebsite(defaultProfile.website || "");
-      setGstNumber(defaultProfile.gstNo || "");
-      setPanNumber(defaultProfile.panNo || "");
+      setGstNo(defaultProfile.gstNo || "");
+      setPanNo(defaultProfile.panNo || "");
+      setStateCode(defaultProfile.stateCode || "");
+      setStateName(defaultProfile.stateName || "");
       setAddress(defaultProfile.address || "");
     }
   }, [defaultProfile]);
+
+  // Real-time GSTIN validation (client-side preview)
+  useEffect(() => {
+    if (gstNo && gstNo.length === 15) {
+      validateGSTINClient(gstNo);
+    } else if (gstNo === '') {
+      setGstError(null);
+      setIsGSTValid(false);
+      setPanNo('');
+      setStateCode('');
+      setStateName('');
+    } else if (gstNo.length > 0) {
+      setGstError('GSTIN must be exactly 15 characters');
+      setIsGSTValid(false);
+    }
+  }, [gstNo]);
+
+  // Client-side GSTIN validation (mirrors backend logic)
+  const validateGSTINClient = (gstin: string) => {
+    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
+    if (!gstinRegex.test(gstin)) {
+      setGstError('Invalid GSTIN format');
+      setIsGSTValid(false);
+      return;
+    }
+
+    // Auto-derive PAN and State
+    const pan = gstin.substring(2, 12);
+    const state = gstin.substring(0, 2);
+    const stateName = GST_STATE_CODES[state];
+
+    if (!stateName) {
+      setGstError('Invalid state code in GSTIN');
+      setIsGSTValid(false);
+      return;
+    }
+
+    setPanNo(pan);
+    setStateCode(state);
+    setStateName(stateName);
+    setGstError(null);
+    setIsGSTValid(true);
+  };
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -81,31 +171,77 @@ export default function Account() {
       toast({ title: "Business Profile Saved", description: "Your company details have been updated." });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error?.message || "Failed to save business profile", variant: "destructive" });
+      const errorMessage = error?.message || "Failed to save business profile";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   });
 
-  const handleSaveBusiness = () => {
-    // Validate required fields: Owner Name, Mobile No (phone), Company Name, GST No
-    if (!companyName.trim() || !ownerName.trim() || !phone.trim() || !gstNumber.trim()) {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validate required fields
+    if (!companyName.trim()) {
       toast({
-        title: "Missing Required Fields",
-        description: "Owner Name, Mobile No, Company Name, and GST No are required.",
+        title: "Missing Required Field",
+        description: "Company Name is required.",
         variant: "destructive",
       });
       return;
     }
+
+    if (!ownerName.trim()) {
+      toast({
+        title: "Missing Required Field",
+        description: "Owner / Contact Name is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!phone.trim()) {
+      toast({
+        title: "Missing Required Field",
+        description: "Business Mobile Number is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!gstNo.trim()) {
+      toast({
+        title: "Missing Required Field",
+        description: "GSTIN is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate GSTIN before submit
+    if (gstNo && !isGSTValid) {
+      toast({
+        title: "Invalid GSTIN",
+        description: "Please enter a valid GSTIN",
+        variant: "destructive",
+      });
+      return;
+    }
+
     updateProfileMutation.mutate({
-      companyName,
       ownerName,
+      companyName,
       phone,
       email: user?.email || "",
       website,
-      gstNo: gstNumber,
-      panNo: panNumber,
+      gstNo,
       address,
     });
   };
+
+  // Check if legal fields are locked
+  const isLocked = defaultProfile?.hasFinancialDocs || false;
+  const adminRoles = ['admin', 'super_admin'];
+  const isProfileOwner = defaultProfile?.userId === user?.id;
+  const canEdit = adminRoles.includes(user?.role || '') || isProfileOwner;
 
   const getInitials = () => {
     if (user?.firstName && user?.lastName) {
@@ -118,214 +254,248 @@ export default function Account() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Account</h1>
         <p className="text-muted-foreground">
-          Manage your personal and business settings
+          Manage your business profile settings
         </p>
       </div>
 
-      {/* Personal Details */}
-        <div className="mt-6">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Personal Details</CardTitle>
-              <CardDescription>Your account information (read-only)</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={user?.profileImageUrl || undefined} />
-                  <AvatarFallback className="text-xl">{getInitials()}</AvatarFallback>
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Business Account</CardTitle>
+          <CardDescription>
+            This information will be used across all documents, invoices, and communications.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          {profilesLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <>
+              {/* User Identity Header (Minimal, Read-Only) */}
+              <div className="flex items-center gap-4 pb-6 mb-6 border-b">
+                <Avatar className="h-16 w-16">
+                  {user?.profileImageUrl ? (
+                    <AvatarImage src={user.profileImageUrl} alt={user?.firstName || ''} />
+                  ) : (
+                    <AvatarFallback className="text-lg bg-primary/10 text-primary">
+                      {getInitials()}
+                    </AvatarFallback>
+                  )}
                 </Avatar>
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    {user?.firstName} {user?.lastName}
-                  </h3>
-                  <p className="text-muted-foreground">{user?.email}</p>
-                  <Badge variant="secondary" className="mt-1">
-                    {user?.role || "User"}
-                  </Badge>
+
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold">
+                      {user?.firstName} {user?.lastName}
+                    </h3>
+                    <Badge variant="secondary" className="text-xs">
+                      {user?.role}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{user?.email}</p>
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Email</Label>
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span>{user?.email || "—"}</span>
-                  </div>
-                </div>
+              {/* Invoice Lock Warning */}
+              {isLocked && (
+                <Alert className="mb-6" variant="destructive">
+                  <Lock className="h-4 w-4" />
+                  <AlertDescription>
+                    <strong>Legal fields locked:</strong> {defaultProfile.lockedReason}
+                    <br />
+                    GSTIN, PAN, State, Company Name, and Address cannot be modified after financial documents have been issued.
+                  </AlertDescription>
+                </Alert>
+              )}
 
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Mobile</Label>
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{user?.mobileNo || "—"}</span>
-                  </div>
-                </div>
+              {/* Non-Owner Warning */}
+              {!canEdit && (
+                <Alert className="mb-6">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Only the account owner can edit business profile details.
+                  </AlertDescription>
+                </Alert>
+              )}
 
-                <div className="space-y-2 sm:col-span-2">
-                  <Label className="text-muted-foreground">Company</Label>
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                    <span>{user?.companyName || "—"}</span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      {/* Business Profile - Single source of truth */}
-        <div className="mt-6">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Business Details</CardTitle>
-              <CardDescription>Master business profile used in quotes and documents</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {profilesLoading ? (
-                <div className="space-y-4">
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                   <div className="grid gap-4 sm:grid-cols-2">
-                     <div className="space-y-2">
-                       <Label htmlFor="ownerName">Owner / Contact Name<span className="text-red-600">*</span></Label>
-                       <Input
-                         id="ownerName"
-                         value={ownerName}
-                         onChange={(e) => setOwnerName(e.target.value)}
-                         placeholder="Owner or primary contact"
-                       />
-                     </div>
-                    <div className="space-y-2">
-                       <Label htmlFor="companyName">Company Name<span className="text-red-600">*</span></Label>
-                      <Input
-                        id="companyName"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                        placeholder="Your company name"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                       <Label htmlFor="phone">Mobile No<span className="text-red-600">*</span></Label>
-                      <Input
-                        id="phone"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="Contact number"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={user?.email || ""}
-                        disabled
-                        className="bg-muted"
-                        placeholder="Fetched from signup"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="website">Website</Label>
-                      <Input
-                        id="website"
-                        value={website}
-                        onChange={(e) => setWebsite(e.target.value)}
-                        placeholder="https://yourwebsite.com"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                       <Label htmlFor="gst">GST No<span className="text-red-600">*</span></Label>
-                      <Input
-                        id="gst"
-                        value={gstNumber}
-                        onChange={(e) => setGstNumber(e.target.value)}
-                        placeholder="GST number"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="pan">PAN Number</Label>
-                      <Input
-                        id="pan"
-                        value={panNumber}
-                        onChange={(e) => setPanNumber(e.target.value)}
-                        placeholder="PAN number"
-                      />
-                    </div>
-                  </div>
-
+              {/* Unified Business Profile Form */}
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Row 1: Owner Name + Company Name */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="address">Address</Label>
-                    <Textarea
-                      id="address"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Full business address"
-                      rows={3}
+                    <Label htmlFor="ownerName">Account Owner / Authorized Person<span className="text-red-500">*</span></Label>
+                    <Input
+                      id="ownerName"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      required
+                      disabled={!canEdit}
+                      className={!canEdit ? 'bg-muted cursor-not-allowed' : ''}
                     />
                   </div>
 
-                  <Button className="gap-2" onClick={handleSaveBusiness} disabled={updateProfileMutation.isPending}>
-                    <Save className="h-4 w-4" />
-                    Save Changes
+                  <div className="space-y-2">
+                    <Label htmlFor="companyName">Company / Business Name<span className="text-red-500">*</span></Label>
+                    <Input
+                      id="companyName"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      required
+                      disabled={!canEdit || isLocked}
+                      className={!canEdit || isLocked ? 'bg-muted cursor-not-allowed' : ''}
+                    />
+                    {isLocked && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Lock className="h-3 w-3" /> Locked (used in financial documents)
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 2: Mobile + Email */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Business Mobile Number<span className="text-red-500">*</span></Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      required
+                      disabled={!canEdit}
+                      className={!canEdit ? 'bg-muted cursor-not-allowed' : ''}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Business Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={user?.email || ""}
+                      disabled
+                      className="bg-muted cursor-not-allowed"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Email is auto-filled from your login account
+                    </p>
+                  </div>
+                </div>
+
+                {/* Row 3: Website + GSTIN */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="website">Website</Label>
+                    <Input
+                      id="website"
+                      type="url"
+                      placeholder="https://yourcompany.com"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      disabled={!canEdit}
+                      className={!canEdit ? 'bg-muted cursor-not-allowed' : ''}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="gstNo">GSTIN<span className="text-red-500">*</span></Label>
+                    <Input
+                      id="gstNo"
+                      maxLength={15}
+                      placeholder="27AAACV3467G1ZH"
+                      value={gstNo}
+                      onChange={(e) => setGstNo(e.target.value.toUpperCase())}
+                      required
+                      disabled={!canEdit || isLocked}
+                      className={`${!canEdit || isLocked ? 'bg-muted cursor-not-allowed' : ''} ${isGSTValid ? 'border-green-500' : gstError ? 'border-red-500' : ''}`}
+                    />
+                    {gstError && (
+                      <p className="text-xs text-red-500">{gstError}</p>
+                    )}
+                    {isGSTValid && (
+                      <p className="text-xs text-green-600">✓ Valid GSTIN</p>
+                    )}
+                    {isLocked && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Lock className="h-3 w-3" /> Locked (used in financial documents)
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 4: PAN + State (Auto-Derived, Read-Only) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="panNo">PAN (Auto-Derived)</Label>
+                    <Input
+                      id="panNo"
+                      value={panNo}
+                      disabled
+                      className="bg-muted cursor-not-allowed"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Automatically extracted from GSTIN (positions 3-12)
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="stateName">State (Auto-Derived)</Label>
+                    <Input
+                      id="stateName"
+                      value={stateName}
+                      disabled
+                      className="bg-muted cursor-not-allowed"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Automatically determined from GSTIN state code ({stateCode})
+                    </p>
+                  </div>
+                </div>
+
+                {/* Row 5: Address (Full Width) */}
+                <div className="space-y-2">
+                  <Label htmlFor="address">Full Business Address<span className="text-red-500">*</span></Label>
+                  <Textarea
+                    id="address"
+                    rows={3}
+                    placeholder="Complete registered business address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    required
+                    disabled={!canEdit || isLocked}
+                    className={!canEdit || isLocked ? 'bg-muted cursor-not-allowed' : ''}
+                  />
+                  {isLocked && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Lock className="h-3 w-3" /> Locked (used in financial documents)
+                    </p>
+                  )}
+                </div>
+
+                {/* Submit Button */}
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    disabled={updateProfileMutation.isPending || !canEdit}
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {updateProfileMutation.isPending ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      {/* Branding */}
-        <div className="mt-6">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Branding</CardTitle>
-              <CardDescription>Customize your logo for quotes and documents</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row items-start gap-6">
-                  <div className="shrink-0">
-                    <div className="h-24 w-24 rounded-lg border-2 border-dashed flex items-center justify-center bg-muted/30">
-                      {defaultProfile?.logo ? (
-                        <img
-                          src={defaultProfile.logo}
-                          alt="Logo"
-                          className="h-full w-full object-contain rounded-lg"
-                        />
-                      ) : (
-                        <Upload className="h-8 w-8 text-muted-foreground" />
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <h4 className="font-medium">Company Logo</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Upload your logo to display on quotes and documents. Maximum file size: 500KB.
-                      Recommended: Square image, PNG or JPEG format.
-                    </p>
-                    <Button variant="outline" className="gap-2">
-                      <Upload className="h-4 w-4" />
-                      Upload Logo
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              </form>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
