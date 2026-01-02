@@ -12,6 +12,48 @@ import { clerkMiddleware } from "@clerk/express";
 import { registerRoutes } from "./routes";
 import { initializeSentry, Sentry } from "./sentry";
 
+// ========== AUTH STARTUP GUARDS ==========
+// Prevent server startup if forbidden auth env vars are present
+const FORBIDDEN_AUTH_ENV_VARS = [
+  'SUPABASE_URL',
+  'SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'VITE_SUPABASE_URL',
+  'VITE_SUPABASE_ANON_KEY',
+  'NEON_AUTH_JWKS_URL',
+  'NEON_AUTH_URL',
+  'VITE_NEON_AUTH_URL',
+];
+
+const detectedForbiddenVars = FORBIDDEN_AUTH_ENV_VARS.filter(v => process.env[v]);
+if (detectedForbiddenVars.length > 0) {
+  console.error('🚫 AUTH STARTUP GUARD FAILED');
+  console.error('═══════════════════════════════════════════════════════════════');
+  console.error('Forbidden authentication environment variables detected:');
+  detectedForbiddenVars.forEach(v => console.error(`  ❌ ${v}`));
+  console.error('');
+  console.error('Clerk is the ONLY allowed authentication provider.');
+  console.error('Remove these legacy auth variables from your .env file.');
+  console.error('See docs/auth-contract.md for the authentication policy.');
+  console.error('═══════════════════════════════════════════════════════════════');
+  process.exit(1);
+}
+
+// Verify Clerk is configured
+if (!process.env.CLERK_SECRET_KEY) {
+  console.error('🚫 AUTH STARTUP GUARD FAILED');
+  console.error('═══════════════════════════════════════════════════════════════');
+  console.error('CLERK_SECRET_KEY is not configured.');
+  console.error('Clerk is REQUIRED for authentication.');
+  console.error('Get your keys from: https://dashboard.clerk.com');
+  console.error('═══════════════════════════════════════════════════════════════');
+  process.exit(1);
+}
+
+if (!process.env.VITE_CLERK_PUBLISHABLE_KEY && !process.env.CLERK_PUBLISHABLE_KEY) {
+  console.warn('⚠️  WARNING: VITE_CLERK_PUBLISHABLE_KEY not set. Frontend auth may not work.');
+}
+
 // Initialize Sentry BEFORE any other imports
 initializeSentry();
 
@@ -45,10 +87,20 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser()); // CRITICAL: Required for Neon Auth session cookies
+app.use(cookieParser()); // Required for cookie parsing
 
 // Clerk middleware - MUST be after express.json() and cookieParser()
-app.use(clerkMiddleware());
+// Use either server-side or Vite-prefixed publishable key to avoid missing env issues in dev
+const clerkPublishableKey = process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+app.use(clerkMiddleware({
+  publishableKey: clerkPublishableKey,
+  secretKey: process.env.CLERK_SECRET_KEY,
+}));
+
+if (!clerkPublishableKey) {
+  console.warn('[Clerk] Missing publishable key; set CLERK_PUBLISHABLE_KEY or VITE_CLERK_PUBLISHABLE_KEY');
+}
 
 app.use((req, res, next) => {
   const start = Date.now();

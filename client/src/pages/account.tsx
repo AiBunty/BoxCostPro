@@ -241,7 +241,9 @@ export default function Account() {
   const isLocked = defaultProfile?.hasFinancialDocs || false;
   const adminRoles = ['admin', 'super_admin'];
   const isProfileOwner = defaultProfile?.userId === user?.id;
-  const canEdit = adminRoles.includes(user?.role || '') || isProfileOwner;
+  const isUnclaimedProfile = !defaultProfile?.userId;
+  // Allow edits when admin/super_admin, when profile is unclaimed, or when current user owns it
+  const canEdit = adminRoles.includes(user?.role || '') || isProfileOwner || isUnclaimedProfile;
 
   const getInitials = () => {
     if (user?.firstName && user?.lastName) {
@@ -322,7 +324,7 @@ export default function Account() {
                 <Alert className="mb-6">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    Only the account owner can edit business profile details.
+                    Only the account owner can edit business profile details. If this profile is unclaimed, contact an admin to assign ownership.
                   </AlertDescription>
                 </Alert>
               )}
