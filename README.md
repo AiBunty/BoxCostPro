@@ -45,8 +45,17 @@
 ## Environment
 Copy `.env.example` to `.env` and populate the variables. Key variables:
 - `DATABASE_URL` — Postgres connection string
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — (optional, legacy) Supabase credentials for auth. The app now supports direct Google OAuth and session-based auth without Supabase.
-- `GOOGLE_OAUTH_REDIRECT_URL` — set to your deployed redirect URL, e.g. `https://www.paperboxerp.com/auth/google/callback` for production.
+- `VITE_CLERK_PUBLISHABLE_KEY` — Clerk publishable key (required for frontend)
+- `CLERK_SECRET_KEY` — Clerk secret key (required for backend)
+
+## Authentication
+This application uses **Clerk** as the ONLY authentication provider. All authentication is handled via Clerk:
+- Email/Password
+- Email OTP
+- Magic Links
+- Google OAuth
+- Microsoft OAuth
+- And other social providers configured in Clerk Dashboard
 
 ## Install
 ```powershell
@@ -65,5 +74,5 @@ npm run dev
 
 Notes:
 - The app expects certain DB tables (see `shared/schema.ts`). Use `drizzle-kit` to push migrations or run schema setup.
-- Supabase is optional. If `VITE_SUPABASE_*` / `SUPABASE_*` env vars are not set the app will use direct Google OAuth and server session endpoints instead of Supabase.
-	- For production Google OAuth, set `APP_URL` and `GOOGLE_OAUTH_REDIRECT_URL` to your site (example: `https://www.paperboxerp.com` and `https://www.paperboxerp.com/auth/google/callback`).
+- Clerk is REQUIRED. Without Clerk credentials, authentication will not work.
+- Configure OAuth providers (Google, Microsoft, etc.) in your Clerk Dashboard.

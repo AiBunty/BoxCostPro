@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth, signOut } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import {
@@ -17,12 +17,10 @@ import {
   ChevronDown,
   ChevronRight,
   Headphones,
-  Shield,
   UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   DropdownMenu,
@@ -69,25 +67,10 @@ const getNavItems = (userRole: string | null | undefined): NavItem[] => {
       ]
     },
     { label: "Reports", path: "/reports", icon: BarChart3 },
-    { label: "Masters", path: "/masters", icon: Settings2 },
+    { label: "Master Settings", path: "/masters", icon: Settings2 },
     { label: "Support", path: "/support", icon: Headphones },
     { label: "Account", path: "/account", icon: User },
   ];
-  
-  const adminRoles = ['admin', 'super_admin', 'owner'];
-  const supportRoles = ['support_agent', 'support_manager', ...adminRoles];
-  
-  if (adminRoles.includes(userRole || '')) {
-    baseItems.push({ 
-      label: "Admin", 
-      path: "/admin", 
-      icon: Shield,
-      subItems: [
-        { label: "Subscriptions", path: "/admin" },
-        { label: "User Management", path: "/admin/users" },
-      ]
-    });
-  }
   
   return baseItems;
 };
@@ -98,15 +81,12 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const isMobile = useIsMobile();
   const navItems = getNavItems(user?.role);
   const [quotesOpen, setQuotesOpen] = useState(() => {
     // Open the Quotes section by default if we're on a quotes-related page
     return location.startsWith("/quotes") || location.startsWith("/bulk-upload");
-  });
-  const [adminOpen, setAdminOpen] = useState(() => {
-    return location.startsWith("/admin");
   });
 
   const getInitials = () => {
@@ -128,17 +108,8 @@ export function AppShell({ children }: AppShellProps) {
     return location === path || location.startsWith(path + "/");
   };
 
-  // Fetch onboarding and subscription status to show "Awaiting approval" badge when needed
   const { data: onboardingStatus } = useQuery<any>({ queryKey: ["/api/onboarding/status"] });
-  const adminRoles = ['admin', 'super_admin', 'owner'];
-  const isAdmin = adminRoles.includes(user?.role || '');
-  const { data: pendingApprovals } = useQuery<any[]>({
-    queryKey: ["/api/admin/verifications/pending"],
-    enabled: isAdmin,
-  });
-  const pendingCount = isAdmin ? (pendingApprovals?.length || 0) : 0;
   const isPaidActive = !!onboardingStatus?.paidActive;
-  const showAwaitingBadge = !isPaidActive;
 
   if (isMobile) {
     return (
@@ -212,24 +183,13 @@ export function AppShell({ children }: AppShellProps) {
 
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t safe-area-inset-bottom">
           <div className="flex items-center justify-around h-16 px-2">
-            {(
-              isAdmin
-                ? [
-                    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-                    { label: "Quotes", path: "/quotes", icon: FileText },
-                    { label: "Reports", path: "/reports", icon: BarChart3 },
-                    { label: "Admin", path: "/admin", icon: Shield },
-                    { label: "Support", path: "/support", icon: Headphones },
-                    { label: "Account", path: "/account", icon: User },
-                  ]
-                : [
-                    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-                    { label: "Quotes", path: "/quotes", icon: FileText },
-                    { label: "Reports", path: "/reports", icon: BarChart3 },
-                    { label: "Support", path: "/support", icon: Headphones },
-                    { label: "Account", path: "/account", icon: User },
-                  ]
-            ).map((item) => {
+            {[
+              { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+              { label: "Quotes", path: "/quotes", icon: FileText },
+              { label: "Reports", path: "/reports", icon: BarChart3 },
+              { label: "Support", path: "/support", icon: Headphones },
+              { label: "Account", path: "/account", icon: User },
+            ].map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
               return (
@@ -246,9 +206,6 @@ export function AppShell({ children }: AppShellProps) {
                     <Icon className="h-5 w-5" />
                     <span className="text-[10px] font-medium flex items-center gap-1">
                       {item.label}
-                      {item.label === "Admin" && pendingCount > 0 && (
-                        <Badge variant="secondary" className="px-1 py-0 text-[9px]">{pendingCount}</Badge>
-                      )}
                     </span>
                   </button>
                 </Link>
@@ -278,9 +235,8 @@ export function AppShell({ children }: AppShellProps) {
             if (item.subItems && item.subItems.length > 0) {
               const hasActiveSubItem = item.subItems.some(sub => isActive(sub.path));
               const isQuotesSection = item.label === "Quotes";
-              const isAdminSection = item.label === "Admin";
-              const isOpen = isQuotesSection ? quotesOpen : isAdminSection ? adminOpen : false;
-              const setIsOpen = isQuotesSection ? setQuotesOpen : isAdminSection ? setAdminOpen : () => {};
+              const isOpen = isQuotesSection ? quotesOpen : false;
+              const setIsOpen = isQuotesSection ? setQuotesOpen : () => {};
               
               return (
                 <Collapsible 
@@ -302,9 +258,6 @@ export function AppShell({ children }: AppShellProps) {
                         <Icon className="h-5 w-5 shrink-0" />
                         <span className="truncate flex items-center gap-2">
                           {item.label}
-                          {item.label === "Admin" && pendingCount > 0 && (
-                            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{pendingCount}</Badge>
-                          )}
                         </span>
                       </div>
                       {isOpen ? (
@@ -330,9 +283,6 @@ export function AppShell({ children }: AppShellProps) {
                           >
                             <span className="truncate flex items-center gap-2">
                               {subItem.label}
-                              {item.label === "Admin" && subItem.label === "User Management" && pendingCount > 0 && (
-                                <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{pendingCount}</Badge>
-                              )}
                             </span>
                           </button>
                         </Link>
@@ -412,24 +362,40 @@ export function AppShell({ children }: AppShellProps) {
               {/* Theme toggle for desktop */}
               <ThemeToggle />
 
-              {showAwaitingBadge && (
-                <Badge variant="secondary" className="gap-1" data-testid="badge-awaiting-approval">
-                  Pending Verification
-                </Badge>
-              )}
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Avatar className="h-7 w-7 cursor-default">
-                    <AvatarImage src={user?.profileImageUrl || undefined} />
-                    <AvatarFallback className="text-xs">{getInitials()}</AvatarFallback>
-                  </Avatar>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p className="font-medium">{user?.firstName} {user?.lastName}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
-                </TooltipContent>
-              </Tooltip>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={user?.profileImageUrl || undefined} />
+                      <AvatarFallback className="text-xs">{getInitials()}</AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium">{user?.firstName} {user?.lastName}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <Link href="/account">
+                    <DropdownMenuItem>
+                      <User className="mr-2 h-4 w-4" />
+                      Account Settings
+                    </DropdownMenuItem>
+                  </Link>
+                  <Link href="/support">
+                    <DropdownMenuItem>
+                      <Headphones className="mr-2 h-4 w-4" />
+                      Support
+                    </DropdownMenuItem>
+                  </Link>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={signOut} className="text-red-600 focus:text-red-600">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </header>

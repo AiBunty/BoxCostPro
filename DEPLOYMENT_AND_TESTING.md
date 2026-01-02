@@ -2,7 +2,7 @@
 
 ## 🚨 CRITICAL FIXES APPLIED
 
-**Problem Solved**: Users getting stuck at `/settings` page in infinite redirect loop
+**Problem Solved**: Users getting stuck at Master Settings in infinite redirect loop
 
 **Root Cause**: Auto-created company profile missing email/phone
 
@@ -103,8 +103,8 @@ npm list googleapis
   → Callback
   → /complete-profile (firstName, lastName, mobile) ✅
   → Submit
-  → /settings (Business Profile auto-created) ✅
-  → Should show pre-filled email ✅
+   → /masters?tab=settings (Master Settings) ✅
+   → Email/Templates available under Master Settings ✅
   → Can add more details or skip
   → /masters?tab=flute ✅
   → Configure flute types
@@ -131,14 +131,14 @@ WHERE user_id = 'test-user-id';
 
 **Steps**:
 1. Login with that user
-2. Should redirect to `/settings`
+2. Should redirect to Master Settings
 3. Run migration SQL (from above)
 4. Refresh page
 5. Should NOT be stuck anymore
 
 **Success Criteria**:
-- [ ] Before migration: Stuck at settings
-- [ ] After migration: Can proceed to masters/dashboard
+- [ ] Before migration: Stuck at Master Settings
+- [ ] After migration: Can proceed to Master Settings/dashboard
 
 ### Test 3: Existing User (Already Complete)
 
@@ -193,7 +193,7 @@ WHERE user_id = 'test-user-id';
 
 ## 🐛 Troubleshooting
 
-### Issue: Still stuck at /settings after fix
+### Issue: Still stuck at Master Settings after fix
 
 **Check**:
 ```sql

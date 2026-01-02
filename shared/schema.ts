@@ -39,11 +39,14 @@ export const sessions = pgTable(
 export const userAccountStatus = z.enum(['new_user', 'email_verified', 'mobile_verified', 'fully_verified', 'suspended', 'deleted']);
 export type UserAccountStatus = z.infer<typeof userAccountStatus>;
 
-// User storage table for Supabase Auth
+// User storage table (Clerk Authentication)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  supabaseUserId: varchar("supabase_user_id").unique(), // Optional: external provider user ID (kept for legacy compatibility)
+  supabaseUserId: varchar("supabase_user_id").unique(), // DEPRECATED: Legacy column, not used
+  neonAuthUserId: varchar("neon_auth_user_id").unique(), // DEPRECATED: Legacy column, not used
+  clerkUserId: varchar("clerk_user_id").unique(), // Clerk user ID (PRIMARY authentication identifier)
   email: varchar("email").unique(),
+  passwordHash: varchar("password_hash"), // DEPRECATED: Clerk handles password management
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -55,15 +58,22 @@ export const users = pgTable("users", {
   mobileNo: varchar("mobile_no"), // User's mobile number
   countryCode: varchar("country_code").default("+91"), // Country code for mobile
   companyName: varchar("company_name"), // User's company name
-  authProvider: varchar("auth_provider").default("google_direct"), // 'google_direct', 'supabase'(legacy), 'email_password', 'magic_link'
-  signupMethod: varchar("signup_method"), // 'email_otp', 'email_password', 'magic_link', 'google', 'microsoft', 'linkedin', 'apple'
-  emailVerified: boolean("email_verified").default(false), // Email verification status
+  authProvider: varchar("auth_provider").default("clerk"), // 'clerk' (ONLY supported value)
+  signupMethod: varchar("signup_method"), // 'email_otp', 'email_password', 'magic_link', 'google', 'microsoft', 'linkedin', 'apple' (via Clerk)
+  emailVerified: boolean("email_verified").default(false), // Email verification status (synced from Clerk)
   mobileVerified: boolean("mobile_verified").default(false), // Mobile verification status
   accountStatus: varchar("account_status").default("new_user"), // 'new_user', 'email_verified', 'mobile_verified', 'fully_verified', 'suspended', 'deleted'
   lastLoginAt: timestamp("last_login_at"), // Last successful login
-  passwordResetRequired: boolean("password_reset_required").default(false), // Force password reset
-  failedLoginAttempts: integer("failed_login_attempts").default(0), // Track failed logins for rate limiting
-  lockedUntil: timestamp("locked_until"), // Account lock time after too many failures
+  passwordResetRequired: boolean("password_reset_required").default(false), // DEPRECATED: Clerk handles password reset
+  failedLoginAttempts: integer("failed_login_attempts").default(0), // DEPRECATED: Clerk handles rate limiting
+  lockedUntil: timestamp("locked_until"), // DEPRECATED: Clerk handles account locking
+  // Payment & Signup Flow
+  paymentCompleted: boolean("payment_completed").default(false), // True if user completed payment during signup
+  temporaryProfileId: varchar("temporary_profile_id"), // Reference to temporary_business_profiles (audit trail)
+  // Two-Factor Authentication
+  twoFactorEnabled: boolean("two_factor_enabled").default(false), // DEPRECATED: Clerk handles 2FA
+  twoFactorMethod: varchar("two_factor_method"), // DEPRECATED: Clerk handles 2FA methods
+  twoFactorVerifiedAt: timestamp("two_factor_verified_at"), // When 2FA was last verified
 });
 
 // User Profile for tracking onboarding/setup progress
@@ -82,6 +92,25 @@ export const userProfiles = pgTable("user_profiles", {
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UserProfile = typeof userProfiles.$inferSelect;
+
+// Admin IP Whitelist - Restrict admin access by IP address
+export const allowedAdminIps = pgTable("allowed_admin_ips", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id), // null = applies to all admins
+  ipAddress: varchar("ip_address", { length: 45 }).notNull(), // Supports IPv4 and IPv6
+  description: text("description"), // e.g., "Office WiFi", "VPN Server"
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id), // Admin who added this IP
+  lastUsedAt: timestamp("last_used_at"), // Track when this IP was last used
+}, (table) => [
+  index("idx_allowed_ips_user").on(table.userId),
+  index("idx_allowed_ips_address").on(table.ipAddress),
+]);
+
+export const insertAllowedAdminIpSchema = createInsertSchema(allowedAdminIps).omit({ id: true, createdAt: true, lastUsedAt: true });
+export type InsertAllowedAdminIp = z.infer<typeof insertAllowedAdminIpSchema>;
+export type AllowedAdminIp = typeof allowedAdminIps.$inferSelect;
 
 // Email Provider enum for user email settings
 export const emailProviderEnum = z.enum(['gmail', 'google_oauth', 'outlook', 'yahoo', 'zoho', 'titan', 'custom']);
@@ -188,9 +217,11 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   description: text("description"),
   priceMonthly: real("price_monthly").notNull(),
   priceYearly: real("price_yearly"),
-  features: jsonb("features").default('[]'),
+  features: jsonb("features").default('{"maxEmailProviders":1,"maxQuotes":50,"maxPartyProfiles":20,"apiAccess":false,"whatsappIntegration":false,"prioritySupport":false,"customBranding":false}'),
   isActive: boolean("is_active").default(true),
   trialDays: integer("trial_days").default(14),
+  planTier: varchar("plan_tier", { length: 20 }).default('basic'), // 'basic', 'professional', 'enterprise'
+  displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -217,6 +248,96 @@ export const userSubscriptions = pgTable("user_subscriptions", {
 export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
 export type UserSubscription = typeof userSubscriptions.$inferSelect;
+
+// User Feature Usage Tracking
+export const userFeatureUsage = pgTable("user_feature_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  emailProvidersCount: integer("email_providers_count").default(0),
+  customTemplatesCount: integer("custom_templates_count").default(0),
+  quotesThisMonth: integer("quotes_this_month").default(0),
+  partyProfilesCount: integer("party_profiles_count").default(0),
+  apiCallsThisMonth: integer("api_calls_this_month").default(0),
+  lastResetAt: timestamp("last_reset_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserFeatureUsageSchema = createInsertSchema(userFeatureUsage).omit({ id: true, updatedAt: true });
+export type InsertUserFeatureUsage = z.infer<typeof insertUserFeatureUsageSchema>;
+export type UserFeatureUsage = typeof userFeatureUsage.$inferSelect;
+
+// User Feature Overrides (Admin can override plan limits for specific users)
+export const userFeatureOverrides = pgTable("user_feature_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  maxEmailProviders: integer("max_email_providers"), // null = use plan limit
+  maxQuotes: integer("max_quotes"),
+  maxPartyProfiles: integer("max_party_profiles"),
+  apiAccess: boolean("api_access"),
+  whatsappIntegration: boolean("whatsapp_integration"),
+  notes: text("notes"), // Admin notes for why override was applied
+  createdBy: varchar("created_by", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserFeatureOverrideSchema = createInsertSchema(userFeatureOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserFeatureOverride = z.infer<typeof insertUserFeatureOverrideSchema>;
+export type UserFeatureOverride = typeof userFeatureOverrides.$inferSelect;
+
+// Payment Gateways Configuration
+export const paymentGateways = pgTable("payment_gateways", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  gatewayType: varchar("gateway_type", { length: 50 }).notNull().unique(), // 'razorpay', 'phonepe', 'payu', 'cashfree', 'ccavenue'
+  gatewayName: varchar("gateway_name", { length: 100 }).notNull(),
+  isActive: boolean("is_active").default(true),
+  priority: integer("priority").notNull().default(100), // Lower = higher priority, 1 = highest
+  credentials: jsonb("credentials").notNull(), // Encrypted gateway credentials
+  webhookSecret: varchar("webhook_secret", { length: 500 }),
+  environment: varchar("environment", { length: 20 }).default('test'), // 'test', 'production'
+  
+  // Health monitoring
+  consecutiveFailures: integer("consecutive_failures").default(0),
+  lastHealthCheck: timestamp("last_health_check"),
+  lastFailureAt: timestamp("last_failure_at"),
+  lastFailureReason: text("last_failure_reason"),
+  totalTransactions: integer("total_transactions").default(0),
+  totalSuccessful: integer("total_successful").default(0),
+  totalFailed: integer("total_failed").default(0),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by", { length: 255 }),
+}, (table) => [
+  index("idx_payment_gateways_active").on(table.isActive),
+  index("idx_payment_gateways_priority").on(table.priority),
+]);
+
+export const insertPaymentGatewaySchema = createInsertSchema(paymentGateways).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPaymentGateway = z.infer<typeof insertPaymentGatewaySchema>;
+export type PaymentGateway = typeof paymentGateways.$inferSelect;
+
+// Template Ratings - User feedback for community templates
+export const templateRatings = pgTable("template_ratings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull(),
+  templateType: varchar("template_type", { length: 20 }).notNull(), // 'quote' or 'invoice'
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  rating: integer("rating").notNull(), // 1-5 stars
+  review: text("review"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_template_ratings_template").on(table.templateId, table.templateType),
+  index("idx_template_ratings_user").on(table.userId),
+  // Unique constraint: one rating per user per template
+  sql`UNIQUE(template_id, template_type, user_id)`,
+]);
+
+export const insertTemplateRatingSchema = createInsertSchema(templateRatings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTemplateRating = z.infer<typeof insertTemplateRatingSchema>;
+export type TemplateRating = typeof templateRatings.$inferSelect;
 
 // Coupons
 export const coupons = pgTable("coupons", {
@@ -371,11 +492,23 @@ export const companyProfiles = pgTable("company_profiles", {
   verified: boolean("verified").default(false), // Email verified for profile edits
   // Editable business details
   gstNo: text("gst_no"),
+  panNo: text("pan_no"), // Auto-derived from GSTIN (positions 3-12)
+  stateCode: varchar("state_code", { length: 2 }), // Auto-derived from GSTIN (positions 1-2)
+  stateName: text("state_name"), // Auto-derived from state code lookup
   address: text("address"),
   website: text("website"),
   mapLink: text("map_link"), // Google Maps link for templates
   socialMedia: text("social_media"),
   googleLocation: text("google_location"),
+  // GST Verification Metadata (future-ready for paid APIs)
+  gstVerified: boolean("gst_verified").default(false),
+  gstVerifiedAt: timestamp("gst_verified_at"),
+  gstVerificationProvider: text("gst_verification_provider"), // e.g., "Clear Tax API", "Masters India"
+  gstVerificationResponse: text("gst_verification_response"), // Store JSON response
+  // Invoice-Safe Locking (lock legal fields after first financial document)
+  hasFinancialDocs: boolean("has_financial_docs").default(false),
+  lockedAt: timestamp("locked_at"),
+  lockedReason: text("locked_reason"), // e.g., "First invoice generated on 2025-01-15"
   // Quote defaults
   paymentTerms: text("payment_terms").default("100% Advance"),
   deliveryTime: text("delivery_time").default("10 days after receipt of PO"),
@@ -426,6 +559,11 @@ export const quotes = pgTable("quotes", {
   activeVersionId: varchar("active_version_id"), // Points to current quote_versions record
   totalValue: real("total_value").default(0), // Cached total from active version for quick reporting
   status: varchar("status").default("draft"), // 'draft', 'sent', 'accepted', 'rejected', 'expired'
+  // Invoice PDF tracking (added in migration 008)
+  invoiceTemplateId: varchar("invoice_template_id").references(() => invoiceTemplates.id),
+  pdfPath: text("pdf_path"),
+  pdfGeneratedAt: timestamp("pdf_generated_at"),
+  isPdfGenerated: boolean("is_pdf_generated").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -932,7 +1070,8 @@ export const onboardingStatus = pgTable("onboarding_status", {
   approvedAt: timestamp("approved_at"),
   rejectedAt: timestamp("rejected_at"),
   approvedBy: varchar("approved_by").references(() => users.id),
-  
+  lastReminderSentAt: timestamp("last_reminder_sent_at"),
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1016,9 +1155,23 @@ export const quoteTemplates = pgTable("quote_templates", {
   description: text("description"), // Description of what this template is for
   isDefault: boolean("is_default").default(false), // Default template for this channel
   isActive: boolean("is_active").default(true),
+  
+  // Community Marketplace Fields
+  isSystemTemplate: boolean("is_system_template").default(false), // true = default editable templates
+  isCommunityTemplate: boolean("is_community_template").default(false), // User shared template
+  isPublic: boolean("is_public").default(false), // Visible in community gallery
+  useCount: integer("use_count").default(0), // How many times template used
+  rating: integer("rating").default(0), // Average rating (0-5)
+  ratingCount: integer("rating_count").default(0), // Number of ratings
+  tags: jsonb("tags").default('[]'), // ['professional', 'formal', 'quote']
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_quote_templates_public").on(table.isPublic),
+  index("idx_quote_templates_community").on(table.isCommunityTemplate),
+  index("idx_quote_templates_system").on(table.isSystemTemplate),
+]);
 
 export const insertQuoteTemplateSchema = createInsertSchema(quoteTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertQuoteTemplate = z.infer<typeof insertQuoteTemplateSchema>;
@@ -1057,3 +1210,433 @@ export const quoteSendLogs = pgTable("quote_send_logs", {
 export const insertQuoteSendLogSchema = createInsertSchema(quoteSendLogs).omit({ id: true, createdAt: true });
 export type InsertQuoteSendLog = z.infer<typeof insertQuoteSendLogSchema>;
 export type QuoteSendLog = typeof quoteSendLogs.$inferSelect;
+
+// ========== PAYMENT & INVOICE SYSTEM ==========
+
+// Temporary Business Profiles - stores signup data BEFORE payment
+export const temporaryBusinessProfiles = pgTable("temporary_business_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  authorizedPersonName: text("authorized_person_name").notNull(),
+  businessName: text("business_name").notNull(),
+  businessEmail: text("business_email").notNull().unique(),
+  mobileNumber: text("mobile_number").notNull(),
+  gstin: text("gstin"),
+  panNo: text("pan_no"),
+  stateCode: varchar("state_code", { length: 2 }),
+  stateName: text("state_name"),
+  fullBusinessAddress: text("full_business_address").notNull(),
+  website: text("website"),
+  sessionToken: varchar("session_token").unique().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  gstinValidated: boolean("gstin_validated").default(false),
+  emailVerified: boolean("email_verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_temp_profiles_session").on(table.sessionToken),
+  index("idx_temp_profiles_email").on(table.businessEmail),
+  index("idx_temp_profiles_expires").on(table.expiresAt),
+]);
+
+export const insertTemporaryBusinessProfileSchema = createInsertSchema(temporaryBusinessProfiles).omit({ id: true, createdAt: true });
+export type InsertTemporaryBusinessProfile = z.infer<typeof insertTemporaryBusinessProfileSchema>;
+export type TemporaryBusinessProfile = typeof temporaryBusinessProfiles.$inferSelect;
+
+// Invoice Templates - HTML templates for PDF generation
+// Invoice Templates - GST-compliant invoice HTML templates
+export const invoiceTemplates = pgTable("invoice_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  templateKey: varchar("template_key", { length: 100 }).unique().notNull(),
+  description: text("description"),
+  htmlContent: text("html_content").notNull(),
+  isDefault: boolean("is_default").default(false),
+  status: varchar("status", { length: 50 }).default('active'), // 'active', 'inactive'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_invoice_templates_template_key").on(table.templateKey),
+  index("idx_invoice_templates_is_default").on(table.isDefault),
+  index("idx_invoice_templates_status").on(table.status),
+]);
+
+export const insertInvoiceTemplateSchema = createInsertSchema(invoiceTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertInvoiceTemplate = z.infer<typeof insertInvoiceTemplateSchema>;
+export type InvoiceTemplate = typeof invoiceTemplates.$inferSelect;
+
+// Invoices - GST-compliant tax invoices
+export const invoices = pgTable("invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: varchar("invoice_number").unique().notNull(),
+  invoiceDate: timestamp("invoice_date").notNull().defaultNow(),
+  financialYear: varchar("financial_year", { length: 9 }).notNull(),
+  // Seller details
+  sellerCompanyName: text("seller_company_name").notNull(),
+  sellerGstin: text("seller_gstin").notNull(),
+  sellerAddress: text("seller_address").notNull(),
+  sellerStateCode: varchar("seller_state_code", { length: 2 }).notNull(),
+  sellerStateName: text("seller_state_name").notNull(),
+  // Buyer details
+  buyerCompanyName: text("buyer_company_name").notNull(),
+  buyerGstin: text("buyer_gstin"),
+  buyerAddress: text("buyer_address").notNull(),
+  buyerStateCode: varchar("buyer_state_code", { length: 2 }),
+  buyerStateName: text("buyer_state_name"),
+  buyerEmail: text("buyer_email").notNull(),
+  buyerPhone: text("buyer_phone").notNull(),
+  // Subscription
+  userId: varchar("user_id").references(() => users.id),
+  subscriptionId: varchar("subscription_id"), // FK to userSubscriptions (added after table defined)
+  planName: text("plan_name").notNull(),
+  billingCycle: varchar("billing_cycle").notNull(),
+  // Line items
+  lineItems: jsonb("line_items").notNull().default('[]'),
+  // Pricing
+  subtotal: real("subtotal").notNull(),
+  discountAmount: real("discount_amount").default(0),
+  taxableValue: real("taxable_value").notNull(),
+  // GST breakdown
+  cgstRate: real("cgst_rate").default(0),
+  cgstAmount: real("cgst_amount").default(0),
+  sgstRate: real("sgst_rate").default(0),
+  sgstAmount: real("sgst_amount").default(0),
+  igstRate: real("igst_rate").default(0),
+  igstAmount: real("igst_amount").default(0),
+  totalTax: real("total_tax").notNull(),
+  grandTotal: real("grand_total").notNull(),
+  // Payment
+  paymentTransactionId: varchar("payment_transaction_id"), // FK to paymentTransactions
+  razorpayPaymentId: varchar("razorpay_payment_id"),
+  razorpayOrderId: varchar("razorpay_order_id"),
+  couponCode: varchar("coupon_code"),
+  couponDiscount: real("coupon_discount").default(0),
+  // Invoice metadata
+  invoiceTemplateId: varchar("invoice_template_id").references(() => invoiceTemplates.id),
+  pdfUrl: text("pdf_url"),
+  pdfGeneratedAt: timestamp("pdf_generated_at"),
+  emailSent: boolean("email_sent").default(false),
+  emailSentAt: timestamp("email_sent_at"),
+  status: varchar("status").default("generated"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_invoices_user").on(table.userId),
+  index("idx_invoices_number").on(table.invoiceNumber),
+  index("idx_invoices_subscription").on(table.subscriptionId),
+  index("idx_invoices_date").on(table.invoiceDate),
+  index("idx_invoices_financial_year").on(table.financialYear),
+  index("idx_invoices_status").on(table.status),
+]);
+
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+export type Invoice = typeof invoices.$inferSelect;
+
+// Seller Profile - YOUR company details (appears as seller on all invoices)
+export const sellerProfile = pgTable("seller_profile", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyName: text("company_name").notNull(),
+  gstin: text("gstin").notNull(),
+  panNo: text("pan_no").notNull(),
+  stateCode: varchar("state_code", { length: 2 }).notNull(),
+  stateName: text("state_name").notNull(),
+  address: text("address").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone").notNull(),
+  website: text("website"),
+  logoUrl: text("logo_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSellerProfileSchema = createInsertSchema(sellerProfile).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSellerProfile = z.infer<typeof insertSellerProfileSchema>;
+export type SellerProfile = typeof sellerProfile.$inferSelect;
+
+// ========== ENTERPRISE ADMIN PANEL SYSTEM ==========
+
+// Admin roles enum for the enterprise admin panel
+export const adminRoleEnum = z.enum(['SUPER_ADMIN', 'SUPPORT_STAFF', 'SUPPORT_VIEWER', 'MARKETING_STAFF', 'FINANCE_ADMIN']);
+export type AdminRole = z.infer<typeof adminRoleEnum>;
+
+// Staff - Enterprise admin team members (separate from regular users)
+export const staff = pgTable("staff", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(), // FK to the system user account
+  role: varchar("role").notNull().default('SUPPORT_STAFF'), // SUPER_ADMIN, SUPPORT_STAFF, MARKETING_STAFF, FINANCE_ADMIN
+  status: varchar("status").notNull().default('active'), // 'active', 'disabled'
+  joinedAt: timestamp("joined_at").defaultNow(),
+  disabledAt: timestamp("disabled_at"),
+  disabledBy: varchar("disabled_by").references(() => staff.id), // Who disabled this staff
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_staff_user").on(table.userId),
+  index("idx_staff_role").on(table.role),
+  index("idx_staff_status").on(table.status),
+]);
+
+export const insertStaffSchema = createInsertSchema(staff).omit({ id: true, joinedAt: true, createdAt: true, updatedAt: true });
+export type InsertStaff = z.infer<typeof insertStaffSchema>;
+export type Staff = typeof staff.$inferSelect;
+
+// Ticket notes - Internal notes within a support ticket (staff-only)
+export const ticketNotes = pgTable("ticket_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").references(() => supportTickets.id).notNull(),
+  staffId: varchar("staff_id").references(() => staff.id).notNull(), // Only staff can create notes
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ticket_notes_ticket").on(table.ticketId),
+  index("idx_ticket_notes_staff").on(table.staffId),
+]);
+
+export const insertTicketNoteSchema = createInsertSchema(ticketNotes).omit({ id: true, createdAt: true });
+export type InsertTicketNote = z.infer<typeof insertTicketNoteSchema>;
+export type TicketNote = typeof ticketNotes.$inferSelect;
+
+// Staff metrics - Performance analytics per staff member
+export const staffMetrics = pgTable("staff_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").references(() => staff.id).notNull().unique(),
+  ticketsAssigned: integer("tickets_assigned").default(0),
+  ticketsResolved: integer("tickets_resolved").default(0),
+  avgResolutionTime: real("avg_resolution_time").default(0), // in hours
+  totalActionCount: integer("total_action_count").default(0), // Coupons, approvals, etc
+  couponsCreated: integer("coupons_created").default(0),
+  couponRedemptionRate: real("coupon_redemption_rate").default(0), // percentage
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_staff_metrics_staff").on(table.staffId),
+]);
+
+export const insertStaffMetricsSchema = createInsertSchema(staffMetrics).omit({ id: true, createdAt: true, lastUpdated: true });
+export type InsertStaffMetrics = z.infer<typeof insertStaffMetricsSchema>;
+export type StaffMetrics = typeof staffMetrics.$inferSelect;
+
+// Enhanced audit logs for admin actions with JSONB before/after state
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  actorStaffId: varchar("actor_staff_id").references(() => staff.id).notNull(), // Which staff member performed action
+  actorRole: varchar("actor_role").notNull(), // Snapshot of their role at time of action
+  action: varchar("action").notNull(), // 'create_staff', 'disable_staff', 'create_ticket', 'resolve_ticket', 'create_coupon', 'approve_coupon', 'create_invoice', etc
+  entityType: varchar("entity_type").notNull(), // 'staff', 'ticket', 'coupon', 'invoice', 'payment', etc
+  entityId: varchar("entity_id"), // ID of the entity being modified
+  beforeState: jsonb("before_state"), // Snapshot of entity before change
+  afterState: jsonb("after_state"), // Snapshot of entity after change
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  status: varchar("status").default('success'), // 'success', 'failed'
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_admin_audit_logs_staff").on(table.actorStaffId),
+  index("idx_admin_audit_logs_action").on(table.action),
+  index("idx_admin_audit_logs_entity").on(table.entityType),
+  index("idx_admin_audit_logs_created").on(table.createdAt),
+  index("idx_admin_audit_logs_role").on(table.actorRole),
+]);
+
+export const insertAdminAuditLogSchema = createInsertSchema(adminAuditLogs).omit({ id: true, createdAt: true });
+export type InsertAdminAuditLog = z.infer<typeof insertAdminAuditLogSchema>;
+export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
+
+// ========== ADMIN EMAIL SETTINGS ==========
+
+// Email Provider enum
+export const emailProviderEnumAdmin = z.enum(['gmail', 'zoho', 'outlook', 'yahoo', 'ses', 'custom']);
+export type EmailProviderAdmin = z.infer<typeof emailProviderEnumAdmin>;
+
+// Admin Email Settings - System-wide email configuration for notifications
+export const adminEmailSettings = pgTable("admin_email_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  provider: varchar("provider").notNull(), // 'gmail', 'zoho', 'outlook', 'yahoo', 'ses', 'custom'
+  fromName: text("from_name").notNull(), // Display name for sender
+  fromEmail: text("from_email").notNull(), // Sender email address
+  smtpHost: text("smtp_host").notNull(), // SMTP server host
+  smtpPort: integer("smtp_port").notNull(), // SMTP server port
+  encryption: varchar("encryption").notNull(), // 'TLS', 'SSL', 'NONE'
+  smtpUsername: text("smtp_username").notNull(), // SMTP auth username
+  smtpPasswordEncrypted: text("smtp_password_encrypted").notNull(), // Encrypted password
+  isActive: boolean("is_active").default(true), // Only one can be active
+  lastTestedAt: timestamp("last_tested_at"), // When test email was last sent
+  testStatus: varchar("test_status"), // 'success', 'failed'
+  createdBy: varchar("created_by").references(() => staff.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_admin_email_settings_active").on(table.isActive),
+]);
+
+export const insertAdminEmailSettingsSchema = createInsertSchema(adminEmailSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAdminEmailSettings = z.infer<typeof insertAdminEmailSettingsSchema>;
+export type AdminEmailSettings = typeof adminEmailSettings.$inferSelect;
+
+// Note: emailLogs table already exists at line 126 for user email tracking
+// The admin email service will use the existing emailLogs table
+// ============================================================
+// MULTI-PROVIDER EMAIL SYSTEM SCHEMA
+// ============================================================
+
+// Email Providers - Multiple provider configurations
+export const emailProviders = pgTable("email_providers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id), // null = admin-owned, set = user-owned
+  providerType: varchar("provider_type", { length: 50 }).notNull(), // 'gmail', 'ses', 'zoho', etc.
+  providerName: varchar("provider_name", { length: 100 }).notNull(),
+  fromName: varchar("from_name", { length: 255 }).notNull(),
+  fromEmail: varchar("from_email", { length: 255 }).notNull(),
+  replyToEmail: varchar("reply_to_email", { length: 255 }),
+  connectionType: varchar("connection_type", { length: 20 }).notNull().default('smtp'), // 'smtp', 'api', 'webhook'
+  
+  // SMTP configuration
+  smtpHost: varchar("smtp_host", { length: 255 }),
+  smtpPort: integer("smtp_port"),
+  smtpUsername: varchar("smtp_username", { length: 255 }),
+  smtpPasswordEncrypted: text("smtp_password_encrypted"),
+  smtpEncryption: varchar("smtp_encryption", { length: 10 }),
+  
+  // API configuration
+  apiEndpoint: varchar("api_endpoint", { length: 500 }),
+  apiKeyEncrypted: text("api_key_encrypted"),
+  apiSecretEncrypted: text("api_secret_encrypted"),
+  apiRegion: varchar("api_region", { length: 50 }),
+  
+  // Configuration JSON
+  configJson: jsonb("config_json").default('{}'),
+  
+  // Provider status
+  isActive: boolean("is_active").default(true),
+  isVerified: boolean("is_verified").default(false),
+  priorityOrder: integer("priority_order").notNull().default(100),
+  role: varchar("role", { length: 20 }).default('secondary'), // 'primary', 'secondary', 'fallback'
+  
+  // Rate limiting
+  maxEmailsPerHour: integer("max_emails_per_hour"),
+  maxEmailsPerDay: integer("max_emails_per_day"),
+  currentHourlyCount: integer("current_hourly_count").default(0),
+  currentDailyCount: integer("current_daily_count").default(0),
+  rateLimitResetAt: timestamp("rate_limit_reset_at"),
+  
+  // Health monitoring
+  lastUsedAt: timestamp("last_used_at"),
+  lastTestAt: timestamp("last_test_at"),
+  lastErrorAt: timestamp("last_error_at"),
+  lastErrorMessage: text("last_error_message"),
+  consecutiveFailures: integer("consecutive_failures").default(0),
+  totalSent: integer("total_sent").default(0),
+  totalFailed: integer("total_failed").default(0),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by", { length: 255 }),
+  updatedBy: varchar("updated_by", { length: 255 }),
+}, (table) => [
+  index("idx_email_providers_active").on(table.isActive),
+  index("idx_email_providers_priority").on(table.priorityOrder),
+  index("idx_email_providers_type").on(table.providerType),
+  index("idx_email_providers_user").on(table.userId),
+]);
+
+export const insertEmailProviderSchema = createInsertSchema(emailProviders).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailProvider = z.infer<typeof insertEmailProviderSchema>;
+export type EmailProvider = typeof emailProviders.$inferSelect;
+
+// Email Task Routing - Maps task types to providers
+export const emailTaskRouting = pgTable("email_task_routing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskType: varchar("task_type", { length: 50 }).notNull().unique(), // 'SYSTEM_EMAILS', 'AUTH_EMAILS', etc.
+  taskDescription: text("task_description"),
+  primaryProviderId: varchar("primary_provider_id").references(() => emailProviders.id),
+  fallbackProviderIds: jsonb("fallback_provider_ids").default('[]'), // Array of provider IDs
+  forceProviderId: varchar("force_provider_id").references(() => emailProviders.id),
+  retryAttempts: integer("retry_attempts").default(2),
+  retryDelaySeconds: integer("retry_delay_seconds").default(5),
+  isEnabled: boolean("is_enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by", { length: 255 }),
+}, (table) => [
+  index("idx_email_task_routing_type").on(table.taskType),
+  index("idx_email_task_routing_enabled").on(table.isEnabled),
+]);
+
+export const insertEmailTaskRoutingSchema = createInsertSchema(emailTaskRouting).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailTaskRouting = z.infer<typeof insertEmailTaskRoutingSchema>;
+export type EmailTaskRouting = typeof emailTaskRouting.$inferSelect;
+
+// Email Send Logs - Comprehensive logging
+export const emailSendLogs = pgTable("email_send_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  emailProviderId: varchar("email_provider_id").references(() => emailProviders.id),
+  emailTaskRoutingId: varchar("email_task_routing_id").references(() => emailTaskRouting.id),
+  userId: varchar("user_id", { length: 255 }),
+  taskType: varchar("task_type", { length: 50 }),
+  recipientEmail: varchar("recipient_email", { length: 255 }).notNull(),
+  subject: text("subject"),
+  status: varchar("status", { length: 20 }).notNull(), // 'sent', 'failed', 'bounced', 'rate_limited'
+  attemptNumber: integer("attempt_number").default(1),
+  totalAttempts: integer("total_attempts"),
+  errorMessage: text("error_message"),
+  failoverOccurred: boolean("failover_occurred").default(false),
+  failoverFromProviderId: varchar("failover_from_provider_id").references(() => emailProviders.id),
+  failoverReason: text("failover_reason"),
+  metadata: jsonb("metadata").default('{}'),
+  sentAt: timestamp("sent_at").defaultNow(),
+}, (table) => [
+  index("idx_email_send_logs_provider").on(table.emailProviderId),
+  index("idx_email_send_logs_user").on(table.userId),
+  index("idx_email_send_logs_status").on(table.status),
+  index("idx_email_send_logs_task_type").on(table.taskType),
+  index("idx_email_send_logs_sent_at").on(table.sentAt),
+]);
+
+export const insertEmailSendLogSchema = createInsertSchema(emailSendLogs).omit({ id: true, sentAt: true });
+export type InsertEmailSendLog = z.infer<typeof insertEmailSendLogSchema>;
+export type EmailSendLog = typeof emailSendLogs.$inferSelect;
+
+// Email Provider Health - Aggregated health metrics
+export const emailProviderHealth = pgTable("email_provider_health", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  emailProviderId: varchar("email_provider_id").references(() => emailProviders.id).notNull(),
+  checkTime: timestamp("check_time").notNull().defaultNow(),
+  isHealthy: boolean("is_healthy").notNull(),
+  successRate: real("success_rate"),
+  avgResponseTimeMs: integer("avg_response_time_ms"),
+  errorCount: integer("error_count").default(0),
+  healthCheckDetails: jsonb("health_check_details").default('{}'),
+}, (table) => [
+  index("idx_email_provider_health_provider").on(table.emailProviderId),
+  index("idx_email_provider_health_time").on(table.checkTime),
+]);
+
+export const insertEmailProviderHealthSchema = createInsertSchema(emailProviderHealth).omit({ id: true, checkTime: true });
+export type InsertEmailProviderHealth = z.infer<typeof insertEmailProviderHealthSchema>;
+export type EmailProviderHealth = typeof emailProviderHealth.$inferSelect;
+
+// User Email Preferences - Consent management (GDPR)
+export const userEmailPreferences = pgTable("user_email_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  allowSystemEmails: boolean("allow_system_emails").default(true),
+  allowAuthEmails: boolean("allow_auth_emails").default(true),
+  allowTransactionalEmails: boolean("allow_transactional_emails").default(true),
+  allowOnboardingEmails: boolean("allow_onboarding_emails").default(true),
+  allowNotificationEmails: boolean("allow_notification_emails").default(true),
+  allowMarketingEmails: boolean("allow_marketing_emails").default(false),
+  allowSupportEmails: boolean("allow_support_emails").default(true),
+  allowBillingEmails: boolean("allow_billing_emails").default(true),
+  allowReportEmails: boolean("allow_report_emails").default(true),
+  emailFrequency: varchar("email_frequency", { length: 20 }).default('immediate'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_user_email_preferences_user").on(table.userId),
+]);
+
+export const insertUserEmailPreferencesSchema = createInsertSchema(userEmailPreferences).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserEmailPreferences = z.infer<typeof insertUserEmailPreferencesSchema>;
+export type UserEmailPreferences = typeof userEmailPreferences.$inferSelect;

@@ -2,16 +2,16 @@
 
 ## 🚨 Problems Identified
 
-### 1. **Infinite Settings Redirect Loop**
+### 1. **Infinite Master Settings Redirect Loop**
 - User completes profile → auto-redirect to "/"
 - App.tsx guard checks business profile
 - No phone/email in default company profile
-- Infinite redirect to `/settings`
+- Infinite redirect to Master Settings
 - User can't escape!
 
 ### 2. **Fragmented Onboarding**
 - Phase 1: `/complete-profile` (personal)
-- Phase 2: `/settings` (business) ← NOT an onboarding page!
+- Phase 2: `/account` (business) ← dedicated Account page
 - Phase 3: `/masters?tab=flute` (machine)
 - Phase 4: `/masters?tab=paper` (pricing)
 - Confusing! Settings ≠ Onboarding
@@ -77,7 +77,7 @@ Steps:
 ```typescript
 // OLD (Complex):
 if (!user.firstName) redirect /complete-profile
-if (!isBusinessProfileComplete) redirect /settings
+if (!isBusinessProfileComplete) redirect /account
 if (!isMachineConfigured) redirect /masters?tab=flute
 if (!isPaperSetupComplete) redirect /masters?tab=paper
 

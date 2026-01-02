@@ -15,8 +15,9 @@ Your setup:
 Use this anytime Replit shows "Missing script" or stale files.
 
 ```bash
-# 1) Pull latest code
-git pull origin main
+# 1) Sync to latest (discard local changes in Replit)
+git fetch origin main
+git reset --hard origin/main
 
 # 2) Install deps (first time or after package updates)
 npm install
@@ -33,7 +34,7 @@ npm run dev
 ```
 
 Tips:
-- If `npm run replit:migrate` is missing, your Replit code is outdated → run `git pull origin main`.
+- If `npm run replit:migrate` is missing, your Replit code is outdated → run `git fetch origin main` followed by `git reset --hard origin/main`.
 - If `DATABASE_URL` is empty, set it in Replit Secrets and re-run.
 - Prefer `replit:migrate` (Bash) on Replit; use `replit:migrate:ps` for PowerShell environments.
 
@@ -89,7 +90,7 @@ If auto-sync isn't working:
 
 ### Step 2: Run Database Migration (CRITICAL)
 
-This fixes existing users stuck at settings page.
+This fixes existing users stuck at Master Settings.
 
 #### Open Replit Database Console
 
@@ -307,14 +308,14 @@ Look for these logs in Console:
 5. Should redirect back to your app
 6. **Expected flow**:
    - Complete Profile page
-   - Settings page (email pre-filled) ✅
-   - Can proceed to Masters
+   - Master Settings (tab under Masters) ✅
+   - Can proceed to Master Settings
    - NO infinite redirect loop ✅
 
 #### Test 3: Existing User Login
 
 1. Login with existing user
-2. Should NOT be stuck at settings
+2. Should NOT be stuck at Master Settings
 3. Should reach dashboard
 
 #### Test 4: Database Check
@@ -402,7 +403,7 @@ git stash pop
 
 ### Issue 5: Database migration didn't apply
 
-**Symptoms**: Users still stuck at settings
+**Symptoms**: Users still stuck at Master Settings
 
 **Fix**:
 ```bash
@@ -473,6 +474,15 @@ This approach:
 
 Use this to migrate existing `quotes` rows (with legacy fields) into `quote_versions` and `quote_item_versions` without losing data.
 
+Preflight (optional but recommended):
+```bash
+# How many quotes will be processed?
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM quotes WHERE active_version_id IS NULL;"
+
+# Preview a few records
+psql $DATABASE_URL -c "SELECT id, tenant_id, created_at FROM quotes WHERE active_version_id IS NULL ORDER BY created_at DESC LIMIT 5;"
+```
+
 ```bash
 # Run backfill (idempotent; only processes quotes without active versions)
 psql $DATABASE_URL -f scripts/backfill-legacy-quotes.sql
@@ -486,6 +496,21 @@ psql $DATABASE_URL -c "SELECT COUNT(*) FROM quotes WHERE active_version_id IS NU
 After backfill:
 - Keep legacy columns for now; they won't break current logic
 - When ready, archive/export legacy data and drop columns via a controlled migration (avoid `drizzle-kit` destructive drops until verified)
+
+#### Restore default shades and flute settings
+
+If defaults were removed, run this idempotent restoration:
+
+```bash
+# Restore paper shades, paper pricing rules, flute settings, and common BF entries
+psql $DATABASE_URL -f scripts/restore-default-masters.sql
+
+# Verify
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM paper_shades;"
+psql $DATABASE_URL -c "SELECT flute_type, COUNT(*) FROM flute_settings GROUP BY flute_type ORDER BY flute_type;"
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM paper_pricing_rules;"
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM paper_bf_prices;"
+```
 
 
 ### Issue 6: OAuth redirect URI mismatch
@@ -592,18 +617,47 @@ LIMIT 20;
 
 ---
 
+## 🖥️ Local Preview (Windows)
+
+Run the app locally on Windows to verify changes before pushing.
+
+### Prerequisites
+- Node.js 18+ and npm
+- Git installed
+- Optional: a PostgreSQL `DATABASE_URL` if you want backend features
+
+### Start locally (PowerShell)
+```powershell
+# (Optional) set environment variables for a full-stack run
+$env:DATABASE_URL = "postgres://user:pass@host:port/dbname"
+$env:GOOGLE_OAUTH_CLIENT_ID = "your-client-id"
+$env:GOOGLE_OAUTH_CLIENT_SECRET = "your-secret"
+$env:GOOGLE_OAUTH_REDIRECT_URL = "http://localhost:5000/auth/google/callback"
+
+npm install
+npm run dev
+```
+
+### Notes
+- Without a valid `DATABASE_URL`, the UI loads but API calls will fail.
+- If a port conflict occurs, stop existing Node processes and retry:
+```powershell
+Get-Process node | Stop-Process; Start-Sleep -Seconds 2
+npm run dev
+```
+
+---
+
 ## 🎯 Quick Commands Reference
 
 ### Code Management:
 ```bash
-# Sync from GitHub
-git pull origin main
+# Sync to latest from GitHub (discard Replit local changes)
+git fetch origin main
+git reset --hard origin/main
 
 # Check current status
 git status
-
-# Discard local changes
-git reset --hard origin/main
 ```
 
 ### Database:
@@ -655,7 +709,7 @@ Deployment is successful when:
 2. ✅ Database migration completed (0 missing emails)
 3. ✅ Google OAuth works with PaperBox branding
 4. ✅ New users can sign up and complete onboarding
-5. ✅ Existing users can login (not stuck at settings)
+5. ✅ Existing users can login (not stuck at Master Settings)
 6. ✅ All pages load correctly
 7. ✅ Calculator accessible after onboarding
 

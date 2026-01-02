@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,7 @@ const DEFAULT_FLUTE_VALUES: Record<string, { factor: number; height: number }> =
 
 export default function FluteSettings() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [settings, setSettings] = useState<Record<string, FluteSetting>>({});
   const [hasChanges, setHasChanges] = useState(false);
 

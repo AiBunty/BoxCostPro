@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { supabase, onAuthStateChange, isSupabaseConfigured, signOut as supabaseSignOut } from "@/lib/supabase";
+import { useEffect, useState, useCallback } from "react";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 
 export interface AuthUser {
   id: string;
@@ -17,52 +17,78 @@ export interface AuthUser {
 export function useAuth() {
   const queryClient = useQueryClient();
   const [isInitialized, setIsInitialized] = useState(false);
+  const { signOut: clerkSignOut } = useClerkAuth();
 
   useEffect(() => {
-    if (isSupabaseConfigured && supabase) {
-      const { data: { subscription } } = onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-        } else if (event === 'SIGNED_OUT') {
-          queryClient.setQueryData(["/api/auth/user"], null);
-          queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-        }
-        setIsInitialized(true);
-      });
-
-      supabase.auth.getSession().then(() => {
-        setIsInitialized(true);
-      });
-
-      return () => {
-        subscription.unsubscribe();
-      };
-    } else {
-      setIsInitialized(true);
-    }
+    // Initialize immediately with Clerk
+    setIsInitialized(true);
   }, [queryClient]);
 
+  // Fetch user data from backend once Neon Auth session is ready
   const { data: user, isLoading: userLoading } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/user"],
     retry: false,
     enabled: isInitialized,
   });
 
+  const signOut = useCallback(async () => {
+    console.log('[SignOut] Starting sign out process...');
+    
+    // Clear query cache first
+    queryClient.clear();
+    
+    // Sign out from Clerk
+    try {
+      await clerkSignOut();
+      console.log('[SignOut] Clerk signout completed');
+    } catch (e) {
+      console.error('[SignOut] Clerk signout error:', e);
+    }
+
+    // Clear backend session
+    try {
+      await apiRequest("POST", "/api/auth/logout", {});
+      console.log('[SignOut] Backend logout completed');
+    } catch (e) {
+      console.error('[SignOut] Backend logout error:', e);
+    }
+
+    // Clear all auth-related cookies manually
+    const cookies = ['neon-session', 'connect.sid', '__session', '__client'];
+    cookies.forEach(name => {
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    });
+    
+    console.log('[SignOut] Redirecting to auth page...');
+    window.location.href = '/auth';
+  }, [clerkSignOut, queryClient]);
+
   return {
     user,
     isLoading: !isInitialized || userLoading,
     isAuthenticated: !!user,
+    signOut,
   };
 }
 
+// Legacy export for backward compatibility - redirects to auth page and clears cookies
+// Components should prefer using the signOut from useAuth() hook instead
 export async function signOut() {
-  if (isSupabaseConfigured) {
-    await supabaseSignOut();
-  }
+  console.log('[SignOut] Legacy signOut called - clearing cookies and redirecting...');
+  
+  // Clear all auth-related cookies manually
+  const cookies = ['neon-session', 'connect.sid', '__session', '__client'];
+  cookies.forEach(name => {
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  });
+  
+  // Clear backend session
   try {
     await apiRequest("POST", "/api/auth/logout", {});
   } catch (e) {
-    // Ignore logout errors
+    // Ignore
   }
-  window.location.href = '/';
+
+  // Redirect - this will trigger Clerk's signOut on page reload since there's no session
+  window.location.href = '/auth?signedOut=true';
 }

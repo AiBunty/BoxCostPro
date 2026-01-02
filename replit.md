@@ -24,20 +24,20 @@ The frontend is built with React and TypeScript using Vite, featuring a modern U
 *   **Reporting**: Comprehensive reports section with 5 actionable report types: Quote Register, Party Summary, Item Prices, Paper Consumption, and Saved Reports. Reports read from active quote versions via `/api/quotes?include=items` endpoint. All report rows are clickable with drill-down navigation to source modules. The Party Summary supports multi-level drill-down (Party → Party Detail → Edit Quote). URL-driven state management preserves filters, search terms, and pagination across navigation. Calculator supports edit mode via `/create-quote?quoteId=xxx&from=reports&state=encoded` with "Back to Reports" button that restores filter context on return. Default 30-day date filter via `dateMode` URL parameter (`rolling30` default, `custom` for user-selected dates, `all` for no filter) with "All" preset button to view all records.
 *   **Paper Pricing System**: Customizable BF-based paper pricing, GSM adjustment rules, shade premiums, and global market adjustment, integrated into the calculator. Paper Price Settings serve as the single source of truth for layer pricing, with optional manual override capability per layer. When editing a layer, users see a detailed price breakdown (BF base price, GSM adjustment, shade premium, market adjustment) and can toggle to enter a manual rate. Manual overrides are preserved in quote snapshots for immutability. Visual indicators (*) show which layers use manual rates.
 *   **Authentication**: Enterprise-grade multi-method authentication system with:
-    - **Login Methods**: Email+Password, Email OTP (6-digit code, 10-minute expiry), Magic Link, and Google OAuth
-    - **Login UI**: Tabbed interface at `/auth` with Password, OTP, and Magic Link tabs, plus Google OAuth button
-    - **Password Requirements**: Minimum 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special character
-    - **Password Recovery**: Forgot password flow with secure reset links at `/auth/reset-password`
+    - **Login Methods**: Email+Password, Email OTP (6-digit code, 10-minute expiry), Magic Link, and Google OAuth (all via Clerk)
+    - **Login UI**: Clerk's hosted UI or embedded SignIn/SignUp components
+    - **Password Requirements**: Configured in Clerk Dashboard
+    - **Password Recovery**: Clerk handles password reset flows
     - **Profile Completion**: Mandatory mobile number collection after signup at `/complete-profile` before accessing dashboard
     - **Account States**: new_user, email_verified, mobile_verified, fully_verified, suspended, deleted
-    - **Security Features**: Account lockout after 5 failed login attempts (15-minute lockout), audit logging of all auth events
-    - **Audit Logging**: All auth events (LOGIN, SIGNUP, PASSWORD_RESET, VERIFY_EMAIL) logged with IP address and user agent to `auth_audit_logs` table
-    - **Admin Notifications**: Automatic emails to saas@aibunty.com on new signups, suspicious activities (never configurable from UI)
+    - **Security Features**: Clerk handles account lockout, rate limiting, and session management
+    - **Audit Logging**: All auth events logged to `auth_audit_logs` table
+    - **Admin Notifications**: Automatic emails to saas@aibunty.com on new signups
     - **Welcome Emails**: Branded welcome email from noreply@paperboxerp.com on successful signup
-    - **Auth Service**: `server/services/authService.ts` handles audit logging, admin notifications, welcome emails using fire-and-forget pattern
-    - **JWT Verification**: Server-side via `supabaseAuthMiddleware` with auto-creation of local user records linked via `supabaseUserId`
-    - **Legacy Support**: `combinedAuth` middleware accepts both Supabase JWT and session auth for backward compatibility
-*   **Unified Settings Page**: A centralized settings page at /settings with four tabs: Personal Details (read-only user info), Business Details (company profile management), Branding (logo upload with base64 storage, max 500KB), and Templates (WhatsApp/Email quote template management).
+    - **Auth Service**: `server/services/authService.ts` handles audit logging, admin notifications, welcome emails
+    - **JWT Verification**: Server-side via `@clerk/express` middleware with auto-creation of local user records linked via `clerkUserId`
+    - **Authentication Provider**: Clerk is the ONLY authentication provider
+*   **Master Settings**: A centralized settings hub under `/masters?tab=settings` hosting Email configuration and Templates (WhatsApp/Email quote template management). Business Profile now lives under `/account`.
 *   **WhatsApp/Email Quote Template System**: A comprehensive quote sharing system with:
     - **Show Columns Configuration**: Single source of truth for which data columns appear in quote outputs (boxSize, board, flute, paper, printing, lamination, varnish, weight toggles)
     - **Template Types**: System templates (read-only, can be duplicated) and custom user templates. System includes 4 WhatsApp templates (Formal Emoji, Formal No Emoji, Alternate Pattern, Short & Sweet) and 2 Email templates
@@ -62,7 +62,7 @@ This application implements enterprise-grade multi-tenancy with strict data isol
 *   **Tenant Provisioning**: A database trigger `create_tenant_for_new_user` automatically creates a personal tenant and owner membership when a new user signs up
 *   **Key Files**:
     - `server/tenantContext.ts`: Resolves tenant_id from authenticated user's active tenant membership
-    - `server/supabaseAuth.ts`: `combinedAuth` middleware injects `req.tenantId` and `req.tenantContext` on every authenticated request
+    - `server/routes.ts`: `combinedAuth` middleware using Clerk for authentication, injects `req.tenantId` and `req.tenantContext` on every authenticated request
     - `server/storage.ts`: All storage methods accept optional `tenantId` parameter and include it in queries/inserts
     - `shared/schema.ts`: Defines `tenants` and `tenant_users` tables with all tenant_id foreign keys
 *   **Security Guarantees**:
@@ -85,8 +85,8 @@ This application implements enterprise-grade multi-tenancy with strict data isol
 *   **Validation**: Zod.
 *   **Date Handling**: `date-fns`.
 *   **Development Tools**: `tsx`, `esbuild`, Vite.
-*   **Session Management**: `connect-pg-simple`.
-*   **Authentication**: `@supabase/supabase-js` for Supabase Auth with Email OTP and Google OAuth.
+*   **Session Management**: `connect-pg-simple` (for non-auth sessions only).
+*   **Authentication**: `@clerk/clerk-react` (frontend) and `@clerk/express` (backend) - Clerk is the ONLY authentication provider.
 *   **Font Integration**: Google Fonts CDN (Inter typeface).
 *   **Payment Gateway**: Razorpay (configuration managed via admin settings).
 *   **Excel Handling**: `xlsx` library for Excel import/export.

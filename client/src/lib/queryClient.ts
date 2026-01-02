@@ -1,16 +1,32 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { supabase, isSupabaseConfigured } from "./supabase";
 
+// Global token getter - will be set by App.tsx using Clerk's useAuth hook
+let getClerkToken: (() => Promise<string | null>) | null = null;
+
+/**
+ * Set the Clerk token getter function
+ * Called from App.tsx after ClerkProvider initializes
+ */
+export function setClerkTokenGetter(getter: () => Promise<string | null>) {
+  getClerkToken = getter;
+}
+
+/**
+ * Get authentication token for API requests
+ * Uses Clerk authentication only
+ */
 async function getAuthToken(): Promise<string | null> {
-  if (!isSupabaseConfigured || !supabase) {
-    return null;
+  // Use Clerk for authentication
+  if (getClerkToken) {
+    try {
+      const token = await getClerkToken();
+      if (token) return token;
+    } catch (error) {
+      console.warn('[Auth] Clerk token retrieval failed:', error);
+    }
   }
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
-  } catch {
-    return null;
-  }
+
+  return null;
 }
 
 async function throwIfResNotOk(res: Response) {

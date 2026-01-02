@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice {{invoice.number}}</title>
+  <style>
+    /* MINIMAL PDF-SAFE CSS - Optimized for printing */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      line-height: 1.3;
+      color: #000;
+      background: #fff;
+    }
+
+    .invoice-container {
+      width: 100%;
+      max-width: 210mm;
+      margin: 0 auto;
+      padding: 15px;
+    }
+
+    /* No colors, no shadows - print optimized */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+
+    table.bordered {
+      border: 1px solid #000;
+    }
+
+    table.bordered th,
+    table.bordered td {
+      border: 1px solid #000;
+      padding: 5px 7px;
+      vertical-align: top;
+    }
+
+    table th {
+      font-weight: bold;
+      text-align: left;
+    }
+
+    table td.right {
+      text-align: right;
+    }
+
+    table td.center {
+      text-align: center;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      border-bottom: 2px solid #000;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .header-meta {
+      font-size: 10px;
+      margin-top: 6px;
+    }
+
+    /* Sections */
+    .section-title {
+      font-weight: bold;
+      font-size: 11px;
+      border-bottom: 1px solid #000;
+      padding-bottom: 3px;
+      margin-bottom: 8px;
+      margin-top: 12px;
+    }
+
+    /* Party Details */
+    .party-row td {
+      padding: 6px;
+      font-size: 10px;
+    }
+
+    .party-label {
+      font-weight: bold;
+      width: 22%;
+    }
+
+    /* Line Items */
+    .items-table th {
+      font-size: 9px;
+      padding: 6px 4px;
+    }
+
+    .items-table td {
+      font-size: 10px;
+      padding: 5px 4px;
+    }
+
+    /* Totals */
+    .totals {
+      width: 45%;
+      margin-left: auto;
+      margin-top: 8px;
+    }
+
+    .totals td {
+      padding: 4px 8px;
+    }
+
+    .totals-label {
+      text-align: right;
+      font-weight: bold;
+    }
+
+    .totals-value {
+      text-align: right;
+    }
+
+    .grand-total-row {
+      border-top: 2px solid #000;
+      border-bottom: 2px solid #000;
+    }
+
+    .grand-total-row td {
+      font-weight: bold;
+      font-size: 12px;
+      padding: 7px 8px;
+    }
+
+    /* Amount Words */
+    .amount-words {
+      border: 1px solid #000;
+      padding: 8px;
+      margin: 12px 0;
+      font-weight: bold;
+      font-size: 10px;
+    }
+
+    /* Payment */
+    .payment-table td {
+      padding: 5px;
+      font-size: 10px;
+    }
+
+    /* Terms */
+    .terms {
+      margin-top: 15px;
+      font-size: 9px;
+    }
+
+    .terms ol {
+      margin-left: 18px;
+      line-height: 1.5;
+    }
+
+    .terms li {
+      margin-bottom: 3px;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 25px;
+      padding-top: 12px;
+      border-top: 1px solid #000;
+      font-size: 10px;
+    }
+
+    .signature-area {
+      text-align: right;
+      margin-top: 35px;
+    }
+
+    .signature-line {
+      border-top: 1px solid #000;
+      width: 160px;
+      margin-left: auto;
+      margin-top: 40px;
+      padding-top: 6px;
+      text-align: center;
+      font-size: 9px;
+      font-weight: bold;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: 8px;
+      margin-top: 15px;
+    }
+
+    @media print {
+      .invoice-container {
+        padding: 0;
+      }
+      @page {
+        margin: 15mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+
+    <!-- Header -->
+    <div class="header">
+      <h1>TAX INVOICE</h1>
+      <div class="header-meta">
+        Invoice: <strong>{{invoice.number}}</strong> |
+        Date: <strong>{{invoice.date}}</strong> |
+        FY: <strong>{{invoice.financial_year}}</strong>
+      </div>
+    </div>
+
+    <!-- Seller & Buyer Details -->
+    <table class="bordered">
+      <tr>
+        <td colspan="2" style="font-weight: bold; border-bottom: 1px solid #000;">SELLER DETAILS</td>
+        <td colspan="2" style="font-weight: bold; border-bottom: 1px solid #000;">BUYER DETAILS</td>
+      </tr>
+      <tr class="party-row">
+        <td class="party-label">Name:</td>
+        <td><strong>{{seller.company_name}}</strong></td>
+        <td class="party-label">Name:</td>
+        <td><strong>{{buyer.company_name}}</strong></td>
+      </tr>
+      <tr class="party-row">
+        <td class="party-label">GSTIN:</td>
+        <td>{{seller.gstin}}</td>
+        <td class="party-label">GSTIN:</td>
+        <td>{{buyer.gstin}}</td>
+      </tr>
+      <tr class="party-row">
+        <td class="party-label">PAN:</td>
+        <td>{{seller.pan}}</td>
+        <td class="party-label">Place of Supply:</td>
+        <td>{{buyer.place_of_supply}}</td>
+      </tr>
+      <tr class="party-row">
+        <td class="party-label">Address:</td>
+        <td>{{seller.address}}</td>
+        <td class="party-label">Address:</td>
+        <td>{{buyer.address}}</td>
+      </tr>
+      <tr class="party-row">
+        <td class="party-label">Phone:</td>
+        <td>{{seller.phone}}</td>
+        <td class="party-label">Phone:</td>
+        <td>{{buyer.phone}}</td>
+      </tr>
+      <tr class="party-row">
+        <td class="party-label">Email:</td>
+        <td>{{seller.email}}</td>
+        <td class="party-label">Email:</td>
+        <td>{{buyer.email}}</td>
+      </tr>
+    </table>
+
+    <!-- Line Items -->
+    <div class="section-title">INVOICE DETAILS</div>
+    <table class="items-table bordered">
+      <thead>
+        <tr>
+          <th style="width: 4%;">No.</th>
+          <th style="width: 32%;">Description</th>
+          <th style="width: 8%;">SAC</th>
+          <th style="width: 6%;">Qty</th>
+          <th style="width: 10%;">Rate</th>
+          <th style="width: 10%;">Taxable</th>
+          <th style="width: 7%;">CGST</th>
+          <th style="width: 7%;">SGST</th>
+          <th style="width: 7%;">IGST</th>
+          <th style="width: 10%;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td class="center">{{add @index 1}}</td>
+          <td>{{this.description}}</td>
+          <td class="center">{{this.sac_code}}</td>
+          <td class="center">{{this.quantity}}</td>
+          <td class="right">₹{{this.rate}}</td>
+          <td class="right">₹{{this.taxable_value}}</td>
+          <td class="right">{{this.cgst_rate}}%</td>
+          <td class="right">{{this.sgst_rate}}%</td>
+          <td class="right">{{this.igst_rate}}%</td>
+          <td class="right"><strong>₹{{this.total}}</strong></td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Totals -->
+    <table class="totals bordered">
+      <tr>
+        <td class="totals-label">Taxable Amount:</td>
+        <td class="totals-value">₹{{totals.subtotal}}</td>
+      </tr>
+      {{#if totals.cgst}}
+      <tr>
+        <td class="totals-label">CGST:</td>
+        <td class="totals-value">₹{{totals.cgst}}</td>
+      </tr>
+      <tr>
+        <td class="totals-label">SGST:</td>
+        <td class="totals-value">₹{{totals.sgst}}</td>
+      </tr>
+      {{/if}}
+      {{#if totals.igst}}
+      <tr>
+        <td class="totals-label">IGST:</td>
+        <td class="totals-value">₹{{totals.igst}}</td>
+      </tr>
+      {{/if}}
+      <tr class="grand-total-row">
+        <td class="totals-label">GRAND TOTAL:</td>
+        <td class="totals-value">₹{{totals.grand_total}}</td>
+      </tr>
+    </table>
+
+    <!-- Amount in Words -->
+    <div class="amount-words">
+      Amount in Words: {{totals.amount_in_words}}
+    </div>
+
+    <!-- Payment Details -->
+    {{#if payment}}
+    <div class="section-title">PAYMENT DETAILS</div>
+    <table class="bordered payment-table">
+      <tr>
+        <td style="width: 25%; font-weight: bold;">Payment Method:</td>
+        <td style="width: 25%;">{{payment.method}}</td>
+        <td style="width: 25%; font-weight: bold;">Reference:</td>
+        <td style="width: 25%;">{{payment.reference}}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold;">Transaction Date:</td>
+        <td colspan="3">{{payment.date}}</td>
+      </tr>
+    </table>
+    {{/if}}
+
+    <!-- Terms & Conditions -->
+    <div class="section-title">TERMS & CONDITIONS</div>
+    <div class="terms">
+      <ol>
+        <li>All subscription payments are non-refundable as per the service agreement.</li>
+        <li>This invoice is for Software as a Service (SaaS) provided under the subscription model.</li>
+        <li>The buyer is responsible for GST compliance in their jurisdiction.</li>
+        <li>Late payment attracts interest at 18% per annum after 30 days from the invoice date.</li>
+        <li>All disputes are subject to the jurisdiction of Indian courts.</li>
+        <li>This invoice is GST-compliant as per the CGST Act, 2017.</li>
+      </ol>
+    </div>
+
+    <!-- Footer & Signature -->
+    <div class="footer">
+      <div class="signature-area">
+        <div>For <strong>{{seller.company_name}}</strong></div>
+        <div class="signature-line">Authorized Signatory</div>
+      </div>
+      <div class="footer-note">
+        This is a computer-generated invoice and does not require a physical signature.<br/>
+        Generated on {{invoice.generated_at}}
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

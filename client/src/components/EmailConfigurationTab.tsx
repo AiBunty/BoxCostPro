@@ -149,17 +149,25 @@ export default function EmailConfigurationTab() {
         provider: selectedProvider,
       });
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/email-settings"] });
       toast({
-        title: "Settings Saved",
-        description: "Your email configuration has been saved. Click 'Verify' to test the connection.",
+        title: "Email Configured Successfully!",
+        description: data.message || "Your email configuration has been tested and saved.",
       });
+      // Reset form after successful save
+      setShowSmtpForm(false);
     },
     onError: (error: any) => {
+      // Display detailed error messages from backend
+      const errorMessage = error.message || error.error || "Failed to save email settings";
+      const errorCode = error.code;
+
+      console.error('[Email Settings] Save failed:', errorCode, errorMessage);
+
       toast({
-        title: "Error",
-        description: error.message || "Failed to save email settings",
+        title: errorCode === 'GMAIL_AUTH_FAILED' ? "Gmail Authentication Failed" : "Configuration Error",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -429,12 +437,32 @@ export default function EmailConfigurationTab() {
 
               {showSmtpForm && currentPreset && !currentPreset.supportsOAuth && (
                 <div className="pt-4 border-t">
-                  <Alert className="mb-4">
-                    <Mail className="h-4 w-4" />
-                    <AlertDescription>
-                      {currentPreset.setupInstructions}
-                    </AlertDescription>
-                  </Alert>
+                  {/* Gmail-specific warning */}
+                  {selectedProvider === 'gmail' && (
+                    <Alert className="mb-4 border-yellow-500/50 bg-yellow-500/10">
+                      <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                      <AlertDescription className="text-yellow-700 dark:text-yellow-300">
+                        <strong>Important: Use an App Password, NOT your Gmail password!</strong>
+                        <ol className="list-decimal list-inside mt-2 space-y-1 text-sm">
+                          <li>Go to <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="underline">Google Account Security</a></li>
+                          <li>Enable 2-Step Verification</li>
+                          <li>Under "2-Step Verification", click "App Passwords"</li>
+                          <li>Select "Mail" and "Other (Custom name)"</li>
+                          <li>Copy the 16-character password (spaces will be removed automatically)</li>
+                        </ol>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {/* Generic provider instructions */}
+                  {selectedProvider !== 'gmail' && (
+                    <Alert className="mb-4">
+                      <Mail className="h-4 w-4" />
+                      <AlertDescription>
+                        {currentPreset.setupInstructions}
+                      </AlertDescription>
+                    </Alert>
+                  )}
 
                   <Form {...smtpForm}>
                     <form onSubmit={smtpForm.handleSubmit(handleSaveSmtp)} className="space-y-4">
@@ -504,11 +532,17 @@ export default function EmailConfigurationTab() {
                         rules={{ required: "Password is required" }}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Password / App Password</FormLabel>
+                            <FormLabel>
+                              {selectedProvider === 'gmail' ? 'App Password (16 characters)' : 'Password / App Password'}
+                            </FormLabel>
                             <FormControl>
-                              <Input 
-                                type="password" 
-                                placeholder="Enter your app password" 
+                              <Input
+                                type="password"
+                                placeholder={
+                                  selectedProvider === 'gmail'
+                                    ? 'xxxx xxxx xxxx xxxx (spaces ok)'
+                                    : 'Enter your password or app password'
+                                }
                                 {...field}
                                 data-testid="input-smtp-password"
                               />
@@ -518,18 +552,23 @@ export default function EmailConfigurationTab() {
                         )}
                       />
 
-                      <Button 
-                        type="submit" 
+                      <Button
+                        type="submit"
                         className="w-full gap-2"
                         disabled={saveMutation.isPending}
                         data-testid="button-save-smtp"
                       >
                         {saveMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Testing & Saving...
+                          </>
                         ) : (
-                          <Mail className="h-4 w-4" />
+                          <>
+                            <CheckCircle2 className="h-4 w-4" />
+                            Test & Save Configuration
+                          </>
                         )}
-                        Save & Verify
                       </Button>
                     </form>
                   </Form>

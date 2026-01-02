@@ -58,6 +58,8 @@ import {
   type InsertSupportTicket,
   type SupportMessage,
   type InsertSupportMessage,
+  type PaymentGateway,
+  type InsertPaymentGateway,
   type QuoteTemplate,
   type InsertQuoteTemplate,
   type QuoteSendLog,
@@ -70,6 +72,26 @@ import {
   type InsertEmailBounce,
   type AuthAuditLog,
   type InsertAuthAuditLog,
+  type Staff,
+  type InsertStaff,
+  type TicketNote,
+  type InsertTicketNote,
+  type StaffMetrics,
+  type InsertStaffMetrics,
+  type AdminAuditLog,
+  type InsertAdminAuditLog,
+  type AdminEmailSettings,
+  type InsertAdminEmailSettings,
+  type EmailProvider,
+  type InsertEmailProvider,
+  type EmailTaskRouting,
+  type InsertEmailTaskRouting,
+  type EmailSendLog,
+  type InsertEmailSendLog,
+  type EmailProviderHealth,
+  type InsertEmailProviderHealth,
+  type UserEmailPreferences,
+  type InsertUserEmailPreferences,
   companyProfiles,
   partyProfiles,
   quotes,
@@ -108,18 +130,47 @@ import {
   emailLogs,
   emailBounces,
   authAuditLogs,
+  staff,
+  ticketNotes,
+  staffMetrics,
+  adminAuditLogs,
+  adminEmailSettings,
+  emailProviders,
+  emailTaskRouting,
+  emailSendLogs,
+  emailProviderHealth,
+  userEmailPreferences,
+  paymentGateways,
   InsertTemplateVersion,
-  TemplateVersion
+  TemplateVersion,
+  type TemporaryBusinessProfile,
+  type InsertTemporaryBusinessProfile,
+  type Invoice,
+  type InsertInvoice,
+  type InvoiceTemplate,
+  type InsertInvoiceTemplate,
+  type SellerProfile,
+  type InsertSellerProfile,
+  type UserFeatureUsage,
+  type InsertUserFeatureUsage,
+  type UserFeatureOverride,
+  type InsertUserFeatureOverride,
+  temporaryBusinessProfiles,
+  invoices,
+  invoiceTemplates,
+  sellerProfile,
+  userFeatureUsage,
+  userFeatureOverrides,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, ilike, sql } from "drizzle-orm";
+import { eq, and, or, ilike, sql, desc } from "drizzle-orm";
 import crypto from "crypto";
 
 export interface IStorage {
-  // User operations (for Supabase Auth)
+  // User operations (for Clerk Auth only)
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  getUserBySupabaseId(supabaseUserId: string): Promise<User | undefined>;
+  getUserByClerkId(clerkUserId: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<UpsertUser>): Promise<User | undefined>;
   
@@ -306,6 +357,12 @@ export interface IStorage {
     approvedUsers: number;
     rejectedUsers: number;
     newSignupsLast7Days: number;
+    activeSubscriptions: number;
+    monthlyRevenue: number;
+    gstCollected: number;
+    userChange: number;
+    subscriptionChange: number;
+    revenueChange: number;
   }>;
   
   // All Users (for admin)
@@ -334,6 +391,41 @@ export interface IStorage {
   createEmailLog(log: InsertEmailLog): Promise<EmailLog>;
   updateEmailLog(id: string, updates: Partial<InsertEmailLog>): Promise<EmailLog | undefined>;
   getEmailLogs(userId: string, filters?: { status?: string; channel?: string; startDate?: Date; endDate?: Date }): Promise<EmailLog[]>;
+
+  // Admin Email Settings (System-wide SMTP configuration)
+  getActiveAdminEmailSettings(): Promise<AdminEmailSettings | undefined>;
+  createAdminEmailSettings(settings: InsertAdminEmailSettings): Promise<AdminEmailSettings>;
+  updateAdminEmailSettings(id: string, updates: Partial<InsertAdminEmailSettings>): Promise<AdminEmailSettings | undefined>;
+  deactivateOtherEmailSettings(exceptId?: string): Promise<void>;
+  testEmailSettings(id: string, status: 'success' | 'failed'): Promise<void>;
+  
+  // Multi-Provider Email System
+  // Email Providers
+  getEmailProvider(id: string): Promise<EmailProvider | undefined>;
+  getAllEmailProviders(): Promise<EmailProvider[]>;
+  getActiveEmailProviders(): Promise<EmailProvider[]>;
+  getEmailProvidersByType(providerType: string): Promise<EmailProvider[]>;
+  createEmailProvider(provider: InsertEmailProvider): Promise<EmailProvider>;
+  updateEmailProvider(id: string, updates: Partial<InsertEmailProvider>): Promise<EmailProvider | undefined>;
+  deleteEmailProvider(id: string): Promise<boolean>;
+  updateProviderHealth(id: string, success: boolean, errorMessage?: string): Promise<void>;
+  
+  // Email Task Routing
+  getTaskRouting(taskType: string): Promise<EmailTaskRouting | undefined>;
+  getAllTaskRouting(): Promise<EmailTaskRouting[]>;
+  createTaskRouting(routing: InsertEmailTaskRouting): Promise<EmailTaskRouting>;
+  updateTaskRouting(id: string, updates: Partial<InsertEmailTaskRouting>): Promise<EmailTaskRouting | undefined>;
+  deleteTaskRouting(id: string): Promise<boolean>;
+  
+  // Email Send Logs
+  createEmailSendLog(log: InsertEmailSendLog): Promise<EmailSendLog>;
+  getEmailSendLogs(filters?: { userId?: string; taskType?: string; status?: string; limit?: number }): Promise<EmailSendLog[]>;
+  
+  // User Email Preferences
+  getUserEmailPreferences(userId: string): Promise<UserEmailPreferences | undefined>;
+  createUserEmailPreferences(prefs: InsertUserEmailPreferences): Promise<UserEmailPreferences>;
+  updateUserEmailPreferences(userId: string, updates: Partial<InsertUserEmailPreferences>): Promise<UserEmailPreferences | undefined>;
+  
   getEmailStats(userId: string, startDate?: Date, endDate?: Date): Promise<{ 
     total: number; 
     sent: number; 
@@ -348,26 +440,161 @@ export interface IStorage {
   createEmailBounce(bounce: InsertEmailBounce): Promise<EmailBounce>;
   getEmailBounces(userId: string): Promise<EmailBounce[]>;
   getBouncedRecipients(userId: string): Promise<string[]>;
+
+  // Temporary Business Profiles (Signup Flow)
+  getTempProfileByEmail(email: string): Promise<TemporaryBusinessProfile | undefined>;
+  getTempProfileBySession(sessionToken: string): Promise<TemporaryBusinessProfile | undefined>;
+  createTempBusinessProfile(profile: InsertTemporaryBusinessProfile): Promise<TemporaryBusinessProfile>;
+  deleteTempProfile(id: string): Promise<void>;
+
+  // Invoices
+  createInvoice(invoice: InsertInvoice): Promise<Invoice>;
+  getInvoice(id: string): Promise<Invoice | undefined>;
+  getInvoicesByUser(userId: string): Promise<Invoice[]>;
+  getAllInvoices(): Promise<Invoice[]>;
+  updateInvoice(id: string, updates: Partial<InsertInvoice>): Promise<Invoice | undefined>;
+  getLastInvoiceForFY(financialYear: string): Promise<Invoice | undefined>;
+
+  // Invoice Templates
+  getInvoiceTemplate(id: string): Promise<InvoiceTemplate | undefined>;
+  getDefaultInvoiceTemplate(): Promise<InvoiceTemplate | undefined>;
+  createInvoiceTemplate(template: InsertInvoiceTemplate): Promise<InvoiceTemplate>;
+  getAllInvoiceTemplates(): Promise<InvoiceTemplate[]>;
+
+  // Seller Profile
+  getSellerProfile(): Promise<SellerProfile | undefined>;
+  createSellerProfile(profile: InsertSellerProfile): Promise<SellerProfile>;
+  updateSellerProfile(id: string, updates: Partial<InsertSellerProfile>): Promise<SellerProfile | undefined>;
+
+  // ========== ENTERPRISE ADMIN SYSTEM ==========
+  
+  // Staff Management
+  getStaff(id: string): Promise<Staff | undefined>;
+  getStaffByUserId(userId: string): Promise<Staff | undefined>;
+  getAllStaff(status?: string): Promise<Staff[]>;
+  createStaff(staff: InsertStaff): Promise<Staff>;
+  updateStaff(id: string, updates: Partial<InsertStaff>): Promise<Staff | undefined>;
+  disableStaff(id: string, disabledBy: string): Promise<Staff | undefined>;
+
+  // Ticket Notes
+  createTicketNote(note: InsertTicketNote): Promise<TicketNote>;
+  getTicketNotes(ticketId: string): Promise<TicketNote[]>;
+
+  // Support Ticket Enhancements
+  getSupportTicketsForStaff(staffId: string, statuses?: string[]): Promise<SupportTicket[]>;
+
+  // Staff Metrics
+  getStaffMetrics(staffId: string): Promise<StaffMetrics | undefined>;
+  getAllStaffMetrics(): Promise<StaffMetrics[]>;
+  createStaffMetrics(metrics: InsertStaffMetrics): Promise<StaffMetrics>;
+  updateStaffMetrics(staffId: string, updates: Partial<InsertStaffMetrics>): Promise<StaffMetrics | undefined>;
+
+  // Admin Audit Logs
+  createAdminAuditLog(log: InsertAdminAuditLog): Promise<AdminAuditLog>;
+  getAdminAuditLogs(filters: {
+    staffId?: string;
+    role?: string;
+    action?: string;
+    entityType?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: AdminAuditLog[]; total: number }>;
+  
+  // Analytics
+  getTicketAnalytics(filters?: {
+    startDate?: Date;
+    endDate?: Date;
+    priority?: string;
+  }): Promise<{
+    totalTickets: number;
+    openTickets: number;
+    resolvedTickets: number;
+    avgResolutionTime: number;
+    slaBreaches: number;
+    byPriority: Record<string, number>;
+  }>;
+
+  getCouponAnalytics(): Promise<{
+    totalCoupons: number;
+    activeCoupons: number;
+    expiredCoupons: number;
+    totalRedemptions: number;
+    redemptionRate: number;
+    topCoupons: any[];
+  }>;
+
+  getRevenueAnalytics(filters?: {
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<{
+    totalRevenue: number;
+    activeSubscriptions: number;
+    pendingPayments: number;
+    mrr: number;
+    mrg: number;
+  }>;
+
+  // User Feature Usage & Overrides
+  getUserFeatureUsage(userId: string): Promise<any | undefined>;
+  createUserFeatureUsage(usage: any): Promise<any>;
+  getUserFeatureOverride(userId: string): Promise<any | undefined>;
+  createUserFeatureOverride(override: any): Promise<any>;
+  updateUserFeatureOverride(userId: string, updates: any): Promise<any | undefined>;
+  incrementUserFeatureUsage(userId: string, feature: string, amount: number): Promise<void>;
+  decrementUserFeatureUsage(userId: string, feature: string, amount: number): Promise<void>;
+  getUserActiveSubscription(userId: string): Promise<UserSubscription | undefined>;
+  getUserSubscriptions(userId: string): Promise<UserSubscription[]>;
+  getSubscriptionPlanById(planId: string): Promise<SubscriptionPlan | undefined>;
+  
+  // User Email Providers (filtered by userId)
+  getUserEmailProviders(userId: string): Promise<EmailProvider[]>;
+  getUserEmailProviderCount(userId: string): Promise<number>;
+
+  // Payment Gateway Management
+  getActivePaymentGateways(): Promise<PaymentGateway[]>;
+  getPaymentGateway(id: string): Promise<PaymentGateway | undefined>;
+  getPaymentGatewayByType(gatewayType: string): Promise<PaymentGateway | undefined>;
+  updatePaymentGatewayHealth(
+    id: string, 
+    success: boolean, 
+    errorMessage?: string
+  ): Promise<void>;
+  updatePaymentGatewayCredentials(
+    id: string,
+    credentials: any,
+    webhookSecret?: string
+  ): Promise<PaymentGateway | undefined>;
+
+  // Invoice Template operations
+  getInvoiceTemplates(): Promise<InvoiceTemplate[]>;
+  getActiveInvoiceTemplates(): Promise<InvoiceTemplate[]>;
+  getInvoiceTemplate(id: string): Promise<InvoiceTemplate | undefined>;
+  getInvoiceTemplateByKey(templateKey: string): Promise<InvoiceTemplate | undefined>;
+  getDefaultInvoiceTemplate(): Promise<InvoiceTemplate | undefined>;
+  createInvoiceTemplate(template: InsertInvoiceTemplate): Promise<InvoiceTemplate>;
+  updateInvoiceTemplate(id: string, updates: Partial<InsertInvoiceTemplate>): Promise<InvoiceTemplate | undefined>;
+  updateQuoteWithPDF(
+    quoteId: string,
+    templateId: string,
+    pdfPath: string
+  ): Promise<Quote | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // User operations (for Supabase Auth)
+  // User operations (Clerk Auth only)
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
 
-  async getUserBySupabaseId(supabaseUserId: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.supabaseUserId, supabaseUserId));
-    return user;
-  }
-
   async upsertUser(userData: UpsertUser): Promise<User> {
-    // For Supabase Auth - check by supabaseUserId first, then by email
+    // Check by Clerk ID first, then by email, then by id
     let existingUser: User | undefined;
-    
-    if (userData.supabaseUserId) {
-      existingUser = await this.getUserBySupabaseId(userData.supabaseUserId);
+
+    if (userData.clerkUserId) {
+      existingUser = await this.getUserByClerkId(userData.clerkUserId);
     }
     if (!existingUser && userData.email) {
       existingUser = await this.getUserByEmail(userData.email);
@@ -386,6 +613,8 @@ export class DatabaseStorage implements IStorage {
           lastName: userData.lastName,
           profileImageUrl: userData.profileImageUrl,
           supabaseUserId: userData.supabaseUserId || existingUser.supabaseUserId,
+          neonAuthUserId: userData.neonAuthUserId || existingUser.neonAuthUserId,
+          clerkUserId: userData.clerkUserId || existingUser.clerkUserId,
           updatedAt: new Date(),
         })
         .where(eq(users.id, existingUser.id))
@@ -402,12 +631,14 @@ export class DatabaseStorage implements IStorage {
         .values({
           id: userData.id || undefined,
           supabaseUserId: userData.supabaseUserId,
+          neonAuthUserId: userData.neonAuthUserId,
+          clerkUserId: userData.clerkUserId,
           email: userData.email,
           firstName: userData.firstName,
           lastName: userData.lastName,
           profileImageUrl: userData.profileImageUrl,
           role: 'user',
-          authProvider: userData.authProvider || 'supabase',
+          authProvider: userData.authProvider || 'clerk',
           createdAt: now,
           updatedAt: now,
         })
@@ -434,8 +665,9 @@ export class DatabaseStorage implements IStorage {
       const finalUser = await this.getUser(insertedUser.id);
       return finalUser || insertedUser;
     } catch (error: any) {
-      if (userData.supabaseUserId) {
-        const existingAfterRace = await this.getUserBySupabaseId(userData.supabaseUserId);
+      // Handle race condition - another request might have created the user
+      if (userData.clerkUserId) {
+        const existingAfterRace = await this.getUserByClerkId(userData.clerkUserId);
         if (existingAfterRace) return existingAfterRace;
       }
       throw error;
@@ -444,6 +676,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async getUserByClerkId(clerkUserId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
     return user;
   }
 
@@ -669,6 +906,35 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(quotes).where(eq(quotes.userId, userId));
     }
     return await db.select().from(quotes);
+  }
+
+  // Get quotes scoped by tenant (alias for getAllQuotes with tenant isolation)
+  async getQuotesByTenant(tenantId: string): Promise<Quote[]> {
+    return await db.select().from(quotes).where(eq(quotes.tenantId, tenantId));
+  }
+
+  // Fetch company profile by GST within tenant (used to handle unique constraint conflicts)
+  async getCompanyProfileByGst(gstNo: string, tenantId: string): Promise<CompanyProfile | undefined> {
+    // Match tenant or fallback to user_id (for null tenant legacy rows)
+    const [profile] = await db.select().from(companyProfiles).where(
+      and(
+        eq(companyProfiles.gstNo, gstNo),
+        or(
+          eq(companyProfiles.tenantId, tenantId),
+          and(
+            sql`${companyProfiles.tenantId} IS NULL`,
+            eq(companyProfiles.userId, tenantId)
+          )
+        )
+      )
+    );
+    return profile;
+  }
+
+  // Fetch any company profile by GST (ignores tenant) for conflict recovery
+  async getAnyCompanyProfileByGst(gstNo: string): Promise<CompanyProfile | undefined> {
+    const [profile] = await db.select().from(companyProfiles).where(eq(companyProfiles.gstNo, gstNo));
+    return profile;
   }
 
   async getAllQuotesWithItems(userId?: string, tenantId?: string): Promise<(Quote & { items: any[]; activeVersion: QuoteVersion | null })[]> {
@@ -1586,6 +1852,15 @@ export class DatabaseStorage implements IStorage {
       );
   }
   
+  async updateOnboardingReminderSent(userId: string): Promise<void> {
+    await db.update(onboardingStatus)
+      .set({
+        lastReminderSentAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(onboardingStatus.userId, userId));
+  }
+
   async getAllOnboardingStatuses(): Promise<OnboardingStatus[]> {
     return await db.select().from(onboardingStatus);
   }
@@ -1710,6 +1985,12 @@ export class DatabaseStorage implements IStorage {
     approvedUsers: number;
     rejectedUsers: number;
     newSignupsLast7Days: number;
+    activeSubscriptions: number;
+    monthlyRevenue: number;
+    gstCollected: number;
+    userChange: number;
+    subscriptionChange: number;
+    revenueChange: number;
   }> {
     const allUsers = await db.select({ count: sql`count(*)` }).from(users);
     const pendingResult = await db.select({ count: sql`count(*)` }).from(onboardingStatus)
@@ -1727,12 +2008,38 @@ export class DatabaseStorage implements IStorage {
     const newSignupsResult = await db.select({ count: sql`count(*)` }).from(users)
       .where(sql`${users.createdAt} >= ${sevenDaysAgo}`);
     
+    // Get active subscriptions
+    const activeSubsResult = await db.select({ count: sql`count(*)` }).from(userSubscriptions)
+      .where(eq(userSubscriptions.status, 'active'));
+    
+    // Get monthly revenue (sum of payments this month)
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const monthlyRevenueResult = await db.select({ sum: sql<number>`COALESCE(SUM(amount), 0)` }).from(paymentTransactions)
+      .where(and(
+        eq(paymentTransactions.status, 'success'),
+        sql`${paymentTransactions.createdAt} >= ${startOfMonth}`
+      ));
+    
+    const monthlyRevenue = Number(monthlyRevenueResult[0]?.sum || 0);
+    
+    // Estimate GST as 18% of monthly revenue
+    const gstCollected = Math.round(monthlyRevenue * 0.18 / 1.18); // Extract GST from inclusive amount
+    
     return {
       totalUsers: Number(allUsers[0]?.count || 0),
       pendingVerifications: Number(pendingResult[0]?.count || 0),
       approvedUsers: Number(approvedResult[0]?.count || 0),
       rejectedUsers: Number(rejectedResult[0]?.count || 0),
-      newSignupsLast7Days: Number(newSignupsResult[0]?.count || 0)
+      newSignupsLast7Days: Number(newSignupsResult[0]?.count || 0),
+      activeSubscriptions: Number(activeSubsResult[0]?.count || 0),
+      monthlyRevenue,
+      gstCollected,
+      userChange: Number(newSignupsResult[0]?.count || 0), // Change = new signups this week
+      subscriptionChange: 0, // TODO: Calculate actual change
+      revenueChange: 0, // TODO: Calculate month-over-month change
     };
   }
   
@@ -2014,7 +2321,225 @@ export class DatabaseStorage implements IStorage {
     const hardBounces = bounces.filter(b => b.bounceType === 'hard');
     return Array.from(new Set(hardBounces.map(b => b.recipientEmail)));
   }
+
+  // ========== ADMIN EMAIL SETTINGS (System-wide SMTP Configuration) ==========
+  async getActiveAdminEmailSettings(): Promise<AdminEmailSettings | undefined> {
+    const [settings] = await db.select()
+      .from(adminEmailSettings)
+      .where(eq(adminEmailSettings.isActive, true))
+      .limit(1);
+    return settings;
+  }
+
+  async createAdminEmailSettings(settings: InsertAdminEmailSettings): Promise<AdminEmailSettings> {
+    const [created] = await db.insert(adminEmailSettings).values(settings).returning();
+    return created;
+  }
+
+  async updateAdminEmailSettings(id: string, updates: Partial<InsertAdminEmailSettings>): Promise<AdminEmailSettings | undefined> {
+    const [updated] = await db.update(adminEmailSettings)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(adminEmailSettings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deactivateOtherEmailSettings(exceptId?: string): Promise<void> {
+    if (exceptId) {
+      await db.update(adminEmailSettings)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(adminEmailSettings.isActive, true),
+          sql`${adminEmailSettings.id} != ${exceptId}`
+        ));
+    } else {
+      await db.update(adminEmailSettings)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(adminEmailSettings.isActive, true));
+    }
+  }
+
+  async testEmailSettings(id: string, status: 'success' | 'failed'): Promise<void> {
+    await db.update(adminEmailSettings)
+      .set({
+        lastTestedAt: new Date(),
+        testStatus: status,
+        updatedAt: new Date(),
+      })
+      .where(eq(adminEmailSettings.id, id));
+  }
+
+  // ========== MULTI-PROVIDER EMAIL SYSTEM ==========
   
+  // Email Providers
+  async getEmailProvider(id: string): Promise<EmailProvider | undefined> {
+    const [provider] = await db.select()
+      .from(emailProviders)
+      .where(eq(emailProviders.id, id));
+    return provider;
+  }
+
+  async getAllEmailProviders(): Promise<EmailProvider[]> {
+    return await db.select()
+      .from(emailProviders)
+      .orderBy(emailProviders.priorityOrder);
+  }
+
+  async getActiveEmailProviders(): Promise<EmailProvider[]> {
+    return await db.select()
+      .from(emailProviders)
+      .where(eq(emailProviders.isActive, true))
+      .orderBy(emailProviders.priorityOrder);
+  }
+
+  async getEmailProvidersByType(providerType: string): Promise<EmailProvider[]> {
+    return await db.select()
+      .from(emailProviders)
+      .where(and(
+        eq(emailProviders.providerType, providerType),
+        eq(emailProviders.isActive, true)
+      ))
+      .orderBy(emailProviders.priorityOrder);
+  }
+
+  async createEmailProvider(provider: InsertEmailProvider): Promise<EmailProvider> {
+    const [created] = await db.insert(emailProviders).values(provider).returning();
+    return created;
+  }
+
+  async updateEmailProvider(id: string, updates: Partial<InsertEmailProvider>): Promise<EmailProvider | undefined> {
+    const [updated] = await db.update(emailProviders)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(emailProviders.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteEmailProvider(id: string): Promise<boolean> {
+    const result = await db.delete(emailProviders)
+      .where(eq(emailProviders.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  async updateProviderHealth(id: string, success: boolean, errorMessage?: string): Promise<void> {
+    const provider = await this.getEmailProvider(id);
+    if (!provider) return;
+
+    const updates: Partial<InsertEmailProvider> = {
+      lastUsedAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    if (success) {
+      updates.consecutiveFailures = 0;
+      updates.totalSent = (provider.totalSent || 0) + 1;
+      updates.lastErrorMessage = null;
+    } else {
+      updates.consecutiveFailures = (provider.consecutiveFailures || 0) + 1;
+      updates.totalFailed = (provider.totalFailed || 0) + 1;
+      updates.lastErrorAt = new Date();
+      updates.lastErrorMessage = errorMessage || null;
+    }
+
+    await db.update(emailProviders)
+      .set(updates)
+      .where(eq(emailProviders.id, id));
+  }
+
+  // Email Task Routing
+  async getTaskRouting(taskType: string): Promise<EmailTaskRouting | undefined> {
+    const [routing] = await db.select()
+      .from(emailTaskRouting)
+      .where(eq(emailTaskRouting.taskType, taskType));
+    return routing;
+  }
+
+  async getAllTaskRouting(): Promise<EmailTaskRouting[]> {
+    return await db.select()
+      .from(emailTaskRouting)
+      .orderBy(emailTaskRouting.taskType);
+  }
+
+  async createTaskRouting(routing: InsertEmailTaskRouting): Promise<EmailTaskRouting> {
+    const [created] = await db.insert(emailTaskRouting).values(routing).returning();
+    return created;
+  }
+
+  async updateTaskRouting(id: string, updates: Partial<InsertEmailTaskRouting>): Promise<EmailTaskRouting | undefined> {
+    const [updated] = await db.update(emailTaskRouting)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(emailTaskRouting.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTaskRouting(id: string): Promise<boolean> {
+    const result = await db.delete(emailTaskRouting)
+      .where(eq(emailTaskRouting.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  // Email Send Logs
+  async createEmailSendLog(log: InsertEmailSendLog): Promise<EmailSendLog> {
+    const [created] = await db.insert(emailSendLogs).values(log).returning();
+    return created;
+  }
+
+  async getEmailSendLogs(filters?: { 
+    userId?: string; 
+    taskType?: string; 
+    status?: string; 
+    limit?: number 
+  }): Promise<EmailSendLog[]> {
+    let query = db.select().from(emailSendLogs);
+
+    const conditions = [];
+    if (filters?.userId) {
+      conditions.push(eq(emailSendLogs.userId, filters.userId));
+    }
+    if (filters?.taskType) {
+      conditions.push(eq(emailSendLogs.taskType, filters.taskType));
+    }
+    if (filters?.status) {
+      conditions.push(eq(emailSendLogs.status, filters.status));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    query = query.orderBy(sql`${emailSendLogs.sentAt} DESC`) as any;
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit) as any;
+    }
+
+    return await query;
+  }
+
+  // User Email Preferences
+  async getUserEmailPreferences(userId: string): Promise<UserEmailPreferences | undefined> {
+    const [prefs] = await db.select()
+      .from(userEmailPreferences)
+      .where(eq(userEmailPreferences.userId, userId));
+    return prefs;
+  }
+
+  async createUserEmailPreferences(prefs: InsertUserEmailPreferences): Promise<UserEmailPreferences> {
+    const [created] = await db.insert(userEmailPreferences).values(prefs).returning();
+    return created;
+  }
+
+  async updateUserEmailPreferences(userId: string, updates: Partial<InsertUserEmailPreferences>): Promise<UserEmailPreferences | undefined> {
+    const [updated] = await db.update(userEmailPreferences)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userEmailPreferences.userId, userId))
+      .returning();
+    return updated;
+  }
+
   // ========== AUTH AUDIT LOGS ==========
   async createAuthAuditLog(log: InsertAuthAuditLog): Promise<AuthAuditLog> {
     const [created] = await db.insert(authAuditLogs).values(log).returning();
@@ -2113,13 +2638,727 @@ export class DatabaseStorage implements IStorage {
   // Reset failed login attempts on successful login
   async resetFailedLoginAttempts(userId: string): Promise<void> {
     await db.update(users)
-      .set({ 
-        failedLoginAttempts: 0, 
+      .set({
+        failedLoginAttempts: 0,
         lockedUntil: null,
         lastLoginAt: new Date(),
         updatedAt: new Date()
       })
       .where(eq(users.id, userId));
+  }
+
+  // ========== TEMPORARY BUSINESS PROFILES ==========
+
+  async getTempProfileByEmail(email: string): Promise<TemporaryBusinessProfile | undefined> {
+    const [profile] = await db.select()
+      .from(temporaryBusinessProfiles)
+      .where(eq(temporaryBusinessProfiles.businessEmail, email.toLowerCase()))
+      .limit(1);
+    return profile;
+  }
+
+  async getTempProfileBySession(sessionToken: string): Promise<TemporaryBusinessProfile | undefined> {
+    const [profile] = await db.select()
+      .from(temporaryBusinessProfiles)
+      .where(eq(temporaryBusinessProfiles.sessionToken, sessionToken))
+      .limit(1);
+    return profile;
+  }
+
+  async createTempBusinessProfile(profile: InsertTemporaryBusinessProfile): Promise<TemporaryBusinessProfile> {
+    const [newProfile] = await db.insert(temporaryBusinessProfiles)
+      .values({
+        ...profile,
+        businessEmail: profile.businessEmail.toLowerCase(),
+      })
+      .returning();
+    return newProfile;
+  }
+
+  async deleteTempProfile(id: string): Promise<void> {
+    await db.delete(temporaryBusinessProfiles)
+      .where(eq(temporaryBusinessProfiles.id, id));
+  }
+
+  // ========== INVOICES ==========
+
+  async createInvoice(invoice: InsertInvoice): Promise<Invoice> {
+    const [newInvoice] = await db.insert(invoices)
+      .values(invoice)
+      .returning();
+    return newInvoice;
+  }
+
+  async getInvoice(id: string): Promise<Invoice | undefined> {
+    const [invoice] = await db.select()
+      .from(invoices)
+      .where(eq(invoices.id, id))
+      .limit(1);
+    return invoice;
+  }
+
+  async getInvoicesByUser(userId: string): Promise<Invoice[]> {
+    return await db.select()
+      .from(invoices)
+      .where(eq(invoices.userId, userId))
+      .orderBy(sql`${invoices.invoiceDate} DESC`);
+  }
+
+  async getAllInvoices(): Promise<Invoice[]> {
+    return await db.select()
+      .from(invoices)
+      .orderBy(sql`${invoices.invoiceDate} DESC`);
+  }
+
+  async updateInvoice(id: string, updates: Partial<InsertInvoice>): Promise<Invoice | undefined> {
+    const [updated] = await db.update(invoices)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(invoices.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getLastInvoiceForFY(financialYear: string): Promise<Invoice | undefined> {
+    const [invoice] = await db.select()
+      .from(invoices)
+      .where(eq(invoices.financialYear, financialYear))
+      .orderBy(sql`${invoices.invoiceNumber} DESC`)
+      .limit(1);
+    return invoice;
+  }
+
+  // ========== INVOICE TEMPLATES ==========
+
+  async getInvoiceTemplate(id: string): Promise<InvoiceTemplate | undefined> {
+    const [template] = await db.select()
+      .from(invoiceTemplates)
+      .where(eq(invoiceTemplates.id, id))
+      .limit(1);
+    return template;
+  }
+
+  async getDefaultInvoiceTemplate(): Promise<InvoiceTemplate | undefined> {
+    const [template] = await db.select()
+      .from(invoiceTemplates)
+      .where(and(
+        eq(invoiceTemplates.isDefault, true),
+        eq(invoiceTemplates.isActive, true)
+      ))
+      .limit(1);
+    return template;
+  }
+
+  async createInvoiceTemplate(template: InsertInvoiceTemplate): Promise<InvoiceTemplate> {
+    const [newTemplate] = await db.insert(invoiceTemplates)
+      .values(template)
+      .returning();
+    return newTemplate;
+  }
+
+  async getAllInvoiceTemplates(): Promise<InvoiceTemplate[]> {
+    return await db.select()
+      .from(invoiceTemplates)
+      .where(eq(invoiceTemplates.isActive, true))
+      .orderBy(invoiceTemplates.name);
+  }
+
+  // ========== SELLER PROFILE ==========
+
+  async getSellerProfile(): Promise<SellerProfile | undefined> {
+    const [profile] = await db.select()
+      .from(sellerProfile)
+      .limit(1);
+    return profile;
+  }
+
+  async createSellerProfile(profile: InsertSellerProfile): Promise<SellerProfile> {
+    const [newProfile] = await db.insert(sellerProfile)
+      .values(profile)
+      .returning();
+    return newProfile;
+  }
+
+  async updateSellerProfile(id: string, updates: Partial<InsertSellerProfile>): Promise<SellerProfile | undefined> {
+    const [updated] = await db.update(sellerProfile)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(sellerProfile.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ========== ENTERPRISE ADMIN SYSTEM ==========
+
+  async getStaff(id: string): Promise<Staff | undefined> {
+    const [result] = await db.select()
+      .from(staff)
+      .where(eq(staff.id, id))
+      .limit(1);
+    return result;
+  }
+
+  async getStaffByUserId(userId: string): Promise<Staff | undefined> {
+    const [result] = await db.select()
+      .from(staff)
+      .where(eq(staff.userId, userId))
+      .limit(1);
+    return result;
+  }
+
+  async getAllStaff(status?: string): Promise<Staff[]> {
+    if (status) {
+      return db.select()
+        .from(staff)
+        .where(eq(staff.status, status));
+    }
+    return db.select().from(staff);
+  }
+
+  async createStaff(staffData: InsertStaff): Promise<Staff> {
+    const [newStaff] = await db.insert(staff)
+      .values(staffData)
+      .returning();
+    return newStaff;
+  }
+
+  async updateStaff(id: string, updates: Partial<InsertStaff>): Promise<Staff | undefined> {
+    const [updated] = await db.update(staff)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(staff.id, id))
+      .returning();
+    return updated;
+  }
+
+  async disableStaff(id: string, disabledBy: string): Promise<Staff | undefined> {
+    const [updated] = await db.update(staff)
+      .set({
+        status: 'disabled',
+        disabledAt: new Date(),
+        disabledBy,
+        updatedAt: new Date(),
+      })
+      .where(eq(staff.id, id))
+      .returning();
+    return updated;
+  }
+
+  async createTicketNote(note: InsertTicketNote): Promise<TicketNote> {
+    const [newNote] = await db.insert(ticketNotes)
+      .values(note)
+      .returning();
+    return newNote;
+  }
+
+  async getTicketNotes(ticketId: string): Promise<TicketNote[]> {
+    return db.select()
+      .from(ticketNotes)
+      .where(eq(ticketNotes.ticketId, ticketId))
+      .orderBy(ticketNotes.createdAt);
+  }
+
+  async getSupportTicketsForStaff(staffId: string, statuses?: string[]): Promise<SupportTicket[]> {
+    if (!statuses || statuses.length === 0) {
+      return db.select()
+        .from(supportTickets)
+        .where(eq(supportTickets.assignedTo, staffId));
+    }
+
+    return db.select()
+      .from(supportTickets)
+      .where(
+        and(
+          eq(supportTickets.assignedTo, staffId),
+          sql`${supportTickets.status} = ANY(${statuses})`
+        )
+      );
+  }
+
+  async getStaffMetrics(staffId: string): Promise<StaffMetrics | undefined> {
+    const [result] = await db.select()
+      .from(staffMetrics)
+      .where(eq(staffMetrics.staffId, staffId))
+      .limit(1);
+    return result;
+  }
+
+  async getAllStaffMetrics(): Promise<StaffMetrics[]> {
+    return db.select().from(staffMetrics);
+  }
+
+  async createStaffMetrics(metrics: InsertStaffMetrics): Promise<StaffMetrics> {
+    const [newMetrics] = await db.insert(staffMetrics)
+      .values(metrics)
+      .returning();
+    return newMetrics;
+  }
+
+  async updateStaffMetrics(staffId: string, updates: Partial<InsertStaffMetrics>): Promise<StaffMetrics | undefined> {
+    const [updated] = await db.update(staffMetrics)
+      .set({
+        ...updates,
+        lastUpdated: new Date(),
+      })
+      .where(eq(staffMetrics.staffId, staffId))
+      .returning();
+    return updated;
+  }
+
+  async createAdminAuditLog(log: InsertAdminAuditLog): Promise<AdminAuditLog> {
+    const [newLog] = await db.insert(adminAuditLogs)
+      .values(log)
+      .returning();
+    return newLog;
+  }
+
+  async getAdminAuditLogs(filters: {
+    staffId?: string;
+    role?: string;
+    action?: string;
+    entityType?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: AdminAuditLog[]; total: number }> {
+    let query = db.select().from(adminAuditLogs);
+
+    if (filters.staffId) {
+      query = query.where(eq(adminAuditLogs.actorStaffId, filters.staffId));
+    }
+
+    if (filters.role) {
+      query = query.where(eq(adminAuditLogs.actorRole, filters.role));
+    }
+
+    if (filters.action) {
+      query = query.where(eq(adminAuditLogs.action, filters.action));
+    }
+
+    if (filters.entityType) {
+      query = query.where(eq(adminAuditLogs.entityType, filters.entityType));
+    }
+
+    if (filters.startDate) {
+      // query = query.where(gte(adminAuditLogs.createdAt, filters.startDate));
+    }
+
+    if (filters.endDate) {
+      // query = query.where(lte(adminAuditLogs.createdAt, filters.endDate));
+    }
+
+    const logs = await query
+      .orderBy(sql`${adminAuditLogs.createdAt} DESC`)
+      .limit(filters.limit || 50)
+      .offset(filters.offset || 0);
+
+    return {
+      logs,
+      total: logs.length,
+    };
+  }
+
+  async getTicketAnalytics(filters?: {
+    startDate?: Date;
+    endDate?: Date;
+    priority?: string;
+  }): Promise<{
+    totalTickets: number;
+    openTickets: number;
+    resolvedTickets: number;
+    avgResolutionTime: number;
+    slaBreaches: number;
+    byPriority: Record<string, number>;
+  }> {
+    const allTickets = await db.select().from(supportTickets);
+
+    const openTickets = allTickets.filter(t => t.status === 'OPEN' || t.status === 'IN_PROGRESS').length;
+    const resolvedTickets = allTickets.filter(t => t.status === 'RESOLVED').length;
+
+    let totalResolutionTime = 0;
+    let resolvedCount = 0;
+
+    allTickets.forEach(ticket => {
+      if (ticket.resolvedAt && ticket.createdAt) {
+        const hours = (ticket.resolvedAt.getTime() - ticket.createdAt.getTime()) / (1000 * 60 * 60);
+        totalResolutionTime += hours;
+        resolvedCount++;
+      }
+    });
+
+    const avgResolutionTime = resolvedCount > 0 ? totalResolutionTime / resolvedCount : 0;
+
+    return {
+      totalTickets: allTickets.length,
+      openTickets,
+      resolvedTickets,
+      avgResolutionTime,
+      slaBreaches: 0, // Would need SLA logic
+      byPriority: {
+        LOW: allTickets.filter(t => t.priority === 'LOW').length,
+        MEDIUM: allTickets.filter(t => t.priority === 'MEDIUM').length,
+        HIGH: allTickets.filter(t => t.priority === 'HIGH').length,
+        URGENT: allTickets.filter(t => t.priority === 'URGENT').length,
+      },
+    };
+  }
+
+  async getCouponAnalytics(): Promise<{
+    totalCoupons: number;
+    activeCoupons: number;
+    expiredCoupons: number;
+    totalRedemptions: number;
+    redemptionRate: number;
+    topCoupons: any[];
+  }> {
+    const allCoupons = await db.select().from(coupons);
+    const now = new Date();
+
+    const activeCoupons = allCoupons.filter(c => c.expiryDate > now).length;
+    const expiredCoupons = allCoupons.filter(c => c.expiryDate <= now).length;
+
+    const totalRedemptions = allCoupons.reduce((sum, c) => sum + (c.usageCount || 0), 0);
+    const redemptionRate = allCoupons.length > 0
+      ? (totalRedemptions / (allCoupons.length * 100)) * 100
+      : 0;
+
+    return {
+      totalCoupons: allCoupons.length,
+      activeCoupons,
+      expiredCoupons,
+      totalRedemptions,
+      redemptionRate,
+      topCoupons: allCoupons.slice(0, 5),
+    };
+  }
+
+  async getRevenueAnalytics(filters?: {
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<{
+    totalRevenue: number;
+    activeSubscriptions: number;
+    pendingPayments: number;
+    mrr: number;
+    mrg: number;
+  }> {
+    const allSubscriptions = await db.select().from(userSubscriptions);
+    const allInvoices = await db.select().from(invoices);
+
+    const activeSubscriptions = allSubscriptions.filter(s => s.status === 'active').length;
+
+    const totalRevenue = allInvoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
+
+    return {
+      totalRevenue,
+      activeSubscriptions,
+      pendingPayments: 0, // Would need payment status logic
+      mrr: totalRevenue / 12, // Rough estimate
+      mrg: 0, // Would need GST calculation
+    };
+  }
+
+  // User Feature Usage & Overrides Implementation
+  async getUserFeatureUsage(userId: string): Promise<any | undefined> {
+    const { userFeatureUsage } = await import("@shared/schema");
+    const [usage] = await db.select().from(userFeatureUsage).where(eq(userFeatureUsage.userId, userId));
+    return usage;
+  }
+
+  async createUserFeatureUsage(usageData: any): Promise<any> {
+    const { userFeatureUsage } = await import("@shared/schema");
+    const [created] = await db.insert(userFeatureUsage).values(usageData).returning();
+    return created;
+  }
+
+  async getUserFeatureOverride(userId: string): Promise<any | undefined> {
+    const { userFeatureOverrides } = await import("@shared/schema");
+    const [override] = await db.select().from(userFeatureOverrides).where(eq(userFeatureOverrides.userId, userId));
+    return override;
+  }
+
+  async createUserFeatureOverride(overrideData: any): Promise<any> {
+    const { userFeatureOverrides } = await import("@shared/schema");
+    const [created] = await db.insert(userFeatureOverrides).values(overrideData).returning();
+    return created;
+  }
+
+  async updateUserFeatureOverride(userId: string, updates: any): Promise<any | undefined> {
+    const { userFeatureOverrides } = await import("@shared/schema");
+    const [updated] = await db.update(userFeatureOverrides)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userFeatureOverrides.userId, userId))
+      .returning();
+    return updated;
+  }
+
+  async incrementUserFeatureUsage(userId: string, feature: string, amount: number = 1): Promise<void> {
+    const { userFeatureUsage } = await import("@shared/schema");
+    
+    // Get or create usage record
+    let usage = await this.getUserFeatureUsage(userId);
+    
+    if (!usage) {
+      usage = await this.createUserFeatureUsage({
+        userId,
+        emailProvidersCount: 0,
+        customTemplatesCount: 0,
+        quotesThisMonth: 0,
+        partyProfilesCount: 0,
+        apiCallsThisMonth: 0,
+      });
+    }
+
+    // Increment the appropriate counter
+    const updates: any = { updatedAt: new Date() };
+    
+    if (feature === 'emailProviders') {
+      updates.emailProvidersCount = (usage.emailProvidersCount || 0) + amount;
+    } else if (feature === 'customTemplates') {
+      updates.customTemplatesCount = (usage.customTemplatesCount || 0) + amount;
+    } else if (feature === 'quotes') {
+      updates.quotesThisMonth = (usage.quotesThisMonth || 0) + amount;
+    } else if (feature === 'partyProfiles') {
+      updates.partyProfilesCount = (usage.partyProfilesCount || 0) + amount;
+    } else if (feature === 'apiCalls') {
+      updates.apiCallsThisMonth = (usage.apiCallsThisMonth || 0) + amount;
+    }
+
+    await db.update(userFeatureUsage)
+      .set(updates)
+      .where(eq(userFeatureUsage.userId, userId));
+  }
+
+  async decrementUserFeatureUsage(userId: string, feature: string, amount: number = 1): Promise<void> {
+    const { userFeatureUsage } = await import("@shared/schema");
+    
+    const usage = await this.getUserFeatureUsage(userId);
+    if (!usage) return;
+
+    const updates: any = { updatedAt: new Date() };
+    
+    if (feature === 'emailProviders') {
+      updates.emailProvidersCount = Math.max(0, (usage.emailProvidersCount || 0) - amount);
+    } else if (feature === 'customTemplates') {
+      updates.customTemplatesCount = Math.max(0, (usage.customTemplatesCount || 0) - amount);
+    } else if (feature === 'quotes') {
+      updates.quotesThisMonth = Math.max(0, (usage.quotesThisMonth || 0) - amount);
+    } else if (feature === 'partyProfiles') {
+      updates.partyProfilesCount = Math.max(0, (usage.partyProfilesCount || 0) - amount);
+    } else if (feature === 'apiCalls') {
+      updates.apiCallsThisMonth = Math.max(0, (usage.apiCallsThisMonth || 0) - amount);
+    }
+
+    await db.update(userFeatureUsage)
+      .set(updates)
+      .where(eq(userFeatureUsage.userId, userId));
+  }
+
+  async getUserActiveSubscription(userId: string): Promise<UserSubscription | undefined> {
+    const [subscription] = await db.select()
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.userId, userId),
+          eq(userSubscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+    
+    return subscription;
+  }
+
+  async getUserSubscriptions(userId: string): Promise<UserSubscription[]> {
+    return await db.select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId))
+      .orderBy(desc(userSubscriptions.createdAt));
+  }
+
+  async getSubscriptionPlanById(planId: string): Promise<SubscriptionPlan | undefined> {
+    const [plan] = await db.select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, planId));
+    return plan;
+  }
+
+  async getUserEmailProviders(userId: string): Promise<EmailProvider[]> {
+    return await db.select()
+      .from(emailProviders)
+      .where(eq(emailProviders.userId, userId));
+  }
+
+  async getUserEmailProviderCount(userId: string): Promise<number> {
+    const providers = await this.getUserEmailProviders(userId);
+    return providers.length;
+  }
+
+  // Payment Gateway Management
+  async getActivePaymentGateways(): Promise<PaymentGateway[]> {
+    return await db.select()
+      .from(paymentGateways)
+      .where(eq(paymentGateways.isActive, true))
+      .orderBy(paymentGateways.priority);
+  }
+
+  async getPaymentGateway(id: string): Promise<PaymentGateway | undefined> {
+    const [gateway] = await db.select()
+      .from(paymentGateways)
+      .where(eq(paymentGateways.id, id));
+    return gateway;
+  }
+
+  async getPaymentGatewayByType(gatewayType: string): Promise<PaymentGateway | undefined> {
+    const [gateway] = await db.select()
+      .from(paymentGateways)
+      .where(eq(paymentGateways.gatewayType, gatewayType));
+    return gateway;
+  }
+
+  async updatePaymentGatewayHealth(
+    id: string,
+    success: boolean,
+    errorMessage?: string
+  ): Promise<void> {
+    const gateway = await this.getPaymentGateway(id);
+    if (!gateway) return;
+
+    const updates: any = {
+      lastHealthCheck: new Date(),
+      updatedAt: new Date(),
+    };
+
+    if (success) {
+      updates.consecutiveFailures = 0;
+      updates.totalTransactions = (gateway.totalTransactions || 0) + 1;
+      updates.totalSuccessful = (gateway.totalSuccessful || 0) + 1;
+    } else {
+      updates.consecutiveFailures = (gateway.consecutiveFailures || 0) + 1;
+      updates.lastFailureAt = new Date();
+      updates.lastFailureReason = errorMessage || 'Unknown error';
+      updates.totalTransactions = (gateway.totalTransactions || 0) + 1;
+      updates.totalFailed = (gateway.totalFailed || 0) + 1;
+    }
+
+    await db.update(paymentGateways)
+      .set(updates)
+      .where(eq(paymentGateways.id, id));
+  }
+
+  async updatePaymentGatewayCredentials(
+    id: string,
+    credentials: any,
+    webhookSecret?: string
+  ): Promise<PaymentGateway | undefined> {
+    const updates: any = {
+      credentials,
+      updatedAt: new Date(),
+    };
+
+    if (webhookSecret !== undefined) {
+      updates.webhookSecret = webhookSecret;
+    }
+
+    const [updatedGateway] = await db.update(paymentGateways)
+      .set(updates)
+      .where(eq(paymentGateways.id, id))
+      .returning();
+
+    return updatedGateway;
+  }
+
+  // ========== INVOICE TEMPLATE OPERATIONS ==========
+
+  async getInvoiceTemplates(): Promise<InvoiceTemplate[]> {
+    return await db.select().from(invoiceTemplates).orderBy(desc(invoiceTemplates.isDefault), invoiceTemplates.name);
+  }
+
+  async getActiveInvoiceTemplates(): Promise<InvoiceTemplate[]> {
+    return await db.select()
+      .from(invoiceTemplates)
+      .where(eq(invoiceTemplates.status, 'active'))
+      .orderBy(desc(invoiceTemplates.isDefault), invoiceTemplates.name);
+  }
+
+  async getInvoiceTemplate(id: string): Promise<InvoiceTemplate | undefined> {
+    const [template] = await db.select()
+      .from(invoiceTemplates)
+      .where(eq(invoiceTemplates.id, id))
+      .limit(1);
+    return template;
+  }
+
+  async getInvoiceTemplateByKey(templateKey: string): Promise<InvoiceTemplate | undefined> {
+    const [template] = await db.select()
+      .from(invoiceTemplates)
+      .where(eq(invoiceTemplates.templateKey, templateKey))
+      .limit(1);
+    return template;
+  }
+
+  async getDefaultInvoiceTemplate(): Promise<InvoiceTemplate | undefined> {
+    const [template] = await db.select()
+      .from(invoiceTemplates)
+      .where(and(
+        eq(invoiceTemplates.isDefault, true),
+        eq(invoiceTemplates.status, 'active')
+      ))
+      .limit(1);
+    return template;
+  }
+
+  async createInvoiceTemplate(template: InsertInvoiceTemplate): Promise<InvoiceTemplate> {
+    // Generate a template key from the name if not provided
+    const templateKey = template.templateKey || template.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    const [created] = await db.insert(invoiceTemplates)
+      .values({
+        ...template,
+        templateKey,
+        status: template.status || 'active',
+        isDefault: template.isDefault || false,
+      })
+      .returning();
+    return created;
+  }
+
+  async updateInvoiceTemplate(id: string, updates: Partial<InsertInvoiceTemplate>): Promise<InvoiceTemplate | undefined> {
+    const [updated] = await db.update(invoiceTemplates)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(invoiceTemplates.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateQuoteWithPDF(
+    quoteId: string,
+    templateId: string,
+    pdfPath: string
+  ): Promise<Quote | undefined> {
+    const [updatedQuote] = await db.update(quotes)
+      .set({
+        invoiceTemplateId: templateId,
+        pdfPath: pdfPath,
+        pdfGeneratedAt: new Date(),
+        isPdfGenerated: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(quotes.id, quoteId))
+      .returning();
+    return updatedQuote;
   }
 }
 
@@ -2135,6 +3374,10 @@ class InMemoryStorage implements Partial<IStorage> {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     return this.usersByEmail.get(email.toLowerCase());
+  }
+
+  async getUserByClerkId(clerkUserId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(u => u.clerkUserId === clerkUserId);
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
@@ -2167,7 +3410,6 @@ class InMemoryStorage implements Partial<IStorage> {
       phone: userData.phone || null,
       logoUrl: userData.logoUrl || null,
       profileImageUrl: userData.profileImageUrl || null,
-      supabaseUserId: userData.supabaseUserId || null,
       emailVerified: userData.emailVerified || false,
       isActive: userData.isActive !== undefined ? userData.isActive : true,
       isSuspended: userData.isSuspended || false,
@@ -2238,6 +3480,64 @@ class InMemoryStorage implements Partial<IStorage> {
 
     this.userProfiles.set(userId, updatedProfile);
     return updatedProfile;
+  }
+
+  // Payment Gateway Management - In-memory stub
+  async getActivePaymentGateways(): Promise<PaymentGateway[]> {
+    return [];
+  }
+
+  async getPaymentGateway(id: string): Promise<PaymentGateway | undefined> {
+    return undefined;
+  }
+
+  async getPaymentGatewayByType(gatewayType: string): Promise<PaymentGateway | undefined> {
+    return undefined;
+  }
+
+  async updatePaymentGatewayHealth(
+    id: string,
+    success: boolean,
+    errorMessage?: string
+  ): Promise<void> {
+    // No-op for in-memory storage
+  }
+
+  async updatePaymentGatewayCredentials(
+    id: string,
+    credentials: any,
+    webhookSecret?: string
+  ): Promise<PaymentGateway | undefined> {
+    return undefined;
+  }
+
+  // Invoice Template operations (stubs for in-memory mode)
+  async getInvoiceTemplates(): Promise<InvoiceTemplate[]> {
+    return [];
+  }
+
+  async getActiveInvoiceTemplates(): Promise<InvoiceTemplate[]> {
+    return [];
+  }
+
+  async getInvoiceTemplate(id: string): Promise<InvoiceTemplate | undefined> {
+    return undefined;
+  }
+
+  async getInvoiceTemplateByKey(templateKey: string): Promise<InvoiceTemplate | undefined> {
+    return undefined;
+  }
+
+  async getDefaultInvoiceTemplate(): Promise<InvoiceTemplate | undefined> {
+    return undefined;
+  }
+
+  async updateQuoteWithPDF(
+    quoteId: string,
+    templateId: string,
+    pdfPath: string
+  ): Promise<Quote | undefined> {
+    return undefined;
   }
 }
 

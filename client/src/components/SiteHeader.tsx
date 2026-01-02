@@ -32,7 +32,7 @@ export function SiteHeader({ currentPage }: SiteHeaderProps) {
   ];
 
   return (
-    <header className="container mx-auto px-4 py-6">
+    <header className="container mx-auto px-4 py-6 sticky top-0 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <nav className="flex items-center justify-between">
         {/* Logo */}
         <Link href="/">
@@ -70,12 +70,16 @@ export function SiteHeader({ currentPage }: SiteHeaderProps) {
         {/* Auth Buttons, Theme Toggle & Mobile Menu */}
         <div className="flex items-center gap-4">
           <ThemeToggle />
-          <div className="hidden md:flex items-center gap-2">
+          {/* Always show primary auth actions; keep mobile menu for nav links */}
+          <div className="flex items-center gap-2">
             <Link href="/auth">
-              <Button variant="ghost">Sign In</Button>
+              <Button className="gap-2 bg-green-600 text-white hover:bg-green-700">
+                Sign In
+                <ArrowRight className="h-4 w-4" />
+              </Button>
             </Link>
             <Link href="/auth">
-              <Button className="gap-2">
+              <Button variant="outline" className="gap-2 border-green-600 text-green-700 hover:bg-green-50">
                 Get Started
                 <ArrowRight className="h-4 w-4" />
               </Button>
@@ -118,12 +122,13 @@ export function SiteHeader({ currentPage }: SiteHeaderProps) {
                 })}
                 <div className="flex flex-col gap-2 mt-4 pt-4 border-t">
                   <Link href="/auth">
-                    <Button variant="outline" className="w-full">
+                    <Button className="w-full gap-2 bg-green-600 text-white hover:bg-green-700">
                       Sign In
+                      <ArrowRight className="h-4 w-4" />
                     </Button>
                   </Link>
                   <Link href="/auth">
-                    <Button className="w-full gap-2">
+                    <Button variant="outline" className="w-full gap-2 border-green-600 text-green-700 hover:bg-green-50">
                       Get Started
                       <ArrowRight className="h-4 w-4" />
                     </Button>

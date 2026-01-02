@@ -312,13 +312,13 @@ Look for these logs:
 4. Grant permissions
 5. Complete onboarding flow:
    - Complete Profile page ✅
-   - Settings page (email pre-filled) ✅
-   - Can proceed to Masters ✅
+  - Master Settings (tab under Masters) ✅
+  - Can proceed to Master Settings ✅
    - NO redirect loop ✅
 
 #### Test 2: Existing User Login
 1. Login with existing user
-2. Should NOT be stuck at settings
+2. Should NOT be stuck at Master Settings
 3. Should reach dashboard
 
 #### Test 3: Database Verification
@@ -337,7 +337,7 @@ Deployment is successful when:
 - ✅ Database migration shows 0 missing emails
 - ✅ Google OAuth shows "PaperBox ERP" branding
 - ✅ New users complete onboarding without getting stuck
-- ✅ Existing users can login (not stuck at settings)
+- ✅ Existing users can login (not stuck at Master Settings)
 - ✅ All pages load correctly
 - ✅ Calculator accessible after onboarding
 

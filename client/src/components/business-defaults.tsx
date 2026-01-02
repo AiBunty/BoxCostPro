@@ -110,37 +110,22 @@ export default function BusinessDefaultsSettings() {
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="gstPercent">Default GST Rate (%)</Label>
-                <Input
-                  id="gstPercent"
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  max="100"
-                  value={formData.defaultGstPercent}
-                  onChange={(e) => handleChange('defaultGstPercent', parseFloat(e.target.value) || 0)}
-                  data-testid="input-gst-percent"
-                  className="w-full"
-                />
-                <p className="text-xs text-muted-foreground">
-                  This rate will be applied to all new quotes
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="gstNumber">GST Number (Optional)</Label>
-                <Input
-                  id="gstNumber"
-                  type="text"
-                  placeholder="e.g., 27AADCP1234A1ZV"
-                  value={formData.gstNumber || ''}
-                  onChange={(e) => handleChange('gstNumber', e.target.value || null)}
-                  data-testid="input-gst-number"
-                  className="w-full"
-                />
-              </div>
+            <div className="space-y-2 max-w-md">
+              <Label htmlFor="gstPercent">Default GST Rate (%)</Label>
+              <Input
+                id="gstPercent"
+                type="number"
+                step="0.5"
+                min="0"
+                max="100"
+                value={formData.defaultGstPercent}
+                onChange={(e) => handleChange('defaultGstPercent', parseFloat(e.target.value) || 0)}
+                data-testid="input-gst-percent"
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                This rate will be applied to all new quotes. GST Number is managed in Business Profile.
+              </p>
             </div>
 
             <div className="space-y-4 pt-4 border-t">

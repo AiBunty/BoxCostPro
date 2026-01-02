@@ -19,7 +19,7 @@ All core components are already implemented:
 - ✅ Storage methods (`server/storage.ts` lines 1900-1923)
 - ✅ Email configuration UI (`client/src/components/EmailConfigurationTab.tsx`)
 - ✅ Email analytics UI (`client/src/components/EmailAnalyticsTab.tsx`)
-- ✅ Settings page integration (Email tab)
+- ✅ Master Settings integration (Email tab)
 - ✅ Google OAuth integration
 - ✅ SMTP configuration with presets
 - ✅ Email verification and testing

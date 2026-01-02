@@ -105,7 +105,11 @@ INSERT INTO quote_item_versions (
   final_total_cost,
   item_data_snapshot,
   created_at
-)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM quote_versions v
+    WHERE v.quote_id = calc.id AND v.version_no = 1
+  )
+  RETURNING id, quote_id, final_total
 SELECT
   gen_random_uuid(),
   v.id AS quote_version_id,
@@ -138,7 +142,11 @@ CROSS JOIN LATERAL (
     FROM jsonb_array_elements(COALESCE(q.items, '[]'::jsonb)) AS item
   ) i
 ) t
-WHERE q.items IS NOT NULL AND jsonb_array_length(q.items) > 0;
+WHERE q.items IS NOT NULL AND jsonb_array_length(q.items) > 0
+  AND NOT EXISTS (
+    SELECT 1 FROM quote_item_versions iv
+    WHERE iv.quote_version_id = v.id AND iv.item_index = (idx - 1)
+  );
 
 -- Update quotes with active_version_id and total_value based on inserted version
 UPDATE quotes q
@@ -147,5 +155,15 @@ SET active_version_id = v.id,
     updated_at = NOW()
 FROM inserted_versions v
 WHERE q.id = v.quote_id;
+
+-- Fallback: if a version already exists (version_no = 1) and quotes.active_version_id is still NULL, set it
+UPDATE quotes q
+SET active_version_id = v2.id,
+    total_value = v2.final_total,
+    updated_at = NOW()
+FROM quote_versions v2
+WHERE q.active_version_id IS NULL
+  AND v2.quote_id = q.id
+  AND v2.version_no = 1;
 
 COMMIT;

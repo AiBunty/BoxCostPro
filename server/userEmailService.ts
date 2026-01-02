@@ -2,7 +2,7 @@
  * User Email Service - Per-User Email Configuration
  *
  * Allows each user to send emails from their own email address using:
- * 1. Google OAuth (via Supabase integration)
+ * 1. Google OAuth (for sending emails, separate from Clerk auth)
  * 2. Custom SMTP configuration
  *
  * This replaces the global emailService for user-specific emails

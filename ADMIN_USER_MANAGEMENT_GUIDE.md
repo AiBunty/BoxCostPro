@@ -22,7 +22,7 @@ BoxCostPro already has a **comprehensive onboarding and approval system** implem
    - Last Name
    - Mobile Number
    ↓
-3. Business Profile (/settings → Account Profile tab)
+3. Business Profile (/account → Account Profile)
    - Company Name
    - Owner Name
    - Email
@@ -44,7 +44,7 @@ BoxCostPro already has a **comprehensive onboarding and approval system** implem
    - GST Registration status
    - Round-off settings
    ↓
-7. Quote Terms Setup (/settings → Templates tab)
+7. Quote Terms Setup (/masters?tab=settings → Templates)
    - Payment terms
    - Delivery timeline
    ↓

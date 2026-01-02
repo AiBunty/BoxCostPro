@@ -119,8 +119,8 @@ describe('Onboarding redirect sequence', () => {
       await queryClient.invalidateQueries({ queryKey: ['/api/flute-settings/status'] });
     });
 
-    // Should redirect to Settings page
-    await waitFor(() => expect(screen.getByText(/^Settings$/i)).toBeTruthy());
+    // Should redirect to Master Settings (under Masters)
+    await waitFor(() => expect(screen.getByText(/^Master Settings$/i)).toBeTruthy());
 
     // Fill and save Business Profile on Settings
     const companyInput = screen.getByTestId('input-company') as HTMLInputElement;

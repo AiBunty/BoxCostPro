@@ -1,0 +1,257 @@
+I want to sell this app as a Subscription model on the Android App and website 
+Each User Should be Able to save the data of the Party and the costing that they have made, recall it by search, edit it, and save it again. While saving Data to the database, it should be as if I rewrite the Old data or save it as new
+Search options should be there to search Party-wise, box-wise, and Size-wise
+
+Also, a Checkbox System is to be added by which the user can Select Which Items to be considered for sending via WhatsApp or email
+Add an Option to sign up for Software via Google, Facebook, email, or Phone No
+
+
+
+WhatsApp message to be drafted in Below Manner
+
+/* WhatsApp Message Template Output */
+const generateWhatsAppMessage = () => {
+    // ... (All dynamic logic for calculating item costs and pulling inputs) ...
+    
+    let message = `👋 Dear Valued "Party profile"
+
+📄 Here is your quote from *Business Profile*:
+
+➖➖➖➖➖➖➖➖➖➖
+*Item 1*
+📦 *Box Size :* (0x0x0 OD mm)
+🏷️ *Item Name:* 🏗️ *Board:* 5 Ply
+🌊 *Flute:* BC
+🎨 *Printing:* Plain Box
+
+📝 *Paper Spec:*
+  - Outer (L1): 180 GSM / 24 BF (Golden)
+  - Flute (F1): 120 GSM / 18 BF (Natural/Kraft)
+  - Inner (L3): 120 GSM / 18 BF (Natural/Kraft)
+
+🔢 *Quantity:* 1 Pcs
+💰 *Total Rate (Excl. GST):* ₹0.00 /pc
+💵 *Total Rate (Incl. GST 5%):* ₹0.00 /pc
+➖➖➖➖➖➖➖➖➖➖
+🏆 *Grand Total Value (Incl. GST): ₹0.00*
+
+📝 *Payment Terms:* 100% Advance
+🚚 *Delivery Time:* Delivery 10 days after receipt of Purchase order
+
+🙏 Thank you for considering our quote!
+
+Below are the Full details of the Business Profile to be mentioned as per Input in Business Profile
+
+*Ventura Packagers Private Limited*
+📞 0253-4035062
+📧 venturapackagers@gmail.com
+🇮🇳 W43H MIDC AMBAD
+🏢 GST: 27AAACV3461F1ZG
+🌐 http://www.venturapackagers.com/
+📱 https://www.instagram.com/venturapackagers/
+📍 https://maps.app.goo.gl/vYbDHFm3ktAvhszR8`;
+    
+    return message;
+};
+
+
+
+
+Format for Email as below
+
+/* Email Content HTML Template Output */
+const generateEmailContent = () => {
+    // ... (All dynamic logic for calculating item costs and pulling inputs) ...
+    
+    let emailBody = `
+<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
+    <h2 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; margin-bottom: 20px;">Quotation for Corrugated Shipping Boxes</h2>
+    
+    <table style="width: 100%; margin-bottom: 20px;">
+        <tr>
+            <td style="padding: 2px 0; width: 100px;"><strong>Date:</strong></td>
+            <td style="padding: 2px 0;">December 12, 2025 (Current Date Placeholder)</td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0; vertical-align: top;"><strong>To:</strong></td>
+            <td style="padding: 2px 0; vertical-align: top;">Valued Customer<br></td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0;"><strong>From:</strong></td>
+            <td style="padding: 2px 0;">Ventura Packagers Private Limited</td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0;"><strong>Contact:</strong></td>
+            <td style="padding: 2px 0;">0253-4035062, venturapackagers@gmail.com</td>
+        </tr>
+        <tr>
+            <td style="padding: 2px 0;"><strong>Subject:</strong></td>
+            <td style="padding: 2px 0;">Quote for Corrugated Packaging</td>
+        </tr>
+    </table>
+
+    <p style="margin-bottom: 20px;">We are pleased to provide you with the following quotation for the supply of high-quality, heavy-duty corrugated shipping boxes as per your specifications:</p>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+        <thead>
+            <tr style="background-color: #1e40af; color: white;">
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Description</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Specifications</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: left;">Box Style</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: center;">BS (kg/cm²)</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Unit Price (₹)</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Quantity</th>
+                <th style="border: 1px solid #ccc; padding: 10px; text-align: right;">Total Price (₹)</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>Subtotal</strong></td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;"><strong>0.00</strong></td>
+            </tr>
+            <tr>
+                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right;">Goods and Services Tax (GST) 5% on Subtotal</td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right;">0.00</td>
+            </tr>
+            <tr style="background-color: #f0f9ff;">
+                <td colspan="6" style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>Grand Total</strong></td>
+                <td style="border: 1px solid #ccc; padding: 10px; text-align: right; color: #1e40af;"><strong>0.00</strong></td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <div style="margin-top: 30px; border-top: 2px solid #eee; padding-top: 20px;">
+        <h3 style="color: #1e40af; font-size: 16px; margin-bottom: 10px; text-decoration: underline;">Terms & Conditions</h3>
+        <ul style="padding-left: 20px; margin: 0; line-height: 1.8;">
+            <li><strong>Validity:</strong> This quote is valid for 30 days from the date of issue.</li>
+            <li><strong>Delivery:</strong> Delivery 10 days after receipt of Purchase order</li>
+            <li><strong>Payment:</strong> 100% Advance</li>
+            <li><strong>Minimum Order Quantity (MOQ):</strong> The quoted price is based on the stated quantity of 0 units. Any change in quantity may affect the unit price.</li>
+        </ul>
+    </div>
+    
+    <div style="margin-top: 40px;">
+        <p>Thank you for considering our quote. Please feel free to contact us if you have any questions or require any modifications.</p>
+        <p style="margin-top: 30px; font-weight: bold;">Ventura Packagers Private Limited</p>
+        <p style="margin-top: 50px; border-top: 1px dashed #999; width: 200px; padding-top: 5px;">[Signature Line]</p>
+    </div>
+</div>`;
+    
+    return emailBody;
+};
+
+
+
+Provide a Control panel for Owner of the app to Manage Subricption and Offer Coupon Codes, Send trial email link to customer, Set pricing and Make Nessesary changes. Also Need an Option to add Payment gateway from Razorpay for swift payments for the customer who are willing to take the subscription
+
+
+Also, create a Chatbot which can be installed on the Website of Customers, which will use the help of this Costing calculator to make the costing
+
+For Fluting Factor, make a Setting Button Where the user will set the Fluting Factor for each flute as per his machine for A,B,C,E,F so no need to input in Paper Layer User has to Just select the Fluting Combination like for 3Ply A,B.C or E  For 5 Ply BB,AB,BC and all Permutation Combination and so on for 7 and 9 Ply combination  while Selecting Ply
+
+
+Since the Fluting Factor is defined in the Setting, no need to show Fluting Factors in Paper Specifications (Layer by Layer), so Fluting factors are to be considered from the settings only.
+
+When an Item is added to a Quote, show it with details in a table format in Row & Column, Each Cost Separately. There will be a Check box Option Over the table to decide which items selected only will be in WhatsApp and email draft for sending it to the customer
+
+Also, there should be an Option for the customer to download data in Excel, So Create a Report page where it will show All The Costing Boxes made for Particular party and same can be exported for use in excel
+
+Also, there should be an Option to upload the data in Bulk via Excel and Download Option for Sample Upload Data Excel File
+
+Replace Load CSV Download CSV with Excel
+Also name the Liner Layer as L1,L2,L3 and Fluting Layer as F1,F2,F3
+
+Also Add Option to Add, Edit , Search Party in Party Profile , Same for Business Profile
+
+
+
+
+
+When we Press the Edit button Under Paper Specification Fluting Factor is there , Remove it as All Fluting calculations to be taken only from the Fluting Settings Button
+
+No Need to show the formula directly. Insert an 'i logo when the mouse hovers over it, and it will show the formula. The same applies to the Burst Strength (BS) Formula. Same for Formula: Weight
+
+Under Quote Items: Add a Function to Edit and Delete Quote after we add the Item to Quote 
+
+Also, the Table Created will have a check box in every column, So we can select the Cost input we want to show to customers 
+it will be great if it can come below Fixed & Manufacturing Costs Taking Full Row so we dont need to scroll it much
+
+Keep Default Conversion Rs.15
+
+Also Email draft has Only Codes in it , And not Rich Text Quote format
+
+
+
+
+AiBunty Vs Flexifunnels
+
+AiBunty Vs Tagmango
+
+AiBunty Vs Graphy
+
+AiBunty Vs GoHighLevel
+
+AiBunty Vs Kajabi
+
+AiBunty vs AiSensy
+
+AiBunty vs Skool
+
+
+
+
+
+You are building a Corrugated Box Costing SaaS.
+
+Implement a feature to automatically set default paper types
+for a user during first-time setup.
+
+Core Requirements:
+
+1. Default Paper Types
+When a user opens “Paper Price Settings” for the first time,
+auto-create the following paper types for that user:
+
+- Kraft/Natural
+- Golden Kraft
+- Testliner
+- Virgin Kraft Liner
+- White Kraft Liner
+- White Top Testliner
+- Duplex Grey Back (LWC)
+- Duplex Grey Back (HWC)
+- Semi Chemical Fluting
+- Recycled Fluting
+- Bagass (Agro based)
+
+2. Default Behavior
+- Set premiumAmount = 0 for all default paper types
+- Allow user to edit, rename, or delete these paper types
+- Allow user to add unlimited new paper types
+
+3. One-Time Setup Rule
+- Insert default paper types ONLY if the user has no existing paper types
+- Do NOT insert defaults again if user already has paper data
+
+4. Data Model
+Store paper types per user:
+- userId
+- paperName
+- premiumAmount
+
+5. UI Requirements
+- Show default paper types in Paper Price Settings
+- Provide “+ Add New Paper Type” option
+- Clearly indicate paper types are editable
+
+Output Required:
+- First-time setup logic
+- Default paper type insertion logic
+- Clean, maintainable code
+
+
+
+
+Also When we Click Edit Buttons its Pops Up tis windows which is not  useful for editing the code fully, it should better transfer all values to main quote and can be saved again as Update Quote

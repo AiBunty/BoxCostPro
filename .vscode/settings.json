@@ -1,3 +1,11 @@
 {
-    "claudeCodeChat.permissions.yoloMode": true
+    "claudeCodeChat.permissions.yoloMode": true,
+    "terminal.integrated.shellIntegration.enabled": true,
+    "github.copilot.enable": {
+        "*": true,
+        "yaml": true,
+        "plaintext": true,
+        "markdown": true,
+        "terminal": true
+    }
 }

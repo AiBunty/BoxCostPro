@@ -1,0 +1,195 @@
+import type { LayerSpec } from "@shared/schema";
+
+// Unit conversion utilities
+export const mmToInches = (mm: number): number => mm / 25.4;
+export const inchesToMm = (inches: number): number => inches * 25.4;
+
+// McKee Formula for Box Compression Test (BCT)
+// BCT (Kg) = 5.87 * ECT (kN/m) * sqrt(Board Thickness (mm) * Box Perimeter (mm))
+export function calculateMcKeeFormula(params: {
+  ect: number; // Edge Crush Test in kN/m
+  boardThickness: number; // Board thickness in mm
+  boxPerimeter: number; // Box perimeter in mm
+}): number {
+  const { ect, boardThickness, boxPerimeter } = params;
+  // BCT = 5.87 * ECT * √(Board Thickness * Box Perimeter)
+  return 5.87 * ect * Math.sqrt((boardThickness / 10) * boxPerimeter); // Convert mm thickness to cm
+}
+
+// Calculate Edge Crush Test (ECT) based on RCT values of each layer
+// ECT = RCT Liners + (Flute Factor * RCT Fluting) for each layer
+export function calculateECT(layerSpecs: LayerSpec[]): number {
+  if (layerSpecs.length === 0) return 3.0; // Default ECT
+  
+  let ectValue = 0;
+  for (const spec of layerSpecs) {
+    const rct = spec.rctValue || 0;
+    if (spec.layerType === 'liner') {
+      // For liner: add RCT directly
+      ectValue += rct;
+    } else {
+      // For flute: multiply RCT by fluting factor
+      const flutingFactor = spec.flutingFactor || 1.5;
+      ectValue += rct * flutingFactor;
+    }
+  }
+  
+  return ectValue; // kN/m
+}
+
+// Calculate board thickness based on ply and layer specifications
+export function calculateBoardThickness(
+  ply: string,
+  layerSpecs: LayerSpec[],
+  defaultThicknessMap: Record<string, number>
+): number {
+  // If custom layer specs are provided with fluting factors, calculate from those
+  if (layerSpecs.length > 0) {
+    return layerSpecs.reduce((total, spec) => {
+      const baseThickness = spec.gsm / 1000; // Convert GSM to approximate mm
+      const flutingFactor = spec.flutingFactor || 1;
+      return total + (baseThickness * flutingFactor);
+    }, 0);
+  }
+  
+  // Otherwise use default thickness map
+  return defaultThicknessMap[ply] || 3.5;
+}
+
+// Calculate sheet dimensions for RSC box
+export function calculateRSCSheet(params: {
+  length: number; // mm
+  width: number; // mm
+  height: number; // mm
+  glueFlap: number; // mm
+  deckleAllowance: number; // mm
+  maxLengthThreshold?: number; // mm
+  ply: string;
+}): {
+  sheetLength: number;
+  sheetWidth: number;
+  additionalFlapApplied: boolean;
+} {
+  const { length, width, height, glueFlap, deckleAllowance, maxLengthThreshold, ply } = params;
+  
+  let sheetLength = (2 * (length + width)) + glueFlap;
+  let additionalFlapApplied = false;
+  
+  // Check if additional flap needed for 2-pcs boxes (length threshold logic)
+  if (maxLengthThreshold && sheetLength > maxLengthThreshold) {
+    const glueFlapDefaults: Record<string, number> = {
+      '1': 50, '3': 50, '5': 60, '7': 70, '9': 80,
+    };
+    const defaultGlueFlap = glueFlapDefaults[ply] || 50;
+    sheetLength += defaultGlueFlap; // Add additional flap
+    additionalFlapApplied = true;
+  }
+  
+  const sheetWidth = width + height + deckleAllowance;
+  
+  return { sheetLength, sheetWidth, additionalFlapApplied };
+}
+
+// Calculate sheet dimensions for flat sheet
+export function calculateFlatSheet(params: {
+  length: number; // mm
+  width: number; // mm
+  allowance: number; // mm
+}): {
+  sheetLength: number;
+  sheetWidth: number;
+} {
+  const { length, width, allowance } = params;
+  return {
+    sheetLength: length + allowance,
+    sheetWidth: width + allowance,
+  };
+}
+
+// Calculate weight of individual layer using: Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000
+export function calculateLayerWeight(params: {
+  gsm: number;
+  flutingFactor: number;
+  reelSize: number; // mm (W-blank / Deckle)
+  sheetLength: number; // mm (L-blank)
+}): number {
+  const { gsm, flutingFactor, reelSize, sheetLength } = params;
+  // Weight = (GSM × Fluting × Reel Size × Sheet Cut Length) / 1,000,000
+  return (gsm * flutingFactor * reelSize * sheetLength) / 1_000_000; // Kg
+}
+
+// Calculate sheet weight using formula: Weight = (Length in m × Width in m × Total GSM) / 1,000
+export function calculateSheetWeight(params: {
+  sheetLength: number; // mm
+  sheetWidth: number; // mm
+  layerSpecs: LayerSpec[];
+  ply: string;
+}): { totalWeight: number; layerWeights: number[] } {
+  const { sheetLength, sheetWidth, layerSpecs, ply } = params;
+  
+  // Calculate Total GSM: Sum of all layer GSMs (with fluting factor applied for flute layers)
+  const totalGSM = layerSpecs.reduce((sum, spec) => {
+    const flutingFactor = spec.layerType === 'liner' ? 1.0 : (spec.flutingFactor || 1.5);
+    return sum + (spec.gsm * flutingFactor);
+  }, 0);
+  
+  // Convert mm to meters: divide by 1000
+  // Calculate weight: (Length in m × Width in m × Total GSM) / 1000
+  // Which equals: (sheetLength × sheetWidth × totalGSM) / (1000 × 1000 × 1000)
+  const totalWeight = (sheetLength * sheetWidth * totalGSM) / 1_000_000_000; // Kg
+  
+  // For breakdown, calculate individual layer weights proportionally
+  const layerWeights = layerSpecs.map(spec => {
+    const flutingFactor = spec.layerType === 'liner' ? 1.0 : (spec.flutingFactor || 1.5);
+    const layerGSM = spec.gsm * flutingFactor;
+    // Each layer's weight is proportional to its GSM contribution
+    return (sheetLength * sheetWidth * layerGSM) / 1_000_000_000;
+  });
+  
+  return { totalWeight, layerWeights }; // Kg
+}
+
+// Calculate Burst Strength (BS) - per layer: Liner GSM*BF/1000 + Flute GSM*BF/2000
+export function calculateBurstStrength(layerSpecs: LayerSpec[]): number {
+  if (layerSpecs.length === 0) return 12; // default
+  
+  // Calculate BS for each layer and sum them
+  const totalBS = layerSpecs.reduce((total, spec) => {
+    const bf = spec.bf || 14;
+    if (spec.layerType === 'liner') {
+      // Liner: GSM * BF / 1000
+      return total + (spec.gsm * bf / 1000);
+    } else {
+      // Flute: GSM * BF / 2000
+      return total + (spec.gsm * bf / 2000);
+    }
+  }, 0);
+  
+  return totalBS; // kg/cm
+}
+
+// Calculate paper cost
+export function calculatePaperCost(weight: number, layerSpecs: LayerSpec[]): number {
+  if (layerSpecs.length === 0) return weight * 55; // default rate
+  
+  const avgRate = layerSpecs.reduce((sum, spec) => sum + spec.rate, 0) / layerSpecs.length;
+  return weight * avgRate;
+}
+
+// Calculate total manufacturing costs
+export function calculateTotalCost(params: {
+  paperCost: number;
+  printingCost: number;
+  laminationCost: number;
+  varnishCost: number;
+  dieCost: number;
+  punchingCost: number;
+  markup?: number; // percentage markup, default 15%
+}): number {
+  const { paperCost, printingCost, laminationCost, varnishCost, dieCost, punchingCost, markup = 15 } = params;
+  
+  const totalFixedCosts = printingCost + laminationCost + varnishCost + dieCost + punchingCost;
+  const totalCost = paperCost + totalFixedCosts;
+  
+  return totalCost * (1 + markup / 100);
+}

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tax Invoice - {{invoice.number}}</title>
+  <style>
+    /* PDF-SAFE CSS - Table-based layout, no flexbox/grid */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #000;
+      background: #fff;
+    }
+
+    .invoice-container {
+      width: 100%;
+      max-width: 210mm; /* A4 width */
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* Header */
+    .invoice-header {
+      text-align: center;
+      border-bottom: 2px solid #000;
+      padding-bottom: 10px;
+      margin-bottom: 15px;
+    }
+
+    .invoice-header h1 {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .invoice-meta {
+      margin-top: 10px;
+      font-size: 11px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 15px;
+    }
+
+    table.bordered {
+      border: 1px solid #000;
+    }
+
+    table.bordered th,
+    table.bordered td {
+      border: 1px solid #000;
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+
+    table th {
+      background: #f0f0f0;
+      font-weight: bold;
+      text-align: left;
+    }
+
+    table.bordered th {
+      background: #e0e0e0;
+    }
+
+    table td.right {
+      text-align: right;
+    }
+
+    table td.center {
+      text-align: center;
+    }
+
+    /* Party Details */
+    .party-details-table {
+      margin-bottom: 15px;
+    }
+
+    .party-details-table td {
+      padding: 8px;
+    }
+
+    .party-label {
+      font-weight: bold;
+      width: 25%;
+    }
+
+    .party-heading {
+      font-weight: bold;
+      font-size: 13px;
+      text-decoration: underline;
+      padding-bottom: 5px !important;
+    }
+
+    /* Line Items */
+    .line-items th {
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .line-items td {
+      font-size: 11px;
+    }
+
+    /* Totals */
+    .totals-table {
+      width: 50%;
+      margin-left: auto;
+    }
+
+    .totals-table td {
+      padding: 5px 8px;
+    }
+
+    .totals-table .total-label {
+      font-weight: bold;
+      text-align: right;
+    }
+
+    .totals-table .total-value {
+      text-align: right;
+      font-weight: bold;
+    }
+
+    .grand-total {
+      background: #e0e0e0;
+      font-size: 13px;
+    }
+
+    /* Amount in Words */
+    .amount-words {
+      border: 1px solid #000;
+      padding: 8px;
+      margin-bottom: 15px;
+      font-weight: bold;
+    }
+
+    /* Terms */
+    .terms-section {
+      margin-top: 20px;
+      margin-bottom: 20px;
+    }
+
+    .terms-section h3 {
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #000;
+      padding-bottom: 3px;
+    }
+
+    .terms-section ol {
+      margin-left: 20px;
+      font-size: 10px;
+      line-height: 1.6;
+    }
+
+    .terms-section li {
+      margin-bottom: 4px;
+    }
+
+    /* Footer */
+    .invoice-footer {
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 1px solid #000;
+    }
+
+    .signature-section {
+      text-align: right;
+      margin-top: 40px;
+    }
+
+    .signature-line {
+      border-top: 1px solid #000;
+      width: 200px;
+      margin-left: auto;
+      margin-top: 50px;
+      padding-top: 5px;
+      text-align: center;
+      font-size: 10px;
+    }
+
+    .system-notice {
+      text-align: center;
+      font-size: 9px;
+      color: #666;
+      margin-top: 20px;
+      font-style: italic;
+    }
+
+    /* Print-friendly */
+    @media print {
+      .invoice-container {
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+
+    <!-- Header -->
+    <div class="invoice-header">
+      <h1>TAX INVOICE</h1>
+      <div class="invoice-meta">
+        Invoice No: <strong>{{invoice.number}}</strong> |
+        Date: <strong>{{invoice.date}}</strong> |
+        Financial Year: <strong>{{invoice.financial_year}}</strong>
+      </div>
+    </div>
+
+    <!-- Seller & Buyer Details -->
+    <table class="party-details-table bordered">
+      <tr>
+        <td colspan="2" class="party-heading">SELLER DETAILS</td>
+        <td colspan="2" class="party-heading">BUYER DETAILS</td>
+      </tr>
+      <tr>
+        <td class="party-label">Company Name:</td>
+        <td><strong>{{seller.company_name}}</strong></td>
+        <td class="party-label">Company Name:</td>
+        <td><strong>{{buyer.company_name}}</strong></td>
+      </tr>
+      <tr>
+        <td class="party-label">GSTIN:</td>
+        <td>{{seller.gstin}}</td>
+        <td class="party-label">GSTIN:</td>
+        <td>{{buyer.gstin}}</td>
+      </tr>
+      <tr>
+        <td class="party-label">PAN:</td>
+        <td>{{seller.pan}}</td>
+        <td class="party-label">Address:</td>
+        <td>{{buyer.address}}</td>
+      </tr>
+      <tr>
+        <td class="party-label">Address:</td>
+        <td>{{seller.address}}</td>
+        <td class="party-label">Place of Supply:</td>
+        <td>{{buyer.place_of_supply}}</td>
+      </tr>
+      <tr>
+        <td class="party-label">Phone:</td>
+        <td>{{seller.phone}}</td>
+        <td class="party-label">Phone:</td>
+        <td>{{buyer.phone}}</td>
+      </tr>
+      <tr>
+        <td class="party-label">Email:</td>
+        <td>{{seller.email}}</td>
+        <td class="party-label">Email:</td>
+        <td>{{buyer.email}}</td>
+      </tr>
+    </table>
+
+    <!-- Line Items -->
+    <table class="line-items bordered">
+      <thead>
+        <tr>
+          <th style="width: 5%;">S.No</th>
+          <th style="width: 30%;">Description of Services</th>
+          <th style="width: 10%;">SAC Code</th>
+          <th style="width: 8%;">Qty</th>
+          <th style="width: 10%;">Rate</th>
+          <th style="width: 12%;">Taxable Value</th>
+          <th style="width: 8%;">CGST %</th>
+          <th style="width: 8%;">SGST %</th>
+          <th style="width: 8%;">IGST %</th>
+          <th style="width: 12%;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td class="center">{{add @index 1}}</td>
+          <td>{{this.description}}</td>
+          <td class="center">{{this.sac_code}}</td>
+          <td class="center">{{this.quantity}}</td>
+          <td class="right">₹{{this.rate}}</td>
+          <td class="right">₹{{this.taxable_value}}</td>
+          <td class="right">{{this.cgst_rate}}%</td>
+          <td class="right">{{this.sgst_rate}}%</td>
+          <td class="right">{{this.igst_rate}}%</td>
+          <td class="right"><strong>₹{{this.total}}</strong></td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Tax Summary & Totals -->
+    <table class="totals-table bordered">
+      <tr>
+        <td class="total-label">Subtotal (Taxable Value):</td>
+        <td class="total-value right">₹{{totals.subtotal}}</td>
+      </tr>
+      {{#if totals.cgst}}
+      <tr>
+        <td class="total-label">CGST:</td>
+        <td class="total-value right">₹{{totals.cgst}}</td>
+      </tr>
+      <tr>
+        <td class="total-label">SGST:</td>
+        <td class="total-value right">₹{{totals.sgst}}</td>
+      </tr>
+      {{/if}}
+      {{#if totals.igst}}
+      <tr>
+        <td class="total-label">IGST:</td>
+        <td class="total-value right">₹{{totals.igst}}</td>
+      </tr>
+      {{/if}}
+      <tr class="grand-total">
+        <td class="total-label">GRAND TOTAL:</td>
+        <td class="total-value right">₹{{totals.grand_total}}</td>
+      </tr>
+    </table>
+
+    <!-- Amount in Words -->
+    <div class="amount-words">
+      Amount in Words: {{totals.amount_in_words}}
+    </div>
+
+    <!-- Payment Details -->
+    {{#if payment}}
+    <table class="bordered" style="margin-bottom: 15px;">
+      <tr>
+        <td style="width: 25%; font-weight: bold;">Payment Method:</td>
+        <td>{{payment.method}}</td>
+        <td style="width: 25%; font-weight: bold;">Transaction Reference:</td>
+        <td>{{payment.reference}}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold;">Transaction Date:</td>
+        <td colspan="3">{{payment.date}}</td>
+      </tr>
+    </table>
+    {{/if}}
+
+    <!-- Terms & Conditions -->
+    <div class="terms-section">
+      <h3>TERMS & CONDITIONS</h3>
+      <ol>
+        <li>All payments are non-refundable as per the subscription agreement.</li>
+        <li>This invoice is for subscription services provided under the SaaS model.</li>
+        <li>The subscriber is responsible for ensuring GST compliance in their jurisdiction.</li>
+        <li>Any disputes arising from this invoice shall be subject to the jurisdiction of Indian courts.</li>
+        <li>Interest at 18% per annum will be charged on overdue payments beyond 30 days.</li>
+        <li>This is a system-generated GST-compliant invoice as per CGST Act, 2017.</li>
+      </ol>
+    </div>
+
+    <!-- Footer & Signature -->
+    <div class="invoice-footer">
+      <div class="signature-section">
+        <div>For <strong>{{seller.company_name}}</strong></div>
+        <div class="signature-line">
+          Authorized Signatory
+        </div>
+      </div>
+
+      <div class="system-notice">
+        This is a computer-generated invoice and does not require a physical signature.<br/>
+        Generated on {{invoice.generated_at}}
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

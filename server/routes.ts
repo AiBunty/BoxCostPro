@@ -1,11 +1,14 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
-import { supabaseAuthMiddleware, requireSupabaseAuth, requireOwner as requireSupabaseOwner, requireAdmin, requireSupportAgent, requireSupportManager, requireSuperAdmin, hasRoleLevel } from "./supabaseAuth";
-import { createOnboardingGuard } from "./middleware/onboardingGuard";
-import { getNeonAuthUser } from "./neonAuth";
+import { createOnboardingGuard, onboardingRateLimiter } from "./middleware/onboardingGuard";
+import { requireAdminAuth, requireSuperAdmin as requireSuperAdminAuth, requireSupportAgent, requireSupportManager } from "./middleware/adminAuth";
+import { requireWhitelistedIP } from "./middleware/ipWhitelist";
+import { db } from "./db";
+import { users, allowedAdminIps, adminAuditLogs } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { getClerkUser } from "./clerkAuth";
+import { ensureTenantContext } from "./tenantContext";
 import { logAuthEventAsync, notifyAdminAsync, sendWelcomeEmail } from "./services/authService";
 import { registerAdminRoutes } from "./routes/adminRoutes";
 import bcrypt from "bcrypt";
@@ -40,14 +43,24 @@ import {
   insertSupportMessageSchema
 } from "@shared/schema";
 
-// Combined auth middleware - checks Clerk, Neon Auth, Supabase JWT, and session-based auth
+// Combined auth middleware - checks Clerk authentication
 const combinedAuth = async (req: any, res: Response, next: NextFunction) => {
   // First check Clerk Auth
   const clerkUser = await getClerkUser(req);
   if (clerkUser) {
     let appUser = await storage.getUserByClerkId(clerkUser.id);
 
-    // If user doesn't exist in our database, create them
+    // If not found by Clerk ID, check by email (user may exist from before)
+    if (!appUser && clerkUser.email) {
+      appUser = await storage.getUserByEmail(clerkUser.email);
+      if (appUser) {
+        // Link existing user to Clerk ID
+        console.log('[Clerk Auth] Linking existing user to Clerk ID:', clerkUser.email);
+        await storage.updateUser(appUser.id, { clerkUserId: clerkUser.id });
+      }
+    }
+
+    // If user still doesn't exist in our database, create them (but check for admin restrictions)
     if (!appUser) {
       console.log('[Clerk Auth] Creating new user for Clerk user:', clerkUser.email);
 
@@ -69,57 +82,29 @@ const combinedAuth = async (req: any, res: Response, next: NextFunction) => {
       console.log('[Clerk Auth] Created user:', appUser.id, 'Role:', appUser.role);
     }
 
+    console.log('[combinedAuth] Clerk auth successful:', {
+      clerkUserId: clerkUser.id,
+      appUserId: appUser.id,
+      email: appUser.email,
+      role: appUser.role
+    });
+
+    // Ensure tenant context exists for Clerk users and attach to request
+    try {
+      const tenantContext = await ensureTenantContext(appUser.id);
+      req.tenantId = tenantContext?.tenantId;
+      req.tenantContext = tenantContext;
+    } catch (err) {
+      console.warn('[combinedAuth] Failed to resolve tenant context for Clerk user:', err);
+    }
+
     req.userId = appUser.id;
     req.clerkUser = clerkUser;
     req.user = appUser;
     return next();
   }
 
-  // Then check Neon Auth (legacy, will be removed)
-  const neonUser = await getNeonAuthUser(req);
-  if (neonUser) {
-    let appUser = await storage.getUserByNeonAuthId(neonUser.id);
-
-    // If user doesn't exist in our database, create them
-    if (!appUser) {
-      console.log('[Neon Auth] Creating new user for Neon Auth user:', neonUser.email);
-
-      // Check if this is the first user (should be super admin)
-      const existingUsers = await storage.getAllUsers();
-      const isFirstUser = existingUsers.length === 0;
-
-      // Extract name from Neon Auth user
-      const nameParts = (neonUser.name || neonUser.email?.split('@')[0] || 'User').split(' ');
-      const firstName = nameParts[0] || 'User';
-      const lastName = nameParts.slice(1).join(' ') || '';
-
-      // Create user in our database
-      appUser = await storage.upsertUser({
-        email: neonUser.email || '',
-        neonAuthUserId: neonUser.id,
-        firstName,
-        lastName,
-        profileImageUrl: neonUser.image || null,
-        role: isFirstUser ? 'super_admin' : 'user', // First user is super admin
-        emailVerified: neonUser.emailVerified || false,
-      });
-
-      console.log('[Neon Auth] Created user:', appUser.id, 'Role:', appUser.role);
-    }
-
-    req.userId = appUser.id;
-    req.neonAuthUser = neonUser;
-    req.user = appUser;
-    return next();
-  }
-
-  // Then check Supabase auth
-  if (req.supabaseUser) {
-    req.userId = req.supabaseUser.id;
-    return next();
-  }
-
-  // Fall back to session-based auth
+  // Fall back to session-based auth (for existing sessions)
   if (req.user?.claims?.sub) {
     req.userId = req.user.claims.sub;
     return next();
@@ -138,7 +123,7 @@ const combinedAuth = async (req: any, res: Response, next: NextFunction) => {
 
 // Owner authorization middleware
 const isOwner = async (req: any, res: Response, next: NextFunction) => {
-  const userId = req.userId || req.supabaseUser?.id || req.user?.claims?.sub;
+  const userId = req.userId;
   if (!userId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
@@ -150,45 +135,207 @@ const isOwner = async (req: any, res: Response, next: NextFunction) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // CRITICAL: Always setup session middleware (required for Google OAuth)
+  // Trust proxy for proper HTTPS handling
   app.set("trust proxy", 1);
 
-  // Setup Clerk authentication middleware
-  const { clerkMiddleware } = await import('@clerk/express');
-  app.use(clerkMiddleware({
-    secretKey: process.env.CLERK_SECRET_KEY,
-    publishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY,
-  }));
-
-  // Import and configure session
-  const { getSession } = await import('./replitAuth');
-  app.use(getSession());
-
-  // Setup passport for session serialization
-  const passport = await import('passport');
-  app.use(passport.default.initialize());
-  app.use(passport.default.session());
-
-  // Basic passport serialization (for Google OAuth sessions)
-  passport.default.serializeUser((user: any, cb) => cb(null, user));
-  passport.default.deserializeUser((user: any, cb) => cb(null, user));
-
-  // Setup Replit OIDC only if configured (optional, for Replit-hosted auth)
-  if (process.env.REPL_ID && process.env.ISSUER_URL) {
-    await setupAuth(app);
-  } else {
-    console.warn('Replit OIDC not configured (REPL_ID/ISSUER_URL missing). Using session-only mode for Google OAuth.');
-  }
-  
-  // Add Supabase JWT auth middleware globally
-  app.use(supabaseAuthMiddleware);
+  // NOTE: Clerk middleware is already set up in app.ts
+  // All authentication is handled by Clerk
 
   // ========== CRITICAL: ONBOARDING GUARD ==========
   // BLOCKS all protected routes until user is verified
   // This is BACKEND enforcement - users CANNOT bypass via API calls
   app.use(createOnboardingGuard(storage));
 
-  // Auth routes - unified for both Supabase JWT and session auth
+  // ========== HEALTH CHECK ENDPOINTS ==========
+  // Public health check for load balancers and monitoring
+  const { getSystemHealth } = await import('./utils/healthChecks');
+  
+  app.get('/health', async (_req, res) => {
+    try {
+      const health = await getSystemHealth();
+      const statusCode = health.status === 'ok' ? 200 : health.status === 'degraded' ? 200 : 503;
+      res.status(statusCode).json(health);
+    } catch (error: any) {
+      console.error('[Health Check] Error:', error);
+      res.status(503).json({
+        status: 'error',
+        message: 'Health check failed',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  // ========== AUTH HEALTH CHECK ==========
+  // Verifies Clerk is the only auth provider and no legacy auth is present
+  app.get('/api/system/health/auth', async (_req, res) => {
+    const forbiddenEnvVars: string[] = [];
+    
+    // Check for forbidden environment variables
+    const FORBIDDEN_PATTERNS = [
+      'SUPABASE_URL',
+      'SUPABASE_ANON_KEY', 
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'NEON_AUTH_JWKS_URL',
+      'NEON_AUTH_URL',
+      'GOOGLE_OAUTH_CLIENT_ID',
+      'GOOGLE_OAUTH_CLIENT_SECRET',
+    ];
+    
+    for (const pattern of FORBIDDEN_PATTERNS) {
+      if (process.env[pattern]) {
+        forbiddenEnvVars.push(pattern);
+      }
+    }
+    
+    // Check Clerk is configured
+    const clerkConfigured = !!(
+      process.env.CLERK_SECRET_KEY && 
+      (process.env.VITE_CLERK_PUBLISHABLE_KEY || process.env.CLERK_PUBLISHABLE_KEY)
+    );
+    
+    const authHealth = {
+      auth_provider: 'clerk',
+      clerk_verified: clerkConfigured,
+      other_auth_detected: forbiddenEnvVars.length > 0,
+      forbidden_env_vars: forbiddenEnvVars,
+      timestamp: new Date().toISOString(),
+    };
+    
+    const statusCode = clerkConfigured && forbiddenEnvVars.length === 0 ? 200 : 503;
+    res.status(statusCode).json(authHealth);
+  });
+
+  // Sync 2FA status from Clerk to database
+  app.patch('/api/auth/user/2fa-status', combinedAuth, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const { twoFactorEnabled, twoFactorMethod } = req.body;
+
+      // Validate input
+      if (typeof twoFactorEnabled !== 'boolean') {
+        return res.status(400).json({ error: "twoFactorEnabled must be a boolean" });
+      }
+
+      // Update user in database
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          twoFactorEnabled,
+          twoFactorMethod: twoFactorMethod || 'totp',
+          twoFactorVerifiedAt: twoFactorEnabled ? new Date() : null,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+
+      // Log the status change to audit logs
+      const auditAction = twoFactorEnabled ? '2FA_ENABLED' : '2FA_DISABLED';
+      await db.insert(adminAuditLogs).values({
+        userId,
+        action: auditAction,
+        category: 'SECURITY',
+        details: { method: twoFactorMethod || 'totp' },
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+      });
+
+      console.log(`[2FA Status] User ${userId} ${twoFactorEnabled ? 'enabled' : 'disabled'} 2FA`);
+
+      res.json({
+        success: true,
+        user: {
+          id: updatedUser.id,
+          twoFactorEnabled: updatedUser.twoFactorEnabled,
+          twoFactorMethod: updatedUser.twoFactorMethod,
+        },
+      });
+    } catch (error: any) {
+      console.error('[2FA Status Sync] Error:', error);
+      res.status(500).json({ error: "Failed to sync 2FA status" });
+    }
+  });
+
+  // Detailed admin health check with system metrics
+  app.get('/api/admin/health', combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const health = await getSystemHealth();
+      
+      // Add admin-specific details
+      const detailedHealth = {
+        ...health,
+        environment: process.env.NODE_ENV || 'development',
+        port: process.env.PORT || '5000',
+        processInfo: {
+          pid: process.pid,
+          platform: process.platform,
+          nodeVersion: process.version,
+          memory: {
+            used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
+            total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB',
+          },
+        },
+        requestUser: {
+          id: req.user?.id,
+          email: req.user?.email,
+          role: req.user?.role,
+        },
+      };
+      
+      const statusCode = health.status === 'ok' ? 200 : health.status === 'degraded' ? 200 : 503;
+      res.status(statusCode).json(detailedHealth);
+    } catch (error: any) {
+      console.error('[Admin Health Check] Error:', error);
+      res.status(500).json({
+        status: 'error',
+        message: 'Admin health check failed',
+        details: error.message,
+      });
+    }
+  });
+
+  // Database health check with row counts for debugging
+  app.get('/api/admin/health/db', combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const { sql } = await import('drizzle-orm');
+      
+      // Get counts from key tables
+      const [usersCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
+      
+      const { coupons, supportTickets, tenants, companyProfiles, userSubscriptions } = await import('@shared/schema');
+      
+      const [couponsCount] = await db.select({ count: sql<number>`count(*)` }).from(coupons);
+      const [ticketsCount] = await db.select({ count: sql<number>`count(*)` }).from(supportTickets);
+      const [tenantsCount] = await db.select({ count: sql<number>`count(*)` }).from(tenants);
+      const [companiesCount] = await db.select({ count: sql<number>`count(*)` }).from(companyProfiles);
+      const [subscriptionsCount] = await db.select({ count: sql<number>`count(*)` }).from(userSubscriptions);
+      
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        databaseConnected: true,
+        tableCounts: {
+          users: Number(usersCount?.count || 0),
+          coupons: Number(couponsCount?.count || 0),
+          supportTickets: Number(ticketsCount?.count || 0),
+          tenants: Number(tenantsCount?.count || 0),
+          companyProfiles: Number(companiesCount?.count || 0),
+          userSubscriptions: Number(subscriptionsCount?.count || 0),
+        },
+      });
+    } catch (error: any) {
+      console.error('[DB Health Check] Error:', error);
+      res.status(503).json({
+        status: 'error',
+        databaseConnected: false,
+        message: 'Database health check failed',
+        details: error.message,
+      });
+    }
+  });
+
+  // Auth routes - Clerk-authenticated endpoints
   app.get('/api/auth/user', combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -210,225 +357,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Logout route
+  // Logout route - Clerk handles logout on the client side
+  // This endpoint is for any server-side session cleanup if needed
   app.post('/api/auth/logout', async (req: any, res) => {
-    // Clear Neon Auth session if present
-    const sessionToken = (req as any).cookies?.['neon-session'];
-    if (sessionToken) {
-      try {
-        const { neonAuthClient } = await import('./neonAuth');
-        await neonAuthClient.signOut();
-      } catch (error) {
-        console.error('[Neon Auth] Logout error:', error);
-      }
-    }
-
-    // Clear traditional session
-    req.logout(() => {
-      res.clearCookie('neon-session');
-      res.json({ message: "Logged out successfully" });
-    });
+    // Clerk manages authentication state on the client
+    // Server just acknowledges the logout request
+    res.json({ message: "Logged out successfully" });
   });
-
-  // ==================== NEON AUTH WEBHOOK ====================
-
-  // Webhook handler for Neon Auth events (user.created, user.email_verified, etc.)
-  app.post('/api/webhooks/neon-auth', async (req, res) => {
-    try {
-      const { event, data } = req.body;
-
-      console.log('[Neon Auth Webhook] Received event:', event, data);
-
-      if (event === 'user.created') {
-        // Create BoxCostPro user linked to Neon Auth user
-        const nameParts = (data.name || '').split(' ');
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.slice(1).join(' ') || '';
-
-        const createdUser = await storage.upsertUser({
-          email: data.email,
-          firstName,
-          lastName,
-          neonAuthUserId: data.id,
-          emailVerified: data.emailVerified || false,
-          accountStatus: data.emailVerified ? 'email_verified' : 'pending_verification',
-        });
-
-        console.log('[Neon Auth Webhook] User created:', data.email);
-
-        sendWelcomeEmail({
-          email: data.email,
-          userName: data.name,
-          signupMethod: 'neon_email_otp'
-        }).catch((err) => console.error('WELCOME_EMAIL_WEBHOOK_FAILED', err));
-
-        logAuthEventAsync({
-          userId: createdUser?.id,
-          email: data.email,
-          action: 'SIGNUP',
-          status: 'success',
-          metadata: {
-            provider: 'neon_email_otp'
-          }
-        });
-
-        notifyAdminAsync({
-          subject: 'New User Signup (Neon Auth)',
-          eventType: 'SIGNUP',
-          userEmail: data.email,
-          userName: data.name,
-          signupMethod: 'Neon Auth',
-          timestamp: new Date(),
-        });
-      }
-
-      if (event === 'user.email_verified') {
-        await storage.updateUserByNeonAuthId(data.userId, {
-          emailVerified: true,
-          accountStatus: 'email_verified',
-        });
-
-        console.log('[Neon Auth Webhook] Email verified for user:', data.userId);
-      }
-
-      if (event === 'user.updated') {
-        // Sync any profile updates from Neon Auth
-        const updates: any = {};
-        if (data.name) {
-          const nameParts = data.name.split(' ');
-          updates.firstName = nameParts[0] || '';
-          updates.lastName = nameParts.slice(1).join(' ') || '';
-        }
-        if (data.emailVerified !== undefined) {
-          updates.emailVerified = data.emailVerified;
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await storage.updateUserByNeonAuthId(data.id, updates);
-          console.log('[Neon Auth Webhook] User updated:', data.id);
-        }
-      }
-
-      res.json({ received: true });
-    } catch (error: any) {
-      console.error('[Neon Auth Webhook] Error processing webhook:', error);
-      res.status(500).json({ error: 'Webhook processing failed' });
-    }
-  });
-
-  // ==================== NEON AUTH API PROXY ====================
-
-  // Proxy route for Neon Auth API calls (enables same-origin requests)
-  app.all('/api/neon-auth/*', async (req, res) => {
-    try {
-      const neonBaseUrl = (process.env.VITE_NEON_AUTH_URL || process.env.NEON_AUTH_URL || '').replace(/\/$/, '');
-      if (!neonBaseUrl) {
-        console.error('[Neon Auth Proxy] Missing VITE_NEON_AUTH_URL/NEON_AUTH_URL');
-        return res.status(500).json({ error: 'Neon Auth base URL not configured' });
-      }
-
-      const neonAuthPath = req.path.replace('/api/neon-auth', '') || '/';
-      const normalizedPath = neonAuthPath.startsWith('/') ? neonAuthPath : `/${neonAuthPath}`;
-      const neonAuthUrl = `${neonBaseUrl}${normalizedPath}`;
-
-      console.log('[Neon Auth Proxy] Forwarding request to:', neonAuthUrl, 'Method:', req.method);
-
-      // Build headers for the upstream request
-      const headers: Record<string, string> = {};
-
-      // Forward Content-Type if present
-      if (req.headers['content-type']) {
-        headers['content-type'] = req.headers['content-type'];
-      } else if (req.body) {
-        // Default to JSON for requests with body
-        headers['content-type'] = 'application/json';
-      }
-
-      // Forward cookies from client to Neon Auth
-      if (req.headers.cookie) {
-        headers['cookie'] = req.headers.cookie;
-      }
-
-      // CRITICAL: Forward origin header for OAuth callbacks
-      if (req.headers['origin']) {
-        headers['origin'] = req.headers['origin'];
-      }
-
-      // Forward other important headers
-      if (req.headers['user-agent']) {
-        headers['user-agent'] = req.headers['user-agent'];
-      }
-      if (req.headers['referer']) {
-        headers['referer'] = req.headers['referer'];
-      }
-      if (req.headers['accept']) {
-        headers['accept'] = req.headers['accept'];
-      }
-      if (req.headers['authorization']) {
-        headers['authorization'] = req.headers['authorization'];
-      }
-
-      const response = await fetch(neonAuthUrl, {
-        method: req.method,
-        headers,
-        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
-      });
-
-      // Forward Set-Cookie headers from Neon Auth to client
-      const setCookieHeaders = response.headers.getSetCookie?.() || [];
-      if (setCookieHeaders.length > 0) {
-        setCookieHeaders.forEach(cookie => {
-          console.log('[Neon Auth Proxy] Original cookie:', cookie);
-
-          // Modify cookie to work with localhost
-          // Remove __Secure- or __Host- prefix from cookie name
-          // These prefixes require Secure flag which doesn't work on localhost
-          let modifiedCookie = cookie.replace(/^(__Secure-|__Host-)/i, '');
-
-          // Remove Domain attribute
-          modifiedCookie = modifiedCookie.replace(/;\s*Domain=[^;]+/gi, '');
-
-          // Remove Secure attribute (only works with HTTPS)
-          modifiedCookie = modifiedCookie.replace(/;\s*Secure/gi, '');
-
-          // Remove SameSite=None (requires Secure flag)
-          modifiedCookie = modifiedCookie.replace(/;\s*SameSite=None/gi, '');
-
-          // Remove Partitioned attribute (requires Secure flag)
-          modifiedCookie = modifiedCookie.replace(/;\s*Partitioned/gi, '');
-
-          // Add SameSite=Lax for localhost compatibility
-          modifiedCookie += '; SameSite=Lax';
-
-          console.log('[Neon Auth Proxy] Modified cookie:', modifiedCookie);
-          res.append('Set-Cookie', modifiedCookie);
-        });
-        console.log('[Neon Auth Proxy] Forwarding', setCookieHeaders.length, 'Set-Cookie headers (modified for localhost)');
-      }
-
-      // Forward other response headers
-      response.headers.forEach((value, key) => {
-        if (key.toLowerCase() !== 'set-cookie' && key.toLowerCase() !== 'content-length') {
-          res.setHeader(key, value);
-        }
-      });
-
-      // Check content type and handle accordingly
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await response.json();
-        res.status(response.status).json(data);
-      } else {
-        // For non-JSON responses (HTML, text, etc), forward as-is
-        const text = await response.text();
-        res.status(response.status).send(text);
-      }
-    } catch (error: any) {
-      console.error('[Neon Auth Proxy] Error:', error);
-      res.status(500).json({ error: 'Proxy request failed', message: error.message });
-    }
-  });
-
   // ==================== EMAIL/PASSWORD AUTHENTICATION ====================
 
   // Sign in with email and password
@@ -1343,7 +1278,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get all invoices
-  app.get("/api/admin/invoices", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/invoices", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const invoices = await storage.getAllInvoices();
       res.json(invoices);
@@ -1353,7 +1288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Resend invoice email
-  app.post("/api/admin/invoices/:id/resend-email", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.post("/api/admin/invoices/:id/resend-email", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const invoiceId = req.params.id;
       const invoice = await storage.getInvoice(invoiceId);
@@ -1375,12 +1310,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Get all payments/transactions
+  app.get("/api/admin/payments", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      // Return empty array for now - implement when payment system is ready
+      res.json({ payments: [], total: 0 });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch payments' });
+    }
+  });
+
+  // Admin: Get all reports
+  app.get("/api/admin/reports", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      // Return empty array for now - implement when reporting system is ready
+      res.json({ reports: [], total: 0 });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch reports' });
+    }
+  });
+
   // ========================================
   // SELLER PROFILE ENDPOINTS (Admin Only)
   // ========================================
 
   // Get seller profile
-  app.get("/api/admin/seller-profile", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/seller-profile", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const seller = await storage.getSellerProfile();
       if (!seller) {
@@ -1393,7 +1348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create or update seller profile
-  app.post("/api/admin/seller-profile", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.post("/api/admin/seller-profile", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const data = req.body;
 
@@ -1499,8 +1454,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.lockedReason = 'Quote already sent to customer';
       }
 
+      // Preflight: if GST already exists anywhere, reuse/update it to current tenant to avoid unique collisions
+      if (data.gstNo) {
+        const existingTenantProfile = await storage.getCompanyProfileByGst(data.gstNo, tenantId);
+        if (existingTenantProfile) {
+          const updated = await storage.updateCompanyProfile(existingTenantProfile.id, data, tenantId);
+          console.warn('[Company Profile] Reused existing tenant GST profile', { tenantId, profileId: existingTenantProfile.id });
+          return res.status(200).json(updated);
+        }
+
+        const legacyProfile = await storage.getAnyCompanyProfileByGst(data.gstNo);
+        if (legacyProfile) {
+          const updated = await storage.updateCompanyProfile(legacyProfile.id, { ...data, tenantId }, tenantId);
+          console.warn('[Company Profile] Adopted legacy GST profile into tenant', { tenantId, profileId: legacyProfile.id });
+          return res.status(200).json(updated);
+        }
+      }
+
+      // Create fresh profile if no conflicts
       const profile = await storage.createCompanyProfile(data);
-      res.status(201).json(profile);
+      return res.status(201).json(profile);
     } catch (error: any) {
       console.error("Error creating company profile:", error);
       res.status(500).json({ message: error.message || "Failed to create profile" });
@@ -1513,12 +1486,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tenantId = req.tenantId || userId; // Fallback to userId if no tenantId (single-tenant mode)
       const profileId = req.params.id;
 
+      // DEBUG: Log auth context
+      console.log('[BUSINESS PROFILE PATCH] Auth Debug:', {
+        userId,
+        reqUser: req.user ? { id: req.user.id, email: req.user.email, role: req.user.role } : null,
+        clerkUser: req.clerkUser ? { id: req.clerkUser.id, email: req.clerkUser.email } : null,
+        tenantId,
+        profileId
+      });
+
+      if (!userId) {
+        console.error('[BUSINESS PROFILE PATCH] No userId in request - auth middleware failed');
+        return res.status(401).json({ message: "Unauthorized: No user ID" });
+      }
+
       // Fetch existing profile to check lock status
       const existingProfile = await storage.getCompanyProfile(profileId, tenantId);
 
       if (!existingProfile) {
+        console.log('[BUSINESS PROFILE PATCH] Profile not found:', { profileId, tenantId });
         return res.status(404).json({ message: "Profile not found" });
       }
+
+      // DEBUG: Log ownership comparison
+      console.log('[BUSINESS PROFILE PATCH] Ownership check:', {
+        existingProfileUserId: existingProfile.userId,
+        requestUserId: userId,
+        match: existingProfile.userId === userId
+      });
 
       // Check onboarding status to determine if ownership check should be bypassed
       const onboardingStatus = await storage.getOnboardingStatus(userId);
@@ -1527,6 +1522,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isOnboarding) {
         // During onboarding: Allow creator to edit their own profile
         if (existingProfile.userId !== userId) {
+          console.log('[BUSINESS PROFILE PATCH] Ownership mismatch during onboarding');
           return res.status(403).json({
             message: "You can only edit your own business profile during onboarding"
           });
@@ -1537,7 +1533,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isSuperAdmin = user?.role === 'super_admin' || user?.role === 'admin';
         const isProfileOwner = existingProfile.userId === userId;
 
+        console.log('[BUSINESS PROFILE PATCH] Post-verification auth check:', {
+          isSuperAdmin,
+          isProfileOwner,
+          userRole: user?.role
+        });
+
         if (!isSuperAdmin && !isProfileOwner) {
+          console.log('[BUSINESS PROFILE PATCH] Access denied - not owner or admin');
           return res.status(403).json({
             message: "Only the account owner can edit business profile details"
           });
@@ -3511,7 +3514,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ========== ADMIN ROUTES (Owner only) ==========
   
   // Subscription Plans
-  app.get("/api/admin/subscription-plans", isAuthenticated, isOwner, async (req: any, res) => {
+  app.get("/api/admin/subscription-plans", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       const plans = await storage.getAllSubscriptionPlans();
       res.json(plans);
@@ -3520,7 +3523,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/subscription-plans", isAuthenticated, isOwner, async (req: any, res) => {
+  app.post("/api/admin/subscription-plans", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       const data = insertSubscriptionPlanSchema.parse(req.body);
       const plan = await storage.createSubscriptionPlan(data);
@@ -3530,7 +3533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/subscription-plans/:id", isAuthenticated, isOwner, async (req: any, res) => {
+  app.patch("/api/admin/subscription-plans/:id", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       const data = insertSubscriptionPlanSchema.partial().parse(req.body);
       const plan = await storage.updateSubscriptionPlan(req.params.id, data);
@@ -3543,7 +3546,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/subscription-plans/:id", isAuthenticated, isOwner, async (req: any, res) => {
+  app.delete("/api/admin/subscription-plans/:id", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       await storage.deleteSubscriptionPlan(req.params.id);
       res.json({ success: true });
@@ -3553,7 +3556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User Subscriptions (Admin view)
-  app.get("/api/admin/subscriptions", isAuthenticated, isOwner, async (req: any, res) => {
+  app.get("/api/admin/subscriptions", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const subscriptions = await storage.getAllUserSubscriptions();
       res.json(subscriptions);
@@ -3563,26 +3566,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Coupons
-  app.get("/api/admin/coupons", isAuthenticated, isOwner, async (req: any, res) => {
+  app.get("/api/admin/coupons", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
-      const coupons = await storage.getAllCoupons();
-      res.json(coupons);
+      const allCoupons = await storage.getAllCoupons();
+      res.json({ coupons: allCoupons, total: allCoupons.length });
     } catch (error) {
+      console.error("[admin] Error fetching coupons:", error);
       res.status(500).json({ error: "Failed to fetch coupons" });
     }
   });
 
-  app.post("/api/admin/coupons", isAuthenticated, isOwner, async (req: any, res) => {
+  app.post("/api/admin/coupons", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
-      const data = insertCouponSchema.parse(req.body);
+      // Map client fields to schema fields
+      const { code, discountType, discountValue, maxUsage, perUserLimit, expiryDate } = req.body;
+      
+      if (!code || !discountValue) {
+        return res.status(400).json({ error: "Coupon code and discount value are required" });
+      }
+      
+      const couponData = {
+        code: code.toUpperCase(),
+        discountType: discountType || 'percentage',
+        discountValue: parseFloat(discountValue),
+        maxUses: maxUsage ? parseInt(maxUsage, 10) : null,
+        validUntil: expiryDate ? new Date(expiryDate) : null,
+        isActive: true,
+      };
+      
+      const data = insertCouponSchema.parse(couponData);
       const coupon = await storage.createCoupon(data);
-      res.status(201).json(coupon);
-    } catch (error) {
-      res.status(400).json({ error: "Failed to create coupon" });
+      res.status(201).json({ success: true, coupon, message: `Coupon ${code} created successfully` });
+    } catch (error: any) {
+      console.error("[admin] Error creating coupon:", error);
+      // Check for unique constraint violation
+      if (error.code === '23505') {
+        return res.status(400).json({ error: "A coupon with this code already exists" });
+      }
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Invalid coupon data", details: error.errors });
+      }
+      res.status(400).json({ error: error.message || "Failed to create coupon" });
     }
   });
 
-  app.patch("/api/admin/coupons/:id", isAuthenticated, isOwner, async (req: any, res) => {
+  app.patch("/api/admin/coupons/:id", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       const data = insertCouponSchema.partial().parse(req.body);
       const coupon = await storage.updateCoupon(req.params.id, data);
@@ -3595,7 +3623,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/coupons/:id", isAuthenticated, isOwner, async (req: any, res) => {
+  app.delete("/api/admin/coupons/:id", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       await storage.deleteCoupon(req.params.id);
       res.json({ success: true });
@@ -3605,7 +3633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Trial Invites
-  app.get("/api/admin/trial-invites", isAuthenticated, isOwner, async (req: any, res) => {
+  app.get("/api/admin/trial-invites", combinedAuth, requireSuperAdminAuth, async (req: any, res) => {
     try {
       const invites = await storage.getAllTrialInvites();
       res.json(invites);
@@ -3614,7 +3642,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/trial-invites", isAuthenticated, isOwner, async (req: any, res) => {
+  app.post("/api/admin/trial-invites", combinedAuth, requireSuperAdminAuth, async (req: any, res) => {
     try {
       const data = insertTrialInviteSchema.parse(req.body);
       const invite = await storage.createTrialInvite(data);
@@ -3629,7 +3657,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment Transactions (Admin view)
-  app.get("/api/admin/transactions", isAuthenticated, isOwner, async (req: any, res) => {
+  app.get("/api/admin/transactions", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const transactions = await storage.getAllPaymentTransactions();
       res.json(transactions);
@@ -3639,7 +3667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Owner Settings
-  app.get("/api/admin/settings", isAuthenticated, isOwner, async (req: any, res) => {
+  app.get("/api/admin/settings", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       const settings = await storage.getOwnerSettings();
       // Mask sensitive data
@@ -3652,7 +3680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/settings", isAuthenticated, isOwner, async (req: any, res) => {
+  app.patch("/api/admin/settings", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       const settings = await storage.updateOwnerSettings(req.body);
       res.json({
@@ -3661,6 +3689,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(400).json({ error: "Failed to update owner settings" });
+    }
+  });
+
+  // ========== IP WHITELIST MANAGEMENT ==========
+  const { ipWhitelistStorage, extractClientIP } = await import('./middleware/ipWhitelist');
+
+  // Get current IP address (public endpoint for admins to see their IP)
+  app.get("/api/admin/my-ip", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const clientIP = extractClientIP(req);
+      res.json({
+        ipAddress: clientIP,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get IP address" });
+    }
+  });
+
+  // List all whitelisted IPs (super admin only)
+  app.get("/api/admin/ip-whitelist", combinedAuth, requireSuperAdminAuth, async (req: any, res) => {
+    try {
+      const ips = await ipWhitelistStorage.getIPs();
+      res.json(ips);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch IP whitelist" });
+    }
+  });
+
+  // List user's whitelisted IPs
+  app.get("/api/admin/ip-whitelist/my-ips", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const ips = await ipWhitelistStorage.getIPs(userId);
+      res.json(ips);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch your IP whitelist" });
+    }
+  });
+
+  // Add IP to whitelist
+  app.post("/api/admin/ip-whitelist", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const { ipAddress, description, userId } = req.body;
+      const createdBy = req.user.id;
+
+      // Validate IP address format
+      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      const ipv6Regex = /^([0-9a-fA-F]{0,4}:){7}[0-9a-fA-F]{0,4}$/;
+      
+      if (!ipv4Regex.test(ipAddress) && !ipv6Regex.test(ipAddress)) {
+        return res.status(400).json({ error: "Invalid IP address format" });
+      }
+
+      // Only super admins can add IPs for other users
+      if (userId && userId !== createdBy) {
+        const [user] = await db.select().from(users).where(eq(users.id, createdBy)).limit(1);
+        if (!user || !['super_admin', 'owner'].includes(user.role || '')) {
+          return res.status(403).json({ error: "Insufficient permissions to add IP for another user" });
+        }
+      }
+
+      const result = await ipWhitelistStorage.addIP({
+        ipAddress,
+        userId: userId || createdBy,
+        description,
+        createdBy,
+      });
+
+      res.status(201).json(result);
+    } catch (error: any) {
+      console.error('[IP Whitelist] Add error:', error);
+      res.status(500).json({ error: "Failed to add IP to whitelist" });
+    }
+  });
+
+  // Remove IP from whitelist
+  app.delete("/api/admin/ip-whitelist/:id", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
+
+      // Check if IP belongs to user or if user is super admin
+      const [ip] = await db.select().from(allowedAdminIps).where(eq(allowedAdminIps.id, id)).limit(1);
+      
+      if (!ip) {
+        return res.status(404).json({ error: "IP not found" });
+      }
+
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const isSuperAdmin = user && ['super_admin', 'owner'].includes(user.role || '');
+
+      if (ip.userId !== userId && !isSuperAdmin) {
+        return res.status(403).json({ error: "You can only remove your own IPs" });
+      }
+
+      await ipWhitelistStorage.removeIP(id);
+      res.json({ message: "IP removed from whitelist" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove IP from whitelist" });
     }
   });
 
@@ -3831,8 +3959,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== ONBOARDING STATUS ROUTES ====================
   
-  // Get current user's onboarding status
-  app.get("/api/onboarding/status", combinedAuth, async (req: any, res) => {
+  // Get current user's onboarding status (rate limited: 10 req/min)
+  app.get("/api/onboarding/status", combinedAuth, onboardingRateLimiter, async (req: any, res) => {
     try {
       const userId = req.userId;
       let status = await storage.getOnboardingStatus(userId);
@@ -3947,7 +4075,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== ADMIN VERIFICATION ROUTES ====================
   
   // Get admin stats (admin+)
-  app.get("/api/admin/stats", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/stats", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const stats = await storage.getAdminStats();
       res.json(stats);
@@ -3958,7 +4086,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all pending verifications (admin+)
-  app.get("/api/admin/verifications/pending", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/verifications/pending", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const pending = await storage.getPendingVerifications();
       
@@ -3977,7 +4105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all onboarding statuses (admin+)
-  app.get("/api/admin/onboarding", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/onboarding", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const statuses = await storage.getAllOnboardingStatuses();
       
@@ -3996,18 +4124,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all users (admin+)
-  app.get("/api/admin/users", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/users", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
-      const users = await storage.getAllUsers();
+      const { page = '1', limit = '10', search, status } = req.query;
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+      
+      let allUsers = await storage.getAllUsers();
+      
+      // Apply search filter
+      if (search && typeof search === 'string') {
+        const searchLower = search.toLowerCase();
+        allUsers = allUsers.filter(user => 
+          (user.email?.toLowerCase().includes(searchLower)) ||
+          (user.firstName?.toLowerCase().includes(searchLower)) ||
+          (user.lastName?.toLowerCase().includes(searchLower)) ||
+          (user.companyName?.toLowerCase().includes(searchLower))
+        );
+      }
+      
+      // Apply status filter
+      if (status && status !== 'all' && typeof status === 'string') {
+        allUsers = allUsers.filter(user => user.accountStatus === status);
+      }
+      
+      const total = allUsers.length;
+      
+      // Apply pagination
+      const startIndex = (pageNum - 1) * limitNum;
+      const paginatedUsers = allUsers.slice(startIndex, startIndex + limitNum);
       
       // Get onboarding status for each user
-      const enrichedUsers = await Promise.all(users.map(async (user) => {
+      const enrichedUsers = await Promise.all(paginatedUsers.map(async (user) => {
         const onboardingStatus = await storage.getOnboardingStatus(user.id);
         const company = await storage.getDefaultCompanyProfile(user.id);
-        return { ...user, onboardingStatus, company };
+        const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
+        return { 
+          ...user, 
+          name,
+          company: company?.companyName || user.companyName || null,
+          tenantName: company?.companyName || null,
+          status: user.accountStatus || 'active',
+          onboardingStatus, 
+        };
       }));
       
-      res.json(enrichedUsers);
+      res.json({ users: enrichedUsers, total, page: pageNum, limit: limitNum });
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ error: "Failed to fetch users" });
@@ -4015,7 +4177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get user details (admin+)
-  app.get("/api/admin/users/:userId", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/users/:userId", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const { userId } = req.params;
       const user = await storage.getUser(userId);
@@ -4036,7 +4198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Approve user (admin+)
-  app.post("/api/admin/users/:userId/approve", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.post("/api/admin/users/:userId/approve", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const { userId } = req.params;
       const adminUserId = req.userId;
@@ -4092,7 +4254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Reject user (admin+) - requires mandatory remarks
-  app.post("/api/admin/users/:userId/reject", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.post("/api/admin/users/:userId/reject", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const { userId } = req.params;
       const { reason } = req.body;
@@ -4186,7 +4348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update user role (super_admin only)
-  app.patch("/api/admin/users/:userId/role", combinedAuth, requireSuperAdmin, async (req: any, res) => {
+  app.patch("/api/admin/users/:userId/role", combinedAuth, requireSuperAdminAuth, requireWhitelistedIP, async (req: any, res) => {
     try {
       const { userId } = req.params;
       const { role } = req.body;
@@ -4220,7 +4382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get admin action history
-  app.get("/api/admin/actions", combinedAuth, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/actions", combinedAuth, requireAdminAuth, async (req: any, res) => {
     try {
       const { userId } = req.query;
       const actions = await storage.getAdminActions(userId as string | undefined);
@@ -4228,6 +4390,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching admin actions:", error);
       res.status(500).json({ error: "Failed to fetch admin actions" });
+    }
+  });
+
+  // ==================== ADMIN SUPPORT TICKETS ====================
+  
+  // Get all support tickets for admin panel
+  app.get("/api/admin/support/tickets", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const { page = '1', limit = '10', status, priority } = req.query;
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+      
+      let allTickets = await storage.getSupportTickets();
+      
+      // Apply status filter
+      if (status && status !== 'all') {
+        allTickets = allTickets.filter(t => t.status === status);
+      }
+      
+      // Apply priority filter
+      if (priority && priority !== 'all') {
+        allTickets = allTickets.filter(t => t.priority === priority);
+      }
+      
+      // Calculate stats
+      const stats = {
+        open: allTickets.filter(t => t.status === 'open').length,
+        inProgress: allTickets.filter(t => t.status === 'in-progress').length,
+        breached: 0, // TODO: Calculate SLA breached tickets
+        resolvedToday: allTickets.filter(t => {
+          if (t.status !== 'resolved' || !t.updatedAt) return false;
+          const today = new Date();
+          const updated = new Date(t.updatedAt);
+          return updated.toDateString() === today.toDateString();
+        }).length,
+      };
+      
+      const total = allTickets.length;
+      
+      // Apply pagination
+      const startIndex = (pageNum - 1) * limitNum;
+      const paginatedTickets = allTickets.slice(startIndex, startIndex + limitNum);
+      
+      // Enrich with user and assignee details
+      const enrichedTickets = await Promise.all(paginatedTickets.map(async (ticket) => {
+        const user = await storage.getUser(ticket.userId);
+        const assignee = ticket.assignedTo ? await storage.getUser(ticket.assignedTo) : null;
+        // Calculate SLA deadline (e.g., 24h for medium, 8h for high, 2h for urgent)
+        const slaHours: Record<string, number> = { low: 48, medium: 24, high: 8, urgent: 2 };
+        const hours = slaHours[ticket.priority || 'medium'] || 24;
+        const slaDeadline = new Date(ticket.createdAt!);
+        slaDeadline.setHours(slaDeadline.getHours() + hours);
+        
+        return { 
+          ...ticket, 
+          user: user ? { id: user.id, email: user.email, name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email } : null,
+          assignee: assignee ? { id: assignee.id, email: assignee.email, name: `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || assignee.email } : null,
+          slaDeadline: slaDeadline.toISOString(),
+        };
+      }));
+      
+      res.json({ tickets: enrichedTickets, total, page: pageNum, limit: limitNum, stats });
+    } catch (error) {
+      console.error("Error fetching admin support tickets:", error);
+      res.status(500).json({ error: "Failed to fetch support tickets" });
     }
   });
   
@@ -4302,7 +4529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Only ticket owner or support staff can view
-      const isSupportStaff = hasRoleLevel(req.supabaseUser?.role, 'support_agent');
+      const isSupportStaff = hasRoleLevel(req.user?.role, 'support_agent');
       if (ticket.userId !== userId && !isSupportStaff) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -4335,7 +4562,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Ticket not found" });
       }
       
-      const isSupportStaff = hasRoleLevel(req.supabaseUser?.role, 'support_agent');
+      const isSupportStaff = hasRoleLevel(req.user?.role, 'support_agent');
       
       // Only ticket owner or support staff can add messages
       if (ticket.userId !== userId && !isSupportStaff) {
@@ -5728,7 +5955,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Admin User Management routes
   const { registerAdminUserManagement } = await import('./adminUserManagement');
-  registerAdminUserManagement(app, combinedAuth, requireAdmin);
+  registerAdminUserManagement(app, combinedAuth, requireAdminAuth);
 
   // ========== INVOICE TEMPLATE ROUTES ==========
 
