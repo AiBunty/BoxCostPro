@@ -52,6 +52,8 @@ import {
   type InsertBusinessDefaults,
   type OnboardingStatus,
   type InsertOnboardingStatus,
+  type UserSetup,
+  type InsertUserSetup,
   type AdminAction,
   type InsertAdminAction,
   type SupportTicket,
@@ -118,6 +120,7 @@ import {
   boxSpecifications,
   boxSpecVersions,
   userProfiles,
+  userSetup,
   businessDefaults,
   onboardingStatus,
   adminActions,
@@ -166,6 +169,26 @@ import { db } from "./db";
 import { eq, and, or, ilike, sql, desc } from "drizzle-orm";
 import crypto from "crypto";
 
+export type VerificationStatusCode = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface SetupStatus {
+  userId: string;
+  tenantId?: string | null;
+  steps: {
+    businessProfile: boolean;
+    paperPricing: boolean;
+    fluteSettings: boolean;
+    taxDefaults: boolean;
+    quoteTerms: boolean;
+  };
+  setupProgress: number;
+  isSetupComplete: boolean;
+  verificationStatus: VerificationStatusCode;
+  submittedForVerification: boolean;
+  approvedAt: Date | null;
+  approvedBy: string | null;
+}
+
 export interface IStorage {
   // User operations (for Clerk Auth only)
   getUser(id: string): Promise<User | undefined>;
@@ -178,6 +201,11 @@ export interface IStorage {
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   updateUserProfile(userId: string, updates: Partial<InsertUserProfile>): Promise<UserProfile | undefined>;
+
+  // Setup + verification (new system)
+  getUserSetupStatus(userId: string, tenantId?: string): Promise<SetupStatus>;
+  completeSetupStep(userId: string, stepKey: keyof SetupStatus['steps'], tenantId?: string): Promise<SetupStatus>;
+  submitSetupForVerification(userId: string, tenantId?: string): Promise<SetupStatus>;
   
   // Company Profiles (tenant-aware)
   getCompanyProfile(id: string, tenantId?: string): Promise<CompanyProfile | undefined>;
@@ -1762,10 +1790,254 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
   
+  // ========== SETUP + VERIFICATION (NEW SYSTEM) ==========
+
+  private normalizeVerificationStatus(status?: string | null): VerificationStatusCode {
+    const normalized = (status || '').toUpperCase() as VerificationStatusCode;
+    if (normalized === 'APPROVED' || normalized === 'PENDING' || normalized === 'REJECTED' || normalized === 'NOT_SUBMITTED') {
+      return normalized;
+    }
+    return 'NOT_SUBMITTED';
+  }
+
+  private computeSetupProgress(setup: UserSetup): number {
+    const stepsCompleted = [
+      setup.businessProfile,
+      setup.paperPricing,
+      setup.fluteSettings,
+      setup.taxDefaults,
+      setup.quoteTerms,
+    ].filter(Boolean).length;
+    return stepsCompleted * 20; // 5 steps
+  }
+
+  private async ensureUserSetup(userId: string, tenantId?: string): Promise<UserSetup> {
+    const conditions = [eq(userSetup.userId, userId)];
+    if (tenantId) {
+      conditions.push(eq(userSetup.tenantId, tenantId));
+    }
+
+    const existing = await db.select().from(userSetup)
+      .where(conditions.length > 1 ? and(...conditions) : conditions[0])
+      .orderBy(desc(userSetup.updatedAt))
+      .limit(1);
+
+    if (existing[0]) return existing[0];
+
+    const [created] = await db.insert(userSetup)
+      .values({ userId, tenantId: tenantId ?? null })
+      .returning();
+    return created;
+  }
+
+  private async syncOnboardingStatusFromSetup(
+    tx: typeof db,
+    userId: string,
+    setupRow: UserSetup,
+    options?: {
+      tenantId?: string | null;
+      verificationStatus?: VerificationStatusCode;
+      submittedForVerification?: boolean;
+      approvedAt?: Date | null;
+      approvedBy?: string | null;
+      rejectionReason?: string | null;
+    }
+  ): Promise<void> {
+    const now = new Date();
+    const targetTenantId = options?.tenantId ?? setupRow.tenantId ?? null;
+
+    const existing = await tx.select().from(onboardingStatus)
+      .where(
+        targetTenantId
+          ? and(eq(onboardingStatus.userId, userId), eq(onboardingStatus.tenantId, targetTenantId))
+          : eq(onboardingStatus.userId, userId)
+      )
+      .limit(1);
+
+    const basePayload = {
+      userId,
+      tenantId: targetTenantId,
+      businessProfileDone: setupRow.businessProfile,
+      paperSetupDone: setupRow.paperPricing,
+      fluteSetupDone: setupRow.fluteSettings,
+      taxSetupDone: setupRow.taxDefaults,
+      termsSetupDone: setupRow.quoteTerms,
+      updatedAt: now,
+    } as Partial<typeof onboardingStatus.$inferInsert>;
+
+    if (options?.verificationStatus) {
+      basePayload.verificationStatus = options.verificationStatus.toLowerCase();
+    }
+    if (typeof options?.submittedForVerification === 'boolean') {
+      basePayload.submittedForVerification = options.submittedForVerification;
+      basePayload.submittedAt = options.submittedForVerification ? now : null;
+    }
+    if (options?.approvedAt !== undefined) basePayload.approvedAt = options.approvedAt;
+    if (options?.approvedBy !== undefined) basePayload.approvedBy = options.approvedBy;
+    if (options?.rejectionReason !== undefined) basePayload.rejectionReason = options.rejectionReason;
+
+    if (existing[0]) {
+      await tx.update(onboardingStatus)
+        .set(basePayload)
+        .where(eq(onboardingStatus.id, existing[0].id));
+    } else {
+      await tx.insert(onboardingStatus)
+        .values({
+          ...basePayload,
+          verificationStatus: basePayload.verificationStatus || 'pending',
+          createdAt: now,
+          updatedAt: now,
+        });
+    }
+  }
+
+  async getUserSetupStatus(userId: string, tenantId?: string): Promise<SetupStatus> {
+    const setupRow = await this.ensureUserSetup(userId, tenantId);
+    const user = await this.getUser(userId);
+
+    const onboardingRows = await db.select().from(onboardingStatus)
+      .where(eq(onboardingStatus.userId, userId))
+      .limit(1);
+    const onboardingRow = onboardingRows[0];
+
+    const progress = this.computeSetupProgress(setupRow);
+    const isSetupComplete = progress === 100;
+
+    const verificationStatus = onboardingRow?.verificationStatus
+      ? onboardingRow.verificationStatus.toUpperCase() as VerificationStatusCode
+      : this.normalizeVerificationStatus(user?.verificationStatus);
+
+    // Keep users table in sync
+    if (user && (
+      user.setupProgress !== progress ||
+      user.isSetupComplete !== isSetupComplete ||
+      this.normalizeVerificationStatus(user.verificationStatus) !== verificationStatus
+    )) {
+      await db.update(users)
+        .set({
+          setupProgress: progress,
+          isSetupComplete,
+          verificationStatus,
+        })
+        .where(eq(users.id, userId));
+    }
+
+    return {
+      userId,
+      tenantId: setupRow.tenantId,
+      steps: {
+        businessProfile: setupRow.businessProfile,
+        paperPricing: setupRow.paperPricing,
+        fluteSettings: setupRow.fluteSettings,
+        taxDefaults: setupRow.taxDefaults,
+        quoteTerms: setupRow.quoteTerms,
+      },
+      setupProgress: progress,
+      isSetupComplete,
+      verificationStatus,
+      submittedForVerification: onboardingRow?.submittedForVerification || false,
+      approvedAt: onboardingRow?.approvedAt || user?.approvedAt || null,
+      approvedBy: onboardingRow?.approvedBy || user?.approvedBy || null,
+      rejectionReason: onboardingRow?.rejectionReason || null,
+      submittedAt: onboardingRow?.submittedAt || null,
+    };
+  }
+
+  async completeSetupStep(userId: string, stepKey: keyof SetupStatus['steps'], tenantId?: string): Promise<SetupStatus> {
+    const setupRow = await this.ensureUserSetup(userId, tenantId);
+    const now = new Date();
+
+    await db.transaction(async (tx) => {
+      const [updated] = await tx.update(userSetup)
+        .set({ [stepKey]: true, updatedAt: now })
+        .where(eq(userSetup.id, setupRow.id))
+        .returning();
+
+      const progress = this.computeSetupProgress(updated);
+      const isSetupComplete = progress === 100;
+      const completedAt = isSetupComplete ? (updated.completedAt || now) : null;
+
+      await tx.update(userSetup)
+        .set({ completedAt, updatedAt: now })
+        .where(eq(userSetup.id, updated.id));
+
+      await tx.update(users)
+        .set({ setupProgress: progress, isSetupComplete })
+        .where(eq(users.id, userId));
+
+      await this.syncOnboardingStatusFromSetup(tx, userId, { ...updated, completedAt } as UserSetup, {});
+    });
+
+    return this.getUserSetupStatus(userId, tenantId);
+  }
+
+  async submitSetupForVerification(userId: string, tenantId?: string): Promise<SetupStatus> {
+    const status = await this.getUserSetupStatus(userId, tenantId);
+
+    if (!status.isSetupComplete) {
+      throw new Error('Please complete all setup steps before submitting for verification');
+    }
+
+    const now = new Date();
+
+    await db.transaction(async (tx) => {
+      await tx.update(users)
+        .set({
+          verificationStatus: 'PENDING',
+          approvedAt: null,
+          approvedBy: null,
+        })
+        .where(eq(users.id, userId));
+
+      const setupRow = await this.ensureUserSetup(userId, tenantId);
+      await tx.update(userSetup)
+        .set({ completedAt: setupRow.completedAt || now, updatedAt: now })
+        .where(eq(userSetup.id, setupRow.id));
+
+      await this.syncOnboardingStatusFromSetup(tx, userId, { ...setupRow, completedAt: setupRow.completedAt || now } as UserSetup, {
+        submittedForVerification: true,
+        verificationStatus: 'PENDING',
+        approvedAt: null,
+        approvedBy: null,
+      });
+    });
+
+    return this.getUserSetupStatus(userId, tenantId);
+  }
+
   // ========== ONBOARDING STATUS (Admin Verification) ==========
-  async getOnboardingStatus(userId: string): Promise<OnboardingStatus | undefined> {
-    const [status] = await db.select().from(onboardingStatus).where(eq(onboardingStatus.userId, userId));
-    return status;
+  async getOnboardingStatus(userId: string, tenantId?: string): Promise<OnboardingStatus | undefined> {
+    const setupStatus = await this.getUserSetupStatus(userId, tenantId);
+    const [legacy] = await db.select().from(onboardingStatus)
+      .where(tenantId ? and(eq(onboardingStatus.userId, userId), eq(onboardingStatus.tenantId, tenantId)) : eq(onboardingStatus.userId, userId))
+      .limit(1);
+
+    const verification = setupStatus.verificationStatus === 'NOT_SUBMITTED'
+      ? 'in_progress'
+      : setupStatus.verificationStatus.toLowerCase();
+
+    const now = new Date();
+
+    return {
+      id: legacy?.id || crypto.randomUUID(),
+      tenantId: legacy?.tenantId || setupStatus.tenantId || null,
+      userId,
+      businessProfileDone: setupStatus.steps.businessProfile,
+      paperSetupDone: setupStatus.steps.paperPricing,
+      fluteSetupDone: setupStatus.steps.fluteSettings,
+      taxSetupDone: setupStatus.steps.taxDefaults,
+      termsSetupDone: setupStatus.steps.quoteTerms,
+      submittedForVerification: setupStatus.submittedForVerification,
+      verificationStatus: verification,
+      rejectionReason: legacy?.rejectionReason || null,
+      submittedAt: legacy?.submittedAt || null,
+      approvedAt: setupStatus.approvedAt || legacy?.approvedAt || null,
+      rejectedAt: legacy?.rejectedAt || null,
+      approvedBy: setupStatus.approvedBy || legacy?.approvedBy || null,
+      lastReminderSentAt: legacy?.lastReminderSentAt || null,
+      createdAt: legacy?.createdAt || now,
+      updatedAt: now,
+    } as OnboardingStatus;
   }
   
   async createOnboardingStatus(status: InsertOnboardingStatus): Promise<OnboardingStatus> {
@@ -1774,64 +2046,84 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateOnboardingStatus(userId: string, updates: Partial<InsertOnboardingStatus>): Promise<OnboardingStatus | undefined> {
-    const [updated] = await db.update(onboardingStatus)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(onboardingStatus.userId, userId))
-      .returning();
-    return updated;
+    const setupRow = await this.ensureUserSetup(userId, updates.tenantId);
+    const stepUpdates: Partial<UserSetup> = {};
+    if (updates.businessProfileDone !== undefined) stepUpdates.businessProfile = updates.businessProfileDone;
+    if (updates.paperSetupDone !== undefined) stepUpdates.paperPricing = updates.paperSetupDone;
+    if (updates.fluteSetupDone !== undefined) stepUpdates.fluteSettings = updates.fluteSetupDone;
+    if (updates.taxSetupDone !== undefined) stepUpdates.taxDefaults = updates.taxSetupDone;
+    if (updates.termsSetupDone !== undefined) stepUpdates.quoteTerms = updates.termsSetupDone;
+
+    if (Object.keys(stepUpdates).length > 0) {
+      await db.update(userSetup)
+        .set({ ...stepUpdates, updatedAt: new Date() })
+        .where(eq(userSetup.id, setupRow.id));
+    }
+
+    if (updates.submittedForVerification || updates.verificationStatus === 'pending') {
+      await this.submitSetupForVerification(userId, updates.tenantId);
+    }
+
+    return this.getOnboardingStatus(userId, updates.tenantId);
   }
   
   async submitForVerification(userId: string): Promise<OnboardingStatus | undefined> {
-    const [updated] = await db.update(onboardingStatus)
-      .set({ 
-        submittedForVerification: true,
-        verificationStatus: 'pending',
-        submittedAt: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(onboardingStatus.userId, userId))
-      .returning();
-    return updated;
+    await this.submitSetupForVerification(userId);
+    return this.getOnboardingStatus(userId);
   }
   
   async approveUser(userId: string, adminUserId: string): Promise<OnboardingStatus | undefined> {
-    const [updated] = await db.update(onboardingStatus)
-      .set({
-        verificationStatus: 'approved',
-        approvedAt: new Date(),
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx.update(users)
+        .set({
+          verificationStatus: 'APPROVED',
+          approvedAt: now,
+          approvedBy: adminUserId,
+        })
+        .where(eq(users.id, userId));
+
+      const setupRow = await this.ensureUserSetup(userId);
+      await this.syncOnboardingStatusFromSetup(tx, userId, setupRow, {
+        verificationStatus: 'APPROVED',
+        submittedForVerification: true,
+        approvedAt: now,
         approvedBy: adminUserId,
         rejectionReason: null,
-        rejectedAt: null,
-        updatedAt: new Date()
-      })
-      .where(eq(onboardingStatus.userId, userId))
-      .returning();
-    
-    // Log the admin action
+      });
+    });
+
     await this.createAdminAction({
       adminUserId,
       targetUserId: userId,
       action: 'approved',
       remarks: 'User approved'
     });
-    
-    return updated;
+
+    return this.getOnboardingStatus(userId);
   }
   
   async rejectUser(userId: string, adminUserId: string, reason: string): Promise<OnboardingStatus | undefined> {
-    const [updated] = await db.update(onboardingStatus)
-      .set({
-        verificationStatus: 'rejected',
-        rejectedAt: new Date(),
-        rejectionReason: reason,
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx.update(users)
+        .set({
+          verificationStatus: 'REJECTED',
+          approvedAt: null,
+          approvedBy: null,
+        })
+        .where(eq(users.id, userId));
+
+      const setupRow = await this.ensureUserSetup(userId);
+      await this.syncOnboardingStatusFromSetup(tx, userId, setupRow, {
+        verificationStatus: 'REJECTED',
+        submittedForVerification: true,
         approvedAt: null,
         approvedBy: null,
-        updatedAt: new Date()
-      })
-      .where(eq(onboardingStatus.userId, userId))
-      .returning();
-    
-    // Log the admin action
+        rejectionReason: reason,
+      });
+    });
+
     await this.createAdminAction({
       adminUserId,
       targetUserId: userId,
@@ -1839,17 +2131,19 @@ export class DatabaseStorage implements IStorage {
       remarks: reason
     });
     
-    return updated;
+    return this.getOnboardingStatus(userId);
   }
   
   async getPendingVerifications(): Promise<OnboardingStatus[]> {
-    return await db.select().from(onboardingStatus)
-      .where(
-        and(
-          eq(onboardingStatus.submittedForVerification, true),
-          eq(onboardingStatus.verificationStatus, 'pending')
-        )
-      );
+    const pendingUsers = await db.select().from(users)
+      .where(eq(users.verificationStatus, 'PENDING'));
+
+    const results: OnboardingStatus[] = [];
+    for (const u of pendingUsers) {
+      const status = await this.getOnboardingStatus(u.id);
+      if (status) results.push(status);
+    }
+    return results;
   }
   
   async updateOnboardingReminderSent(userId: string): Promise<void> {

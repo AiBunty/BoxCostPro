@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, type SetupStatus } from "./storage";
 import { createOnboardingGuard, onboardingRateLimiter } from "./middleware/onboardingGuard";
 import { requireAdminAuth, requireSuperAdmin as requireSuperAdminAuth, requireSupportAgent, requireSupportManager } from "./middleware/adminAuth";
 import { requireWhitelistedIP } from "./middleware/ipWhitelist";
@@ -1795,7 +1795,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ success: false, error: `Item ${i + 1}: Quantity must be a positive number.` });
         }
       }
-      
+
+      // CRITICAL: Check if user is approved before allowing quote creation
+      const setupStatus = await storage.getUserSetupStatus(userId, tenantId);
+      if (setupStatus.verificationStatus !== 'APPROVED') {
+        console.log("QUOTE CREATION BLOCKED: User not approved", { userId, verificationStatus: setupStatus.verificationStatus });
+        return res.status(403).json({
+          success: false,
+          error: 'Account not approved',
+          message: 'Your account must be approved before creating quotes',
+          verificationStatus: setupStatus.verificationStatus,
+          requiresAction: setupStatus.verificationStatus === 'REJECTED' ? 'UPDATE_PROFILE' : 'WAIT_FOR_APPROVAL'
+        });
+      }
+
       // ==================== TRACE LOG 2: VALIDATION PASSED ====================
       console.log("QUOTE PAYLOAD VALID");
       console.log("[Quote Save] User ID:", userId);
@@ -3967,14 +3980,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/onboarding/status", combinedAuth, onboardingRateLimiter, async (req: any, res) => {
     try {
       const userId = req.userId;
-      let status = await storage.getOnboardingStatus(userId);
-      
-      // If no status exists, create one
-      if (!status) {
-        status = await storage.createOnboardingStatus({ userId });
-      }
-      
-      res.json(status);
+      const setup = await storage.getUserSetupStatus(userId, req.tenantId);
+
+      res.json({
+        userId,
+        tenantId: setup.tenantId,
+        businessProfileDone: setup.steps.businessProfile,
+        paperSetupDone: setup.steps.paperPricing,
+        fluteSetupDone: setup.steps.fluteSettings,
+        taxSetupDone: setup.steps.taxDefaults,
+        termsSetupDone: setup.steps.quoteTerms,
+        submittedForVerification: setup.submittedForVerification,
+        verificationStatus: setup.verificationStatus.toLowerCase(),
+        setupProgress: setup.setupProgress,
+        isSetupComplete: setup.isSetupComplete,
+        approvedAt: setup.approvedAt,
+        approvedBy: setup.approvedBy,
+      });
     } catch (error) {
       console.error("Error fetching onboarding status:", error);
       res.status(500).json({ error: "Failed to fetch onboarding status" });
@@ -3986,15 +4008,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.userId;
       const updates = req.body;
-      
-      // Ensure onboarding status exists
-      let status = await storage.getOnboardingStatus(userId);
-      if (!status) {
-        status = await storage.createOnboardingStatus({ userId, ...updates });
-      } else {
-        status = await storage.updateOnboardingStatus(userId, updates);
-      }
-      
+
+      const status = await storage.updateOnboardingStatus(userId, updates);
       res.json(status);
     } catch (error) {
       console.error("Error updating onboarding status:", error);
@@ -4006,28 +4021,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/onboarding/submit-for-verification", combinedAuth, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const status = await storage.getOnboardingStatus(userId);
-
-      if (!status) {
-        return res.status(400).json({ error: "Please complete onboarding first" });
-      }
-
-      // Check if all onboarding steps are complete
-      if (!status.businessProfileDone || !status.paperSetupDone || !status.fluteSetupDone ||
-          !status.taxSetupDone || !status.termsSetupDone) {
-        return res.status(400).json({
-          error: "Please complete all onboarding steps before submitting for verification",
-          missingSteps: {
-            businessProfile: !status.businessProfileDone,
-            paperSetup: !status.paperSetupDone,
-            fluteSetup: !status.fluteSetupDone,
-            taxSetup: !status.taxSetupDone,
-            termsSetup: !status.termsSetupDone
-          }
-        });
-      }
-
-      const updatedStatus = await storage.submitForVerification(userId);
+      const setupStatus = await storage.submitSetupForVerification(userId, req.tenantId);
 
       // Send email notification to admin
       try {
@@ -4069,10 +4063,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('[Verification] Failed to send admin email:', emailError);
       }
 
-      res.json(updatedStatus);
+      res.json({
+        ...setupStatus,
+        verificationStatus: setupStatus.verificationStatus.toLowerCase(),
+      });
     } catch (error) {
       console.error("Error submitting for verification:", error);
       res.status(500).json({ error: "Failed to submit for verification" });
+    }
+  });
+
+  // ==================== SETUP STATUS (NEW ENDPOINTS) ====================
+
+  app.get("/api/user/setup/status", combinedAuth, async (req: any, res) => {
+    try {
+      const status = await storage.getUserSetupStatus(req.userId, req.tenantId);
+      res.json(status);
+    } catch (error) {
+      console.error('Error fetching setup status:', error);
+      res.status(500).json({ error: 'Failed to fetch setup status' });
+    }
+  });
+
+  app.post("/api/user/setup/update", combinedAuth, async (req: any, res) => {
+    try {
+      const { stepKey } = req.body;
+      const allowedSteps: Array<keyof SetupStatus['steps']> = ['businessProfile', 'paperPricing', 'fluteSettings', 'taxDefaults', 'quoteTerms'];
+      if (!allowedSteps.includes(stepKey)) {
+        return res.status(400).json({ error: 'Invalid stepKey' });
+      }
+
+      const status = await storage.completeSetupStep(req.userId, stepKey, req.tenantId);
+      res.json(status);
+    } catch (error: any) {
+      console.error('Error updating setup step:', error);
+      res.status(500).json({ error: error?.message || 'Failed to update setup step' });
+    }
+  });
+
+  app.post("/api/user/submit-verification", combinedAuth, async (req: any, res) => {
+    try {
+      const status = await storage.submitSetupForVerification(req.userId, req.tenantId);
+      res.json(status);
+    } catch (error: any) {
+      console.error('Error submitting verification:', error);
+      res.status(400).json({ error: error?.message || 'Failed to submit verification' });
     }
   });
   
@@ -4105,6 +4140,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching pending verifications:", error);
       res.status(500).json({ error: "Failed to fetch pending verifications" });
+    }
+  });
+
+  // Pending users (requested endpoint)
+  app.get("/api/admin/pending-users", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const pending = await storage.getPendingVerifications();
+      res.json(pending);
+    } catch (error) {
+      console.error('Error fetching pending users:', error);
+      res.status(500).json({ error: 'Failed to fetch pending users' });
     }
   });
   
@@ -4207,12 +4253,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { userId } = req.params;
       const adminUserId = req.userId;
 
-      const status = await storage.getOnboardingStatus(userId);
-      if (!status) {
-        return res.status(400).json({ error: "User has no onboarding record" });
+      const setupStatus = await storage.getUserSetupStatus(userId, req.tenantId);
+
+      if (!setupStatus.isSetupComplete) {
+        return res.status(400).json({ error: "User setup is not complete" });
       }
 
-      if (!status.submittedForVerification) {
+      if (!setupStatus.submittedForVerification) {
         return res.status(400).json({ error: "User has not submitted for verification" });
       }
 
@@ -4254,6 +4301,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error approving user:", error);
       res.status(500).json({ error: "Failed to approve user" });
+    }
+  });
+
+  // Approve user (body-based endpoint)
+  app.post("/api/admin/approve-user", combinedAuth, requireAdminAuth, async (req: any, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ error: "userId is required" });
+      }
+
+      const setupStatus = await storage.getUserSetupStatus(userId, req.tenantId);
+      if (!setupStatus.isSetupComplete || !setupStatus.submittedForVerification) {
+        return res.status(400).json({ error: "User not ready for approval" });
+      }
+
+      const updatedStatus = await storage.approveUser(userId, req.userId);
+
+      // Send approval email
+      try {
+        const user = await storage.getUser(userId);
+        if (user) {
+          const { sendSystemEmailAsync } = await import('./services/adminEmailService');
+          const { getUserVerificationApprovedEmailHTML, getUserVerificationApprovedEmailText } = await import('./services/emailTemplates/verificationEmails');
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+
+          await sendSystemEmailAsync(storage, {
+            to: user.email,
+            subject: '🎉 Your Account is Verified!',
+            html: getUserVerificationApprovedEmailHTML({
+              firstName: user.firstName,
+              dashboardUrl: `${frontendUrl}/dashboard`,
+            }),
+            text: getUserVerificationApprovedEmailText({
+              firstName: user.firstName,
+              dashboardUrl: `${frontendUrl}/dashboard`,
+            }),
+            emailType: 'verification_approved',
+            relatedEntityId: userId,
+          });
+        }
+      } catch (emailError) {
+        console.error('[Verification] Failed to send approval email:', emailError);
+      }
+
+      res.json(updatedStatus);
+    } catch (error) {
+      console.error('Error approving user (body endpoint):', error);
+      res.status(500).json({ error: 'Failed to approve user' });
     }
   });
   
