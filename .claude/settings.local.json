@@ -65,7 +65,9 @@
       "Bash(dir:*)",
       "Bash(pg_dump:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Resolve business profile 401 authorization error\n\nFixed authorization logic preventing users from editing business profiles.\n\nChanges:\n- Frontend \\(client/src/pages/account.tsx\\):\n  * Removed non-existent ''owner'' role from authorization check\n  * Added proper profile ownership check \\(userId comparison\\)\n  * Updated canEdit logic to allow super_admin, admin, or profile owner\n  * Fixed all form field disabled states to use canEdit instead of isOwner\n\n- Backend \\(server/routes.ts\\):\n  * Updated PATCH /api/company-profiles/:id authorization\n  * Changed from checking ''owner'' role to checking profile ownership\n  * Allow super_admin, admin, or profile owner to edit\n\n- Server setup \\(server/app.ts\\):\n  * Added Clerk middleware integration\n\n- Auth helper \\(server/clerkAuth.ts\\):\n  * Added support for both function and property auth access patterns\n\n- Admin script \\(scripts/check-and-fix-admin-role.ts\\):\n  * Created script to promote first user to super_admin\n  * Added automatic .env file loading\n  * Fixed column names to use snake_case\n\nIssue: Users were unable to save business profiles due to authorization\nchecking for non-existent ''owner'' role. All form fields were disabled.\n\nResult: Super admins, admins, and profile owners can now successfully\nedit and save business profiles.\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(git rm:*)",
+      "Bash(bash:*)"
     ]
   }
 }

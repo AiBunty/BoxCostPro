@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quotation - {{quotation_no}}</title>
+  <style>
+    /* Dynamic Quotation Template - Conditional Rendering */
+    @page {
+      size: A4;
+      margin: 10mm;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 10px;
+      line-height: 1.5;
+      color: #333;
+      background: white;
+    }
+    
+    .quotation-container {
+      max-width: 210mm;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 20px;
+      border-bottom: 3px solid #2563eb;
+      margin-bottom: 20px;
+    }
+    
+    .company-section {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    
+    .company-logo {
+      width: 70px;
+      height: 70px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    
+    .company-logo img {
+      max-width: 65px;
+      max-height: 65px;
+    }
+    
+    .company-info h1 {
+      font-size: 22px;
+      color: #1e40af;
+      margin-bottom: 5px;
+    }
+    
+    .company-info p {
+      font-size: 10px;
+      color: #666;
+    }
+    
+    .quotation-badge {
+      text-align: right;
+    }
+    
+    .quotation-badge h2 {
+      font-size: 28px;
+      color: #2563eb;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+    
+    .quotation-number {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-top: 5px;
+    }
+    
+    .quotation-date {
+      font-size: 11px;
+      color: #666;
+      margin-top: 3px;
+    }
+    
+    /* Meta Grid */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    
+    .meta-card {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 12px 15px;
+      border-left: 4px solid #2563eb;
+    }
+    
+    .meta-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.5px;
+      margin-bottom: 5px;
+    }
+    
+    .meta-value {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    
+    /* Party Details */
+    .party-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 25px;
+    }
+    
+    .party-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    .party-header {
+      background: #f1f5f9;
+      padding: 10px 15px;
+      font-weight: 600;
+      font-size: 11px;
+      color: #475569;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .party-body {
+      padding: 15px;
+    }
+    
+    .party-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+    
+    .party-detail {
+      font-size: 10px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    
+    .party-gstin {
+      display: inline-block;
+      background: #2563eb;
+      color: white;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+    
+    /* Box Items Table - DYNAMIC COLUMNS */
+    .items-section {
+      margin-bottom: 25px;
+    }
+    
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #2563eb;
+    }
+    
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #e2e8f0;
+    }
+    
+    .items-table thead {
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+      color: white;
+    }
+    
+    .items-table th {
+      padding: 10px 8px;
+      text-align: left;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .items-table td {
+      padding: 10px 8px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 10px;
+    }
+    
+    .items-table tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+    
+    .items-table tbody tr:hover {
+      background: #f1f5f9;
+    }
+    
+    .text-center {
+      text-align: center;
+    }
+    
+    .text-right {
+      text-align: right;
+    }
+    
+    .item-name {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    
+    .item-spec {
+      font-size: 9px;
+      color: #64748b;
+      margin-top: 3px;
+    }
+    
+    .highlight-cell {
+      background: #fef3c7 !important;
+      font-weight: 600;
+    }
+    
+    /* Cost Breakdown - CONDITIONAL */
+    .cost-breakdown {
+      margin-bottom: 20px;
+    }
+    
+    .breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    
+    .breakdown-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-radius: 4px;
+      font-size: 10px;
+    }
+    
+    .breakdown-label {
+      color: #64748b;
+    }
+    
+    .breakdown-value {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    
+    /* Paper Specification Section - CONDITIONAL */
+    {{#if show_paper_details}}
+    .paper-section {
+      margin-bottom: 20px;
+      background: #fefce8;
+      border: 1px solid #fde047;
+      border-radius: 8px;
+      padding: 15px;
+    }
+    
+    .paper-section h4 {
+      font-size: 11px;
+      color: #854d0e;
+      margin-bottom: 10px;
+    }
+    
+    .paper-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    
+    .paper-item {
+      font-size: 10px;
+    }
+    
+    .paper-item-label {
+      color: #a16207;
+      font-weight: 500;
+    }
+    
+    .paper-item-value {
+      color: #713f12;
+      font-weight: 600;
+    }
+    {{/if}}
+    
+    /* Printing Specification Section - CONDITIONAL */
+    {{#if show_printing_details}}
+    .printing-section {
+      margin-bottom: 20px;
+      background: #fdf4ff;
+      border: 1px solid #e879f9;
+      border-radius: 8px;
+      padding: 15px;
+    }
+    
+    .printing-section h4 {
+      font-size: 11px;
+      color: #86198f;
+      margin-bottom: 10px;
+    }
+    
+    .printing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    
+    .printing-item {
+      font-size: 10px;
+    }
+    
+    .printing-item-label {
+      color: #a21caf;
+      font-weight: 500;
+    }
+    
+    .printing-item-value {
+      color: #701a75;
+      font-weight: 600;
+    }
+    {{/if}}
+    
+    /* Die & Tooling Section - CONDITIONAL */
+    {{#if show_die_details}}
+    .die-section {
+      margin-bottom: 20px;
+      background: #f0fdf4;
+      border: 1px solid #4ade80;
+      border-radius: 8px;
+      padding: 15px;
+    }
+    
+    .die-section h4 {
+      font-size: 11px;
+      color: #166534;
+      margin-bottom: 10px;
+    }
+    
+    .die-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    
+    .die-item {
+      font-size: 10px;
+    }
+    
+    .die-item-label {
+      color: #22c55e;
+      font-weight: 500;
+    }
+    
+    .die-item-value {
+      color: #14532d;
+      font-weight: 600;
+    }
+    {{/if}}
+    
+    /* Totals Section */
+    .totals-section {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 25px;
+    }
+    
+    .totals-box {
+      width: 320px;
+      background: #f8fafc;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 15px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .totals-row:last-child {
+      border-bottom: none;
+    }
+    
+    .totals-label {
+      color: #64748b;
+      font-size: 11px;
+    }
+    
+    .totals-value {
+      font-weight: 600;
+      color: #1e293b;
+      font-size: 11px;
+    }
+    
+    .totals-grand {
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+      color: white;
+    }
+    
+    .totals-grand .totals-label,
+    .totals-grand .totals-value {
+      color: white;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    
+    /* Validity & Terms */
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .validity-box {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      padding: 15px;
+    }
+    
+    .validity-box h4 {
+      font-size: 11px;
+      color: #dc2626;
+      margin-bottom: 10px;
+    }
+    
+    .validity-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      margin-bottom: 5px;
+    }
+    
+    .validity-label {
+      color: #991b1b;
+    }
+    
+    .validity-value {
+      font-weight: 600;
+      color: #7f1d1d;
+    }
+    
+    .terms-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 15px;
+    }
+    
+    .terms-box h4 {
+      font-size: 11px;
+      color: #475569;
+      margin-bottom: 10px;
+    }
+    
+    .terms-list {
+      padding-left: 15px;
+      font-size: 9px;
+      color: #64748b;
+    }
+    
+    .terms-list li {
+      margin-bottom: 4px;
+    }
+    
+    /* Signature Section */
+    .signature-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-top: 20px;
+      border-top: 2px solid #e2e8f0;
+    }
+    
+    .note-box {
+      max-width: 60%;
+      font-size: 10px;
+      color: #64748b;
+      font-style: italic;
+    }
+    
+    .signature-box {
+      text-align: center;
+      min-width: 180px;
+    }
+    
+    .signature-line {
+      border-top: 1px solid #333;
+      padding-top: 8px;
+      margin-top: 40px;
+    }
+    
+    .signature-name {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    
+    .signature-designation {
+      font-size: 9px;
+      color: #64748b;
+    }
+    
+    /* Contact CTA */
+    .cta-section {
+      margin-top: 20px;
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      border-radius: 8px;
+      padding: 15px 20px;
+      text-align: center;
+      color: white;
+    }
+    
+    .cta-section p {
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+    
+    .cta-section strong {
+      font-size: 14px;
+    }
+    
+    /* Print */
+    @media print {
+      body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="quotation-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="company-section">
+        <div class="company-logo">
+          {{#if seller_logo}}
+          <img src="{{seller_logo}}" alt="Logo">
+          {{else}}
+          <span style="font-size: 20px; font-weight: bold; color: #2563eb;">{{company_initials}}</span>
+          {{/if}}
+        </div>
+        <div class="company-info">
+          <h1>{{seller_company_name}}</h1>
+          <p>{{seller_address}}, {{seller_city}}</p>
+          <p>Phone: {{seller_phone}} | Email: {{seller_email}}</p>
+        </div>
+      </div>
+      <div class="quotation-badge">
+        <h2>Quotation</h2>
+        <div class="quotation-number">#{{quotation_no}}</div>
+        <div class="quotation-date">Date: {{quotation_date}}</div>
+      </div>
+    </div>
+    
+    <!-- Meta Info -->
+    <div class="meta-grid">
+      <div class="meta-card">
+        <div class="meta-label">Reference</div>
+        <div class="meta-value">{{reference_no}}</div>
+      </div>
+      <div class="meta-card">
+        <div class="meta-label">Valid Until</div>
+        <div class="meta-value">{{valid_until}}</div>
+      </div>
+      <div class="meta-card">
+        <div class="meta-label">Prepared By</div>
+        <div class="meta-value">{{prepared_by}}</div>
+      </div>
+    </div>
+    
+    <!-- Party Details -->
+    <div class="party-section">
+      <div class="party-card">
+        <div class="party-header">Quotation For</div>
+        <div class="party-body">
+          <div class="party-name">{{buyer_name}}</div>
+          <div class="party-detail">{{buyer_address}}</div>
+          <div class="party-detail">{{buyer_city}}, {{buyer_state}} - {{buyer_pincode}}</div>
+          {{#if buyer_phone}}<div class="party-detail">📞 {{buyer_phone}}</div>{{/if}}
+          {{#if buyer_email}}<div class="party-detail">✉️ {{buyer_email}}</div>{{/if}}
+          {{#if buyer_gstin}}<div class="party-gstin">GSTIN: {{buyer_gstin}}</div>{{/if}}
+        </div>
+      </div>
+      <div class="party-card">
+        <div class="party-header">Attention</div>
+        <div class="party-body">
+          {{#if attention_person}}
+          <div class="party-name">{{attention_person}}</div>
+          <div class="party-detail">{{attention_designation}}</div>
+          {{#if attention_phone}}<div class="party-detail">📞 {{attention_phone}}</div>{{/if}}
+          {{#if attention_email}}<div class="party-detail">✉️ {{attention_email}}</div>{{/if}}
+          {{else}}
+          <div class="party-name">—</div>
+          {{/if}}
+        </div>
+      </div>
+    </div>
+    
+    <!-- Box Items Table - DYNAMIC: Only shows columns that have data -->
+    <div class="items-section">
+      <div class="section-title">Product Details</div>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 30px;">S.No</th>
+            <th>Box Type / Description</th>
+            {{#if show_column_size}}<th>Size (L×W×H)</th>{{/if}}
+            {{#if show_column_ply}}<th>Ply</th>{{/if}}
+            {{#if show_column_paper}}<th>Paper Spec</th>{{/if}}
+            {{#if show_column_gsm}}<th>GSM</th>{{/if}}
+            {{#if show_column_print}}<th>Print</th>{{/if}}
+            <th class="text-center">Qty</th>
+            <th class="text-right">Rate/Unit</th>
+            <th class="text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each items}}
+          <tr>
+            <td class="text-center">{{this.sno}}</td>
+            <td>
+              <div class="item-name">{{this.box_type}}</div>
+              {{#if this.description}}<div class="item-spec">{{this.description}}</div>{{/if}}
+            </td>
+            {{#if ../show_column_size}}<td>{{this.length}} × {{this.width}} × {{this.height}} {{this.dimension_unit}}</td>{{/if}}
+            {{#if ../show_column_ply}}<td class="text-center">{{this.ply}}</td>{{/if}}
+            {{#if ../show_column_paper}}<td>{{this.paper_spec}}</td>{{/if}}
+            {{#if ../show_column_gsm}}<td class="text-center">{{this.gsm}}</td>{{/if}}
+            {{#if ../show_column_print}}<td>{{this.print_type}}{{#if this.print_colors}} ({{this.print_colors}}){{/if}}</td>{{/if}}
+            <td class="text-center">{{this.quantity}} {{this.unit}}</td>
+            <td class="text-right">₹{{this.rate}}</td>
+            <td class="text-right"><strong>₹{{this.amount}}</strong></td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- Paper Details Section - CONDITIONAL: Only shows if user selected paper details -->
+    {{#if show_paper_details}}
+    <div class="paper-section">
+      <h4>📄 Paper Specification Details</h4>
+      <div class="paper-grid">
+        {{#each paper_details}}
+        <div class="paper-item">
+          <div class="paper-item-label">{{this.layer}}</div>
+          <div class="paper-item-value">{{this.shade}} {{this.gsm}} GSM @ ₹{{this.rate}}/kg</div>
+        </div>
+        {{/each}}
+      </div>
+    </div>
+    {{/if}}
+    
+    <!-- Printing Details Section - CONDITIONAL -->
+    {{#if show_printing_details}}
+    <div class="printing-section">
+      <h4>🎨 Printing Specification</h4>
+      <div class="printing-grid">
+        <div class="printing-item">
+          <div class="printing-item-label">Print Type</div>
+          <div class="printing-item-value">{{print_type}}</div>
+        </div>
+        <div class="printing-item">
+          <div class="printing-item-label">Colors</div>
+          <div class="printing-item-value">{{print_colors}}</div>
+        </div>
+        <div class="printing-item">
+          <div class="printing-item-label">Plate Cost</div>
+          <div class="printing-item-value">₹{{plate_cost}}</div>
+        </div>
+        <div class="printing-item">
+          <div class="printing-item-label">Ink Coverage</div>
+          <div class="printing-item-value">{{ink_coverage}}%</div>
+        </div>
+        <div class="printing-item">
+          <div class="printing-item-label">Print Area</div>
+          <div class="printing-item-value">{{print_area}}</div>
+        </div>
+        <div class="printing-item">
+          <div class="printing-item-label">Print Cost</div>
+          <div class="printing-item-value">₹{{print_cost_per_box}}/box</div>
+        </div>
+      </div>
+    </div>
+    {{/if}}
+    
+    <!-- Die & Tooling Section - CONDITIONAL -->
+    {{#if show_die_details}}
+    <div class="die-section">
+      <h4>🔧 Die & Tooling Details</h4>
+      <div class="die-grid">
+        <div class="die-item">
+          <div class="die-item-label">Die Type</div>
+          <div class="die-item-value">{{die_type}}</div>
+        </div>
+        <div class="die-item">
+          <div class="die-item-label">Die Cost</div>
+          <div class="die-item-value">₹{{die_cost}}</div>
+        </div>
+        <div class="die-item">
+          <div class="die-item-label">Die Life</div>
+          <div class="die-item-value">{{die_life}} impressions</div>
+        </div>
+      </div>
+    </div>
+    {{/if}}
+    
+    <!-- Cost Breakdown - CONDITIONAL -->
+    {{#if show_cost_breakdown}}
+    <div class="cost-breakdown">
+      <div class="section-title">Cost Breakdown Per Box</div>
+      <div class="breakdown-grid">
+        {{#if breakdown_paper}}<div class="breakdown-item"><span class="breakdown-label">Paper Cost</span><span class="breakdown-value">₹{{breakdown_paper}}</span></div>{{/if}}
+        {{#if breakdown_corrugation}}<div class="breakdown-item"><span class="breakdown-label">Corrugation</span><span class="breakdown-value">₹{{breakdown_corrugation}}</span></div>{{/if}}
+        {{#if breakdown_pasting}}<div class="breakdown-item"><span class="breakdown-label">Pasting</span><span class="breakdown-value">₹{{breakdown_pasting}}</span></div>{{/if}}
+        {{#if breakdown_printing}}<div class="breakdown-item"><span class="breakdown-label">Printing</span><span class="breakdown-value">₹{{breakdown_printing}}</span></div>{{/if}}
+        {{#if breakdown_die_cutting}}<div class="breakdown-item"><span class="breakdown-label">Die Cutting</span><span class="breakdown-value">₹{{breakdown_die_cutting}}</span></div>{{/if}}
+        {{#if breakdown_stitching}}<div class="breakdown-item"><span class="breakdown-label">Stitching/Gluing</span><span class="breakdown-value">₹{{breakdown_stitching}}</span></div>{{/if}}
+        {{#if breakdown_overheads}}<div class="breakdown-item"><span class="breakdown-label">Overheads</span><span class="breakdown-value">₹{{breakdown_overheads}}</span></div>{{/if}}
+        {{#if breakdown_profit}}<div class="breakdown-item"><span class="breakdown-label">Profit Margin</span><span class="breakdown-value">₹{{breakdown_profit}}</span></div>{{/if}}
+      </div>
+    </div>
+    {{/if}}
+    
+    <!-- Totals -->
+    <div class="totals-section">
+      <div class="totals-box">
+        <div class="totals-row">
+          <span class="totals-label">Subtotal</span>
+          <span class="totals-value">₹{{subtotal}}</span>
+        </div>
+        {{#if discount_amount}}
+        <div class="totals-row">
+          <span class="totals-label">Discount ({{discount_percent}}%)</span>
+          <span class="totals-value">- ₹{{discount_amount}}</span>
+        </div>
+        {{/if}}
+        {{#if show_gst}}
+        {{#if is_igst}}
+        <div class="totals-row">
+          <span class="totals-label">IGST @ {{igst_rate}}%</span>
+          <span class="totals-value">₹{{igst_amount}}</span>
+        </div>
+        {{else}}
+        <div class="totals-row">
+          <span class="totals-label">CGST @ {{cgst_rate}}%</span>
+          <span class="totals-value">₹{{cgst_amount}}</span>
+        </div>
+        <div class="totals-row">
+          <span class="totals-label">SGST @ {{sgst_rate}}%</span>
+          <span class="totals-value">₹{{sgst_amount}}</span>
+        </div>
+        {{/if}}
+        {{/if}}
+        {{#if transport_charges}}
+        <div class="totals-row">
+          <span class="totals-label">Transport Charges</span>
+          <span class="totals-value">₹{{transport_charges}}</span>
+        </div>
+        {{/if}}
+        <div class="totals-row totals-grand">
+          <span class="totals-label">Grand Total</span>
+          <span class="totals-value">₹{{grand_total}}</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Validity & Terms -->
+    <div class="footer-grid">
+      <div class="validity-box">
+        <h4>⏰ Quotation Validity</h4>
+        <div class="validity-item">
+          <span class="validity-label">Valid Until:</span>
+          <span class="validity-value">{{valid_until}}</span>
+        </div>
+        <div class="validity-item">
+          <span class="validity-label">Price Valid For:</span>
+          <span class="validity-value">{{validity_days}} days</span>
+        </div>
+        <div class="validity-item">
+          <span class="validity-label">Delivery Time:</span>
+          <span class="validity-value">{{delivery_days}} working days</span>
+        </div>
+        <div class="validity-item">
+          <span class="validity-label">Payment Terms:</span>
+          <span class="validity-value">{{payment_terms}}</span>
+        </div>
+      </div>
+      <div class="terms-box">
+        <h4>📋 Terms & Conditions</h4>
+        <ol class="terms-list">
+          {{#each terms}}
+          <li>{{this}}</li>
+          {{/each}}
+        </ol>
+      </div>
+    </div>
+    
+    <!-- Signature -->
+    <div class="signature-section">
+      <div class="note-box">
+        {{#if special_notes}}
+        <strong>Special Notes:</strong> {{special_notes}}
+        {{else}}
+        Thank you for the opportunity to quote. We look forward to serving you!
+        {{/if}}
+      </div>
+      <div class="signature-box">
+        <div class="signature-line">
+          <div class="signature-name">For {{seller_company_name}}</div>
+          <div class="signature-designation">Authorized Signatory</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Contact CTA -->
+    <div class="cta-section">
+      <p>Questions about this quotation? Contact us!</p>
+      <strong>📞 {{seller_phone}} | ✉️ {{seller_email}}</strong>
+    </div>
+  </div>
+</body>
+</html>

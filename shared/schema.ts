@@ -223,6 +223,17 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   planTier: varchar("plan_tier", { length: 20 }).default('basic'), // 'basic', 'professional', 'enterprise'
   displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
+  // Enterprise subscription management columns
+  code: text("code").unique(),
+  billingCycle: varchar("billing_cycle", { length: 20 }).default('MONTHLY'),
+  currency: varchar("currency", { length: 10 }).default('INR'),
+  basePrice: real("base_price"),
+  gstApplicable: boolean("gst_applicable").default(true),
+  gstRate: real("gst_rate").default(18.00),
+  isPublic: boolean("is_public").default(true),
+  status: varchar("plan_status", { length: 20 }).default('ACTIVE'),
+  archivedAt: timestamp("archived_at"),
+  archivedBy: varchar("archived_by"),
 });
 
 export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({ id: true, createdAt: true });
@@ -243,6 +254,21 @@ export const userSubscriptions = pgTable("user_subscriptions", {
   couponApplied: varchar("coupon_applied"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Enterprise subscription management columns
+  tenantId: varchar("tenant_id"),
+  planVersionId: varchar("plan_version_id"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  trialEndsAt: timestamp("trial_ends_at"),
+  autoRenew: boolean("auto_renew").default(true),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  cancelledAt: timestamp("cancelled_at"),
+  cancelReason: text("cancel_reason"),
+  gatewaySubscriptionId: text("gateway_subscription_id"),
+  gatewayCustomerId: text("gateway_customer_id"),
+  lastPaymentId: varchar("last_payment_id"),
+  nextBillingDate: timestamp("next_billing_date"),
+  paymentFailures: integer("payment_failures").default(0),
 });
 
 export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
@@ -839,12 +865,14 @@ export type LayerSpec = z.infer<typeof layerSpecSchema>;
 
 // ========== PAPER SHADES MASTER TABLE (SINGLE SOURCE OF TRUTH) ==========
 // This is the canonical reference for all shade names and abbreviations
-// Abbreviations are used in paper spec generation: e.g., "Kra120/32"
+// Abbreviations are used in paper spec generation: e.g., "KRA120/32"
+// Categories: kraft, liner, duplex, flute
 
 export const paperShades = pgTable("paper_shades", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   shadeName: varchar("shade_name", { length: 100 }).notNull().unique(),
   abbreviation: varchar("abbreviation", { length: 10 }).notNull(),
+  category: varchar("category", { length: 20 }).default("kraft"), // kraft, liner, duplex, flute
   description: text("description"),
   isFluting: boolean("is_fluting").default(false),
   sortOrder: integer("sort_order").default(0),
@@ -857,18 +885,19 @@ export type InsertPaperShade = z.infer<typeof insertPaperShadeSchema>;
 export type PaperShade = typeof paperShades.$inferSelect;
 
 // Default shades with canonical abbreviations (seeded on first run)
+// CANONICAL ABBREVIATIONS - used everywhere: Calculator, Reports, Paper Specs
 export const DEFAULT_PAPER_SHADES = [
-  { shadeName: "Kraft/Natural", abbreviation: "Kra", description: "Standard kraft paper", isFluting: false, sortOrder: 1 },
-  { shadeName: "Testliner", abbreviation: "TL", description: "Recycled testliner", isFluting: false, sortOrder: 2 },
-  { shadeName: "Virgin Kraft Liner", abbreviation: "VKL", description: "Premium virgin kraft liner", isFluting: false, sortOrder: 3 },
-  { shadeName: "White Kraft Liner", abbreviation: "WKL", description: "White coated kraft liner", isFluting: false, sortOrder: 4 },
-  { shadeName: "White Top Testliner", abbreviation: "WTT", description: "White top coated testliner", isFluting: false, sortOrder: 5 },
-  { shadeName: "Duplex Grey Back (LWC)", abbreviation: "LWC", description: "Light weight coated duplex", isFluting: false, sortOrder: 6 },
-  { shadeName: "Duplex Grey Back (HWC)", abbreviation: "HWC", description: "Heavy weight coated duplex", isFluting: false, sortOrder: 7 },
-  { shadeName: "Semi Chemical Fluting", abbreviation: "SCF", description: "Semi chemical fluting medium", isFluting: true, sortOrder: 8 },
-  { shadeName: "Recycled Fluting", abbreviation: "RF", description: "Recycled fluting medium", isFluting: true, sortOrder: 9 },
-  { shadeName: "Bagasse (Agro based)", abbreviation: "BAG", description: "Agricultural waste based paper", isFluting: false, sortOrder: 10 },
-  { shadeName: "Golden Kraft", abbreviation: "GOL", description: "Premium golden kraft paper", isFluting: false, sortOrder: 11 },
+  { shadeName: "Kraft/Natural", abbreviation: "KRA", category: "kraft", description: "Standard kraft paper", isFluting: false, sortOrder: 1 },
+  { shadeName: "Testliner", abbreviation: "TST", category: "liner", description: "Recycled testliner", isFluting: false, sortOrder: 2 },
+  { shadeName: "Virgin Kraft Liner", abbreviation: "VKL", category: "liner", description: "Premium virgin kraft liner", isFluting: false, sortOrder: 3 },
+  { shadeName: "White Kraft Liner", abbreviation: "WKL", category: "liner", description: "White coated kraft liner", isFluting: false, sortOrder: 4 },
+  { shadeName: "White Top Testliner", abbreviation: "WTT", category: "liner", description: "White top coated testliner", isFluting: false, sortOrder: 5 },
+  { shadeName: "Duplex Grey Back (LWC)", abbreviation: "LWC", category: "duplex", description: "Light Weight Coating duplex", isFluting: false, sortOrder: 6 },
+  { shadeName: "Duplex Grey Back (HWC)", abbreviation: "HWC", category: "duplex", description: "Heavy Weight Coating duplex", isFluting: false, sortOrder: 7 },
+  { shadeName: "Semi Chemical Fluting", abbreviation: "SCF", category: "flute", description: "Semi chemical fluting medium", isFluting: true, sortOrder: 8 },
+  { shadeName: "Recycled Fluting", abbreviation: "RCF", category: "flute", description: "Recycled fluting medium", isFluting: true, sortOrder: 9 },
+  { shadeName: "Bagasse (Agro based)", abbreviation: "BAG", category: "kraft", description: "Agricultural waste based paper", isFluting: false, sortOrder: 10 },
+  { shadeName: "Golden Kraft", abbreviation: "GOL", category: "kraft", description: "Premium golden kraft paper", isFluting: false, sortOrder: 11 },
 ] as const;
 
 // ========== PAPER PRICE SETUP (per user) ==========
@@ -1640,3 +1669,971 @@ export const userEmailPreferences = pgTable("user_email_preferences", {
 export const insertUserEmailPreferencesSchema = createInsertSchema(userEmailPreferences).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserEmailPreferences = z.infer<typeof insertUserEmailPreferencesSchema>;
 export type UserEmailPreferences = typeof userEmailPreferences.$inferSelect;
+
+// ========== SUBSCRIPTION MANAGEMENT SYSTEM (ENTERPRISE) ==========
+
+// Plan Versions - Immutable snapshots of plan pricing
+export const planVersions = pgTable("plan_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").references(() => subscriptionPlans.id).notNull(),
+  version: integer("version").notNull(),
+  price: real("price").notNull(),
+  billingCycle: varchar("billing_cycle", { length: 20 }).notNull().default('MONTHLY'),
+  gstRate: real("gst_rate").default(18.00),
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveUntil: timestamp("effective_until"),
+  isCurrent: boolean("is_current").default(true),
+  changeNotes: text("change_notes"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_plan_versions_plan").on(table.planId),
+  index("idx_plan_versions_current").on(table.isCurrent),
+]);
+
+export const insertPlanVersionSchema = createInsertSchema(planVersions).omit({ id: true, createdAt: true });
+export type InsertPlanVersion = z.infer<typeof insertPlanVersionSchema>;
+export type PlanVersion = typeof planVersions.$inferSelect;
+
+// Subscription Features - System-wide feature definitions
+export const subscriptionFeatures = pgTable("subscription_features", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").unique().notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  valueType: varchar("value_type", { length: 20 }).notNull(), // 'BOOLEAN', 'NUMBER', 'TEXT'
+  defaultValue: text("default_value"),
+  category: varchar("category", { length: 50 }),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_subscription_features_code").on(table.code),
+  index("idx_subscription_features_category").on(table.category),
+]);
+
+export const insertSubscriptionFeatureSchema = createInsertSchema(subscriptionFeatures).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubscriptionFeature = z.infer<typeof insertSubscriptionFeatureSchema>;
+export type SubscriptionFeature = typeof subscriptionFeatures.$inferSelect;
+
+// Plan Features - Feature values per plan version
+export const planFeatures = pgTable("plan_features", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planVersionId: varchar("plan_version_id").notNull(),
+  featureId: varchar("feature_id").notNull(),
+  value: text("value").notNull(),
+  isEnabled: boolean("is_enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_plan_features_version").on(table.planVersionId),
+  index("idx_plan_features_feature").on(table.featureId),
+]);
+
+export const insertPlanFeatureSchema = createInsertSchema(planFeatures).omit({ id: true, createdAt: true });
+export type InsertPlanFeature = z.infer<typeof insertPlanFeatureSchema>;
+export type PlanFeature = typeof planFeatures.$inferSelect;
+
+// Subscription Audit Logs - Immutable audit trail
+export const subscriptionAuditLogs = pgTable("subscription_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  subscriptionId: varchar("subscription_id").notNull(),
+  action: text("action").notNull(),
+  beforeSnapshot: jsonb("before_snapshot"),
+  afterSnapshot: jsonb("after_snapshot").notNull(),
+  changeDetails: jsonb("change_details"),
+  actorId: varchar("actor_id"),
+  actorType: varchar("actor_type", { length: 20 }),
+  actorEmail: text("actor_email"),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_subscription_audit_subscription").on(table.subscriptionId),
+  index("idx_subscription_audit_action").on(table.action),
+  index("idx_subscription_audit_actor").on(table.actorId),
+  index("idx_subscription_audit_created").on(table.createdAt),
+]);
+
+export type SubscriptionAuditLog = typeof subscriptionAuditLogs.$inferSelect;
+
+// Subscription Payments - Payment history
+export const subscriptionPayments = pgTable("subscription_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  subscriptionId: varchar("subscription_id").notNull(),
+  tenantId: varchar("tenant_id"),
+  userId: varchar("user_id").notNull(),
+  amount: real("amount").notNull(),
+  baseAmount: real("base_amount").notNull(),
+  gstAmount: real("gst_amount").default(0),
+  gstRate: real("gst_rate"),
+  currency: varchar("currency", { length: 10 }).notNull().default('INR'),
+  status: varchar("status", { length: 20 }).notNull().default('PENDING'),
+  paymentType: varchar("payment_type", { length: 20 }),
+  gateway: varchar("gateway", { length: 50 }).notNull(),
+  gatewayPaymentId: text("gateway_payment_id"),
+  gatewayOrderId: text("gateway_order_id"),
+  gatewaySignature: text("gateway_signature"),
+  gatewayResponse: jsonb("gateway_response"),
+  invoiceId: varchar("invoice_id"),
+  failureReason: text("failure_reason"),
+  retryCount: integer("retry_count").default(0),
+  nextRetryAt: timestamp("next_retry_at"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_subscription_payments_subscription").on(table.subscriptionId),
+  index("idx_subscription_payments_user").on(table.userId),
+  index("idx_subscription_payments_status").on(table.status),
+  index("idx_subscription_payments_gateway").on(table.gateway, table.gatewayPaymentId),
+]);
+
+export const insertSubscriptionPaymentSchema = createInsertSchema(subscriptionPayments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubscriptionPayment = z.infer<typeof insertSubscriptionPaymentSchema>;
+export type SubscriptionPayment = typeof subscriptionPayments.$inferSelect;
+
+// Subscription Invoices - GST-compliant invoices
+export const subscriptionInvoices = pgTable("subscription_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: text("invoice_number").unique().notNull(),
+  subscriptionId: varchar("subscription_id").notNull(),
+  paymentId: varchar("payment_id"),
+  tenantId: varchar("tenant_id"),
+  userId: varchar("user_id").notNull(),
+  
+  // Billing details
+  billingName: text("billing_name").notNull(),
+  billingEmail: text("billing_email").notNull(),
+  billingAddress: text("billing_address"),
+  billingCity: text("billing_city"),
+  billingState: text("billing_state"),
+  billingCountry: text("billing_country").default('India'),
+  billingPincode: text("billing_pincode"),
+  billingGstin: text("billing_gstin"),
+  
+  // Company details
+  companyName: text("company_name").notNull(),
+  companyGstin: text("company_gstin").notNull(),
+  companyAddress: text("company_address"),
+  companyState: text("company_state"),
+  
+  // Plan details
+  planName: text("plan_name").notNull(),
+  planCode: text("plan_code").notNull(),
+  planVersion: integer("plan_version").notNull(),
+  billingCycle: varchar("billing_cycle", { length: 20 }).notNull(),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  
+  // Amounts
+  baseAmount: real("base_amount").notNull(),
+  discountAmount: real("discount_amount").default(0),
+  discountDescription: text("discount_description"),
+  couponCode: text("coupon_code"),
+  taxableAmount: real("taxable_amount").notNull(),
+  
+  // GST breakdown
+  isIgst: boolean("is_igst").default(false),
+  cgstRate: real("cgst_rate"),
+  cgstAmount: real("cgst_amount"),
+  sgstRate: real("sgst_rate"),
+  sgstAmount: real("sgst_amount"),
+  igstRate: real("igst_rate"),
+  igstAmount: real("igst_amount"),
+  totalGst: real("total_gst").notNull(),
+  
+  totalAmount: real("total_amount").notNull(),
+  amountInWords: text("amount_in_words"),
+  currency: varchar("currency", { length: 10 }).notNull().default('INR'),
+  
+  status: varchar("status", { length: 20 }).notNull().default('DRAFT'),
+  issuedAt: timestamp("issued_at"),
+  paidAt: timestamp("paid_at"),
+  voidReason: text("void_reason"),
+  
+  originalInvoiceId: varchar("original_invoice_id"),
+  creditNoteReason: text("credit_note_reason"),
+  
+  // E-invoice fields
+  irn: text("irn"),
+  ackNumber: text("ack_number"),
+  ackDate: timestamp("ack_date"),
+  signedInvoice: text("signed_invoice"),
+  signedQrCode: text("signed_qr_code"),
+  
+  notes: text("notes"),
+  metadata: jsonb("metadata").default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_subscription_invoices_number").on(table.invoiceNumber),
+  index("idx_subscription_invoices_subscription").on(table.subscriptionId),
+  index("idx_subscription_invoices_user").on(table.userId),
+  index("idx_subscription_invoices_status").on(table.status),
+]);
+
+export const insertSubscriptionInvoiceSchema = createInsertSchema(subscriptionInvoices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubscriptionInvoice = z.infer<typeof insertSubscriptionInvoiceSchema>;
+export type SubscriptionInvoice = typeof subscriptionInvoices.$inferSelect;
+
+// Subscription Coupons - Discount codes
+export const subscriptionCoupons = pgTable("subscription_coupons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").unique().notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  discountType: varchar("discount_type", { length: 20 }).notNull(), // 'PERCENTAGE', 'FIXED_AMOUNT'
+  discountValue: real("discount_value").notNull(),
+  maxDiscountAmount: real("max_discount_amount"),
+  currency: varchar("currency", { length: 10 }).default('INR'),
+  maxUses: integer("max_uses"),
+  maxUsesPerUser: integer("max_uses_per_user").default(1),
+  currentUses: integer("current_uses").default(0),
+  validFrom: timestamp("valid_from").defaultNow(),
+  validUntil: timestamp("valid_until"),
+  applicablePlans: jsonb("applicable_plans"),
+  minAmount: real("min_amount"),
+  firstSubscriptionOnly: boolean("first_subscription_only").default(false),
+  status: varchar("status", { length: 20 }).notNull().default('ACTIVE'),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_subscription_coupons_code").on(table.code),
+  index("idx_subscription_coupons_status").on(table.status),
+]);
+
+export const insertSubscriptionCouponSchema = createInsertSchema(subscriptionCoupons).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubscriptionCoupon = z.infer<typeof insertSubscriptionCouponSchema>;
+export type SubscriptionCoupon = typeof subscriptionCoupons.$inferSelect;
+
+// Coupon Usages - Track coupon redemptions
+export const couponUsages = pgTable("coupon_usages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  couponId: varchar("coupon_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  subscriptionId: varchar("subscription_id").notNull(),
+  paymentId: varchar("payment_id"),
+  discountApplied: real("discount_applied").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_coupon_usages_coupon").on(table.couponId),
+  index("idx_coupon_usages_user").on(table.userId),
+]);
+
+export type CouponUsage = typeof couponUsages.$inferSelect;
+
+// Plan Audit Logs - Track plan changes
+export const planAuditLogs = pgTable("plan_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull(),
+  planVersionId: varchar("plan_version_id"),
+  action: text("action").notNull(),
+  beforeSnapshot: jsonb("before_snapshot"),
+  afterSnapshot: jsonb("after_snapshot").notNull(),
+  actorId: varchar("actor_id"),
+  actorEmail: text("actor_email"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_plan_audit_logs_plan").on(table.planId),
+  index("idx_plan_audit_logs_action").on(table.action),
+]);
+
+export type PlanAuditLog = typeof planAuditLogs.$inferSelect;
+
+// ========== ENTERPRISE SUPPORT + SLA + AI SYSTEM ==========
+
+// Support Ticket Category Enum
+export const supportTicketCategoryEnum = z.enum([
+  'SOFTWARE_ISSUE',
+  'SOFTWARE_BUG',
+  'BILLING',
+  'TRAINING',
+  'FEATURE_REQUEST',
+  'CALLBACK_REQUEST',
+  'GENERAL_QUERY'
+]);
+export type SupportTicketCategory = z.infer<typeof supportTicketCategoryEnum>;
+
+// Support Ticket Priority Enum
+export const supportTicketPriorityEnum = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
+export type SupportTicketPriority = z.infer<typeof supportTicketPriorityEnum>;
+
+// Support Ticket Status Enum
+export const supportTicketStatusEnum = z.enum([
+  'OPEN',
+  'IN_PROGRESS',
+  'AWAITING_USER',
+  'ESCALATED',
+  'RESOLVED',
+  'CLOSED'
+]);
+export type SupportTicketStatus = z.infer<typeof supportTicketStatusEnum>;
+
+// Support Message Sender Role Enum
+export const supportMessageSenderRoleEnum = z.enum(['USER', 'ADMIN', 'SYSTEM', 'WHATSAPP', 'AI']);
+export type SupportMessageSenderRole = z.infer<typeof supportMessageSenderRoleEnum>;
+
+// Extended Support Tickets - Enterprise-grade support with SLA
+export const supportTicketsExtended = pgTable("support_tickets_extended", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  ticketNumber: varchar("ticket_number").notNull().unique(), // e.g. SUP-2025-000123
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  
+  // Ticket Details
+  category: varchar("category").notNull(), // SOFTWARE_ISSUE, SOFTWARE_BUG, BILLING, etc.
+  subject: text("subject").notNull(),
+  description: text("description"),
+  priority: varchar("priority").notNull().default('MEDIUM'), // LOW, MEDIUM, HIGH, URGENT
+  status: varchar("status").notNull().default('OPEN'), // OPEN, IN_PROGRESS, AWAITING_USER, ESCALATED, RESOLVED, CLOSED
+  
+  // SLA Tracking
+  slaDueAt: timestamp("sla_due_at"), // When SLA breaches
+  firstResponseAt: timestamp("first_response_at"), // When first response was sent
+  firstResponseDueAt: timestamp("first_response_due_at"), // When first response SLA breaches
+  
+  // Escalation
+  isEscalated: boolean("is_escalated").default(false),
+  escalatedAt: timestamp("escalated_at"),
+  escalatedTo: varchar("escalated_to").references(() => users.id),
+  escalationReason: text("escalation_reason"),
+  
+  // Assignment
+  assignedTo: varchar("assigned_to").references(() => users.id),
+  assignedAt: timestamp("assigned_at"),
+  
+  // Resolution
+  resolutionNote: text("resolution_note"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  closedAt: timestamp("closed_at"),
+  closedBy: varchar("closed_by").references(() => users.id),
+  
+  // Metadata
+  tags: jsonb("tags").default('[]'),
+  metadata: jsonb("metadata").default('{}'),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_support_tickets_ext_user").on(table.userId),
+  index("idx_support_tickets_ext_status").on(table.status),
+  index("idx_support_tickets_ext_priority").on(table.priority),
+  index("idx_support_tickets_ext_category").on(table.category),
+  index("idx_support_tickets_ext_assigned").on(table.assignedTo),
+  index("idx_support_tickets_ext_sla").on(table.slaDueAt),
+]);
+
+export const insertSupportTicketExtendedSchema = createInsertSchema(supportTicketsExtended).omit({ id: true, ticketNumber: true, createdAt: true, updatedAt: true });
+export type InsertSupportTicketExtended = z.infer<typeof insertSupportTicketExtendedSchema>;
+export type SupportTicketExtended = typeof supportTicketsExtended.$inferSelect;
+
+// Extended Support Messages - with sender role and attachments
+export const supportMessagesExtended = pgTable("support_messages_extended", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").references(() => supportTicketsExtended.id).notNull(),
+  
+  // Sender Information
+  senderRole: varchar("sender_role").notNull(), // USER, ADMIN, SYSTEM, WHATSAPP, AI
+  senderId: varchar("sender_id").references(() => users.id),
+  senderName: varchar("sender_name"), // Cached for display
+  
+  // Message Content
+  message: text("message").notNull(),
+  isInternal: boolean("is_internal").default(false), // Admin internal notes - never visible to user
+  
+  // Attachments
+  attachments: jsonb("attachments").default('[]'), // [{filename, url, size, mimeType}]
+  
+  // AI-specific fields
+  aiConfidenceScore: real("ai_confidence_score"), // 0-100 for AI-generated messages
+  aiDraftApproved: boolean("ai_draft_approved"), // Whether admin approved AI draft
+  aiDraftApprovedBy: varchar("ai_draft_approved_by").references(() => users.id),
+  
+  // Channel tracking
+  sourceChannel: varchar("source_channel").default('WEB'), // WEB, EMAIL, WHATSAPP, API
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_support_messages_ext_ticket").on(table.ticketId),
+  index("idx_support_messages_ext_sender").on(table.senderId),
+  index("idx_support_messages_ext_internal").on(table.isInternal),
+]);
+
+export const insertSupportMessageExtendedSchema = createInsertSchema(supportMessagesExtended).omit({ id: true, createdAt: true });
+export type InsertSupportMessageExtended = z.infer<typeof insertSupportMessageExtendedSchema>;
+export type SupportMessageExtended = typeof supportMessagesExtended.$inferSelect;
+
+// Support SLA Rules - Priority-based SLA configuration
+export const supportSlaRules = pgTable("support_sla_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // null = global default
+  
+  priority: varchar("priority").notNull(), // LOW, MEDIUM, HIGH, URGENT
+  firstResponseMinutes: integer("first_response_minutes").notNull(), // e.g. 60, 30, 15, 5
+  resolutionMinutes: integer("resolution_minutes").notNull(), // e.g. 2880, 1440, 720, 240
+  autoEscalate: boolean("auto_escalate").default(true),
+  escalateAfterMinutes: integer("escalate_after_minutes"), // When to auto-escalate
+  
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_support_sla_rules_priority").on(table.priority),
+  index("idx_support_sla_rules_tenant").on(table.tenantId),
+]);
+
+export const insertSupportSlaRuleSchema = createInsertSchema(supportSlaRules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSupportSlaRule = z.infer<typeof insertSupportSlaRuleSchema>;
+export type SupportSlaRule = typeof supportSlaRules.$inferSelect;
+
+// Support Ticket Audit Logs - Immutable, append-only audit trail
+export const supportTicketAuditLogs = pgTable("support_ticket_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").references(() => supportTicketsExtended.id).notNull(),
+  
+  action: varchar("action").notNull(), // CREATED, USER_REPLY, ADMIN_REPLY, STATUS_CHANGED, ASSIGNED, ESCALATED, RESOLVED, CLOSED
+  
+  // Snapshots for compliance
+  beforeSnapshot: jsonb("before_snapshot"),
+  afterSnapshot: jsonb("after_snapshot"),
+  
+  // Actor information
+  actorId: varchar("actor_id").references(() => users.id),
+  actorRole: varchar("actor_role"), // USER, ADMIN, SYSTEM
+  actorEmail: varchar("actor_email"),
+  
+  // Request metadata
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_support_audit_ticket").on(table.ticketId),
+  index("idx_support_audit_action").on(table.action),
+  index("idx_support_audit_actor").on(table.actorId),
+  index("idx_support_audit_created").on(table.createdAt),
+]);
+
+export const insertSupportTicketAuditLogSchema = createInsertSchema(supportTicketAuditLogs).omit({ id: true, createdAt: true });
+export type InsertSupportTicketAuditLog = z.infer<typeof insertSupportTicketAuditLogSchema>;
+export type SupportTicketAuditLog = typeof supportTicketAuditLogs.$inferSelect;
+
+// WhatsApp Ticket Links - Map phone numbers to tickets
+export const whatsappTicketLinks = pgTable("whatsapp_ticket_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").references(() => supportTicketsExtended.id).notNull(),
+  phoneNumber: varchar("phone_number").notNull(), // E.164 format
+  countryCode: varchar("country_code").default('+91'),
+  isActive: boolean("is_active").default(true),
+  lastMessageAt: timestamp("last_message_at"),
+  messageCount: integer("message_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_whatsapp_links_ticket").on(table.ticketId),
+  index("idx_whatsapp_links_phone").on(table.phoneNumber),
+]);
+
+export const insertWhatsappTicketLinkSchema = createInsertSchema(whatsappTicketLinks).omit({ id: true, createdAt: true });
+export type InsertWhatsappTicketLink = z.infer<typeof insertWhatsappTicketLinkSchema>;
+export type WhatsappTicketLink = typeof whatsappTicketLinks.$inferSelect;
+
+// Support Agents - Agent profiles with expertise and workload
+export const supportAgents = pgTable("support_agents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  
+  role: varchar("role").notNull().default('AGENT'), // AGENT, MANAGER
+  isActive: boolean("is_active").default(true),
+  isAvailable: boolean("is_available").default(true), // Currently accepting tickets
+  
+  // Workload
+  currentTicketCount: integer("current_ticket_count").default(0),
+  maxTicketCapacity: integer("max_ticket_capacity").default(20),
+  
+  // Expertise areas
+  expertise: jsonb("expertise").default('[]'), // ['BILLING', 'SOFTWARE_ISSUE', 'TRAINING']
+  
+  // Performance metrics
+  totalTicketsResolved: integer("total_tickets_resolved").default(0),
+  avgResolutionTimeMinutes: real("avg_resolution_time_minutes"),
+  avgFirstResponseTimeMinutes: real("avg_first_response_time_minutes"),
+  customerSatisfactionScore: real("customer_satisfaction_score"), // 1-5 scale
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_support_agents_user").on(table.userId),
+  index("idx_support_agents_active").on(table.isActive),
+  index("idx_support_agents_available").on(table.isAvailable),
+  index("idx_support_agents_workload").on(table.currentTicketCount),
+]);
+
+export const insertSupportAgentSchema = createInsertSchema(supportAgents).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSupportAgent = z.infer<typeof insertSupportAgentSchema>;
+export type SupportAgent = typeof supportAgents.$inferSelect;
+
+// Ticket Assignments - Track assignment history
+export const ticketAssignments = pgTable("ticket_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").references(() => supportTicketsExtended.id).notNull(),
+  agentId: varchar("agent_id").references(() => supportAgents.id).notNull(),
+  
+  assignedBy: varchar("assigned_by").notNull(), // SYSTEM, ADMIN
+  assignedByUserId: varchar("assigned_by_user_id").references(() => users.id), // If assigned by admin
+  
+  // Assignment reason
+  reason: varchar("reason"), // INITIAL, REASSIGNMENT, ESCALATION, EXPERTISE_MATCH
+  
+  // Was this a reassignment?
+  previousAgentId: varchar("previous_agent_id").references(() => supportAgents.id),
+  
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  unassignedAt: timestamp("unassigned_at"),
+}, (table) => [
+  index("idx_ticket_assignments_ticket").on(table.ticketId),
+  index("idx_ticket_assignments_agent").on(table.agentId),
+  index("idx_ticket_assignments_assigned_at").on(table.assignedAt),
+]);
+
+export const insertTicketAssignmentSchema = createInsertSchema(ticketAssignments).omit({ id: true, assignedAt: true });
+export type InsertTicketAssignment = z.infer<typeof insertTicketAssignmentSchema>;
+export type TicketAssignment = typeof ticketAssignments.$inferSelect;
+
+// ========== AI BRAIN & KNOWLEDGE SYSTEM ==========
+
+// AI Knowledge Base - Structured knowledge for AI responses
+export const aiKnowledgeBase = pgTable("ai_knowledge_base", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // null = global knowledge
+  
+  // Categorization
+  module: varchar("module").notNull(), // Billing, GST, Support, Quotes, Invoices, etc.
+  feature: varchar("feature").notNull(), // Specific feature name
+  intent: varchar("intent").notNull(), // What user wants to accomplish
+  
+  // Content
+  title: varchar("title").notNull(),
+  content: text("content").notNull(), // Approved explanation / steps
+  keywords: jsonb("keywords").default('[]'), // Search keywords
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  isPublished: boolean("is_published").default(false),
+  publishedAt: timestamp("published_at"),
+  publishedBy: varchar("published_by").references(() => users.id),
+  
+  // Versioning
+  version: integer("version").default(1),
+  previousVersionId: varchar("previous_version_id"),
+  
+  // Usage tracking
+  useCount: integer("use_count").default(0),
+  lastUsedAt: timestamp("last_used_at"),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_knowledge_module").on(table.module),
+  index("idx_ai_knowledge_feature").on(table.feature),
+  index("idx_ai_knowledge_intent").on(table.intent),
+  index("idx_ai_knowledge_active").on(table.isActive),
+]);
+
+export const insertAiKnowledgeBaseSchema = createInsertSchema(aiKnowledgeBase).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiKnowledgeBase = z.infer<typeof insertAiKnowledgeBaseSchema>;
+export type AiKnowledgeBase = typeof aiKnowledgeBase.$inferSelect;
+
+// AI Knowledge Audit - Track all changes to AI knowledge
+export const aiKnowledgeAudit = pgTable("ai_knowledge_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  knowledgeEntryId: varchar("knowledge_entry_id").references(() => aiKnowledgeBase.id).notNull(),
+  
+  action: varchar("action").notNull(), // CREATED, UPDATED, PUBLISHED, UNPUBLISHED, DELETED, ROLLBACK
+  
+  beforeContent: text("before_content"),
+  afterContent: text("after_content"),
+  changeDetails: jsonb("change_details"), // What specifically changed
+  
+  actorId: varchar("actor_id").references(() => users.id),
+  actorEmail: varchar("actor_email"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_knowledge_audit_entry").on(table.knowledgeEntryId),
+  index("idx_ai_knowledge_audit_action").on(table.action),
+]);
+
+export const insertAiKnowledgeAuditSchema = createInsertSchema(aiKnowledgeAudit).omit({ id: true, createdAt: true });
+export type InsertAiKnowledgeAudit = z.infer<typeof insertAiKnowledgeAuditSchema>;
+export type AiKnowledgeAudit = typeof aiKnowledgeAudit.$inferSelect;
+
+// AI Intent Logs - Track user intents for training
+export const aiIntentLogs = pgTable("ai_intent_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  userId: varchar("user_id").references(() => users.id),
+  
+  intent: varchar("intent").notNull(),
+  source: varchar("source").notNull(), // CHATBOT, SUPPORT, WHATSAPP, SEARCH
+  userQuery: text("user_query"), // Original user question
+  
+  // Resolution
+  wasResolved: boolean("was_resolved").default(false),
+  knowledgeEntryUsed: varchar("knowledge_entry_used").references(() => aiKnowledgeBase.id),
+  
+  // Feedback
+  userFeedback: varchar("user_feedback"), // HELPFUL, NOT_HELPFUL, null
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_intent_logs_intent").on(table.intent),
+  index("idx_ai_intent_logs_source").on(table.source),
+  index("idx_ai_intent_logs_resolved").on(table.wasResolved),
+  index("idx_ai_intent_logs_created").on(table.createdAt),
+]);
+
+export const insertAiIntentLogSchema = createInsertSchema(aiIntentLogs).omit({ id: true, createdAt: true });
+export type InsertAiIntentLog = z.infer<typeof insertAiIntentLogSchema>;
+export type AiIntentLog = typeof aiIntentLogs.$inferSelect;
+
+// AI Response Confidence - Track AI confidence and decisions
+export const aiResponseConfidence = pgTable("ai_response_confidence", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Context
+  ticketId: varchar("ticket_id").references(() => supportTicketsExtended.id),
+  messageId: varchar("message_id").references(() => supportMessagesExtended.id),
+  
+  // AI Analysis
+  aiIntent: varchar("ai_intent"),
+  confidenceScore: real("confidence_score").notNull(), // 0.00 to 100.00
+  confidenceLevel: varchar("confidence_level").notNull(), // HIGH, MEDIUM, LOW
+  
+  // Decision
+  actionTaken: varchar("action_taken").notNull(), // AUTO_REPLY, SUGGEST_TICKET, ESCALATE_TO_HUMAN, DRAFT_CREATED
+  
+  // Response details
+  aiDraftResponse: text("ai_draft_response"),
+  knowledgeEntriesUsed: jsonb("knowledge_entries_used").default('[]'), // IDs of knowledge entries used
+  
+  // Human review
+  humanReviewed: boolean("human_reviewed").default(false),
+  humanReviewedBy: varchar("human_reviewed_by").references(() => users.id),
+  humanReviewedAt: timestamp("human_reviewed_at"),
+  humanApproved: boolean("human_approved"),
+  humanModifiedResponse: text("human_modified_response"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_confidence_ticket").on(table.ticketId),
+  index("idx_ai_confidence_level").on(table.confidenceLevel),
+  index("idx_ai_confidence_action").on(table.actionTaken),
+  index("idx_ai_confidence_reviewed").on(table.humanReviewed),
+]);
+
+export const insertAiResponseConfidenceSchema = createInsertSchema(aiResponseConfidence).omit({ id: true, createdAt: true });
+export type InsertAiResponseConfidence = z.infer<typeof insertAiResponseConfidenceSchema>;
+export type AiResponseConfidence = typeof aiResponseConfidence.$inferSelect;
+
+// AI System Prompts - Version-controlled system prompts
+export const aiSystemPrompts = pgTable("ai_system_prompts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  name: varchar("name").notNull(), // SUPPORT_DRAFT_REPLY, CHATBOT_QUERY, SLA_ANALYSIS
+  description: text("description"),
+  
+  // Prompt content
+  systemPrompt: text("system_prompt").notNull(),
+  
+  // Version control
+  version: integer("version").default(1),
+  isActive: boolean("is_active").default(false), // Only one active per name
+  
+  // Metadata
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_prompts_name").on(table.name),
+  index("idx_ai_prompts_active").on(table.isActive),
+]);
+
+export const insertAiSystemPromptSchema = createInsertSchema(aiSystemPrompts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiSystemPrompt = z.infer<typeof insertAiSystemPromptSchema>;
+export type AiSystemPrompt = typeof aiSystemPrompts.$inferSelect;
+
+// AI Audit Logs - Comprehensive AI action logging
+export const aiAuditLogs = pgTable("ai_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Request info
+  requestType: varchar("request_type").notNull(), // DRAFT_REPLY, CHAT, KNOWLEDGE_SEARCH, SLA_ANALYSIS
+  requestSource: varchar("request_source").notNull(), // SUPPORT, CHATBOT, ADMIN_PANEL
+  requestedBy: varchar("requested_by").references(() => users.id),
+  
+  // Context provided to AI
+  contextProvided: jsonb("context_provided").notNull(), // What data was sent to LLM
+  contextHash: varchar("context_hash"), // SHA256 of context for audit
+  
+  // LLM details
+  provider: varchar("provider").notNull(), // claude, openai, gemini
+  model: varchar("model").notNull(), // claude-3-opus, gpt-4, etc.
+  promptTokens: integer("prompt_tokens"),
+  completionTokens: integer("completion_tokens"),
+  
+  // Response
+  responsePayload: jsonb("response_payload"), // Full LLM response
+  confidenceScore: real("confidence_score"),
+  
+  // Outcome
+  status: varchar("status").notNull(), // SUCCESS, FAILED, TIMEOUT, RATE_LIMITED
+  errorMessage: text("error_message"),
+  latencyMs: integer("latency_ms"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_audit_type").on(table.requestType),
+  index("idx_ai_audit_provider").on(table.provider),
+  index("idx_ai_audit_status").on(table.status),
+  index("idx_ai_audit_created").on(table.createdAt),
+]);
+
+export const insertAiAuditLogSchema = createInsertSchema(aiAuditLogs).omit({ id: true, createdAt: true });
+export type InsertAiAuditLog = z.infer<typeof insertAiAuditLogSchema>;
+export type AiAuditLog = typeof aiAuditLogs.$inferSelect;
+
+// ========== ENTERPRISE INTEGRATION HUB ==========
+
+// Integration Provider Type Enum
+export const integrationProviderTypeEnum = z.enum(['LLM', 'WHATSAPP', 'AUTOMATION']);
+export type IntegrationProviderType = z.infer<typeof integrationProviderTypeEnum>;
+
+// Integration Providers - LLM, WhatsApp, Automation platforms
+export const integrationProviders = pgTable("integration_providers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  type: varchar("type").notNull(), // LLM, WHATSAPP, AUTOMATION
+  name: varchar("name").notNull(), // Claude, OpenAI, Gemini, WABA, WATI, n8n
+  code: varchar("code").notNull().unique(), // claude, openai, gemini, waba, wati, n8n
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  isPrimary: boolean("is_primary").default(false), // Primary provider for this type
+  
+  // Regional routing
+  region: varchar("region").default('GLOBAL'), // IN, US, EU, GLOBAL
+  
+  // Configuration
+  baseUrl: varchar("base_url"), // API endpoint
+  apiVersion: varchar("api_version"),
+  
+  // Health monitoring
+  isHealthy: boolean("is_healthy").default(true),
+  lastHealthCheckAt: timestamp("last_health_check_at"),
+  consecutiveFailures: integer("consecutive_failures").default(0),
+  
+  // Rate limits
+  requestsPerMinute: integer("requests_per_minute"),
+  requestsPerDay: integer("requests_per_day"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_providers_type").on(table.type),
+  index("idx_integration_providers_code").on(table.code),
+  index("idx_integration_providers_active").on(table.isActive),
+  index("idx_integration_providers_primary").on(table.isPrimary),
+]);
+
+export const insertIntegrationProviderSchema = createInsertSchema(integrationProviders).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationProvider = z.infer<typeof insertIntegrationProviderSchema>;
+export type IntegrationProvider = typeof integrationProviders.$inferSelect;
+
+// Integration Credentials - Encrypted API keys and secrets
+export const integrationCredentials = pgTable("integration_credentials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  providerId: varchar("provider_id").references(() => integrationProviders.id).notNull(),
+  
+  keyName: varchar("key_name").notNull(), // api_key, token, webhook_secret, account_sid, etc.
+  encryptedValue: text("encrypted_value").notNull(), // AES-256-GCM encrypted
+  
+  // Metadata
+  lastRotatedAt: timestamp("last_rotated_at"),
+  expiresAt: timestamp("expires_at"),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_creds_provider").on(table.providerId),
+  index("idx_integration_creds_key").on(table.keyName),
+]);
+
+export const insertIntegrationCredentialSchema = createInsertSchema(integrationCredentials).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationCredential = z.infer<typeof insertIntegrationCredentialSchema>;
+export type IntegrationCredential = typeof integrationCredentials.$inferSelect;
+
+// Integration Routes - Primary/Secondary provider routing with failover
+export const integrationRoutes = pgTable("integration_routes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // null = global
+  
+  integrationType: varchar("integration_type").notNull(), // LLM, WHATSAPP, AUTOMATION
+  taskType: varchar("task_type"), // For LLM: CHAT, DRAFT_REPLY, ANALYSIS; For WHATSAPP: SUPPORT, NOTIFICATION
+  
+  primaryProviderId: varchar("primary_provider_id").references(() => integrationProviders.id).notNull(),
+  secondaryProviderId: varchar("secondary_provider_id").references(() => integrationProviders.id),
+  
+  failoverEnabled: boolean("failover_enabled").default(true),
+  failoverThreshold: integer("failover_threshold").default(3), // Failures before failover
+  
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_routes_type").on(table.integrationType),
+  index("idx_integration_routes_tenant").on(table.tenantId),
+  index("idx_integration_routes_active").on(table.isActive),
+]);
+
+export const insertIntegrationRouteSchema = createInsertSchema(integrationRoutes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationRoute = z.infer<typeof insertIntegrationRouteSchema>;
+export type IntegrationRoute = typeof integrationRoutes.$inferSelect;
+
+// Integration Audit Logs - Track all external API calls
+export const integrationAuditLogs = pgTable("integration_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  providerId: varchar("provider_id").references(() => integrationProviders.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  
+  // Request details
+  action: varchar("action").notNull(), // SEND_MESSAGE, GENERATE_RESPONSE, TRIGGER_WEBHOOK, etc.
+  requestPayload: jsonb("request_payload"), // Sanitized request data
+  
+  // Response details
+  responsePayload: jsonb("response_payload"), // Sanitized response data
+  status: varchar("status").notNull(), // SUCCESS, FAILED, TIMEOUT, RATE_LIMITED
+  statusCode: integer("status_code"),
+  errorMessage: text("error_message"),
+  
+  // Performance
+  latencyMs: integer("latency_ms"),
+  
+  // Failover tracking
+  wasFailover: boolean("was_failover").default(false),
+  failoverFromProviderId: varchar("failover_from_provider_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_audit_provider").on(table.providerId),
+  index("idx_integration_audit_status").on(table.status),
+  index("idx_integration_audit_action").on(table.action),
+  index("idx_integration_audit_created").on(table.createdAt),
+]);
+
+export const insertIntegrationAuditLogSchema = createInsertSchema(integrationAuditLogs).omit({ id: true, createdAt: true });
+export type InsertIntegrationAuditLog = z.infer<typeof insertIntegrationAuditLogSchema>;
+export type IntegrationAuditLog = typeof integrationAuditLogs.$inferSelect;
+
+// Integration Webhooks - Outbound webhook subscriptions (for n8n, etc.)
+export const integrationWebhooks = pgTable("integration_webhooks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  
+  // Webhook config
+  name: varchar("name").notNull(),
+  webhookUrl: text("webhook_url").notNull(),
+  secretKey: text("secret_key"), // For HMAC signing
+  
+  // Events to trigger
+  eventTypes: jsonb("event_types").notNull(), // ['ticket.created', 'ticket.updated', 'payment.completed']
+  
+  // Filtering
+  filters: jsonb("filters").default('{}'), // e.g., {category: 'BILLING'}
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
+  // Retry config
+  maxRetries: integer("max_retries").default(3),
+  retryDelayMs: integer("retry_delay_ms").default(1000),
+  
+  // Health
+  lastTriggeredAt: timestamp("last_triggered_at"),
+  lastSuccessAt: timestamp("last_success_at"),
+  consecutiveFailures: integer("consecutive_failures").default(0),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_webhooks_tenant").on(table.tenantId),
+  index("idx_integration_webhooks_active").on(table.isActive),
+]);
+
+export const insertIntegrationWebhookSchema = createInsertSchema(integrationWebhooks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationWebhook = z.infer<typeof insertIntegrationWebhookSchema>;
+export type IntegrationWebhook = typeof integrationWebhooks.$inferSelect;
+
+// Integration Webhook Deliveries - Track webhook delivery attempts
+export const integrationWebhookDeliveries = pgTable("integration_webhook_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  webhookId: varchar("webhook_id").references(() => integrationWebhooks.id).notNull(),
+  
+  // Event details
+  eventType: varchar("event_type").notNull(),
+  eventPayload: jsonb("event_payload").notNull(),
+  
+  // Delivery status
+  status: varchar("status").notNull(), // PENDING, SUCCESS, FAILED, RETRYING
+  statusCode: integer("status_code"),
+  responseBody: text("response_body"),
+  errorMessage: text("error_message"),
+  
+  // Retry tracking
+  attemptNumber: integer("attempt_number").default(1),
+  nextRetryAt: timestamp("next_retry_at"),
+  
+  latencyMs: integer("latency_ms"),
+  deliveredAt: timestamp("delivered_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_webhook_deliveries_webhook").on(table.webhookId),
+  index("idx_webhook_deliveries_status").on(table.status),
+  index("idx_webhook_deliveries_event").on(table.eventType),
+  index("idx_webhook_deliveries_created").on(table.createdAt),
+]);
+
+export const insertIntegrationWebhookDeliverySchema = createInsertSchema(integrationWebhookDeliveries).omit({ id: true, createdAt: true });
+export type InsertIntegrationWebhookDelivery = z.infer<typeof insertIntegrationWebhookDeliverySchema>;
+export type IntegrationWebhookDelivery = typeof integrationWebhookDeliveries.$inferSelect;
+
+// Integration Usage Quotas - Track usage per tenant
+export const integrationUsageQuotas = pgTable("integration_usage_quotas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  
+  integrationType: varchar("integration_type").notNull(), // LLM, WHATSAPP, AUTOMATION
+  
+  // Quota limits
+  dailyLimit: integer("daily_limit"),
+  monthlyLimit: integer("monthly_limit"),
+  
+  // Current usage
+  dailyUsed: integer("daily_used").default(0),
+  monthlyUsed: integer("monthly_used").default(0),
+  
+  // Reset tracking
+  dailyResetAt: timestamp("daily_reset_at"),
+  monthlyResetAt: timestamp("monthly_reset_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_integration_quotas_tenant").on(table.tenantId),
+  index("idx_integration_quotas_type").on(table.integrationType),
+]);

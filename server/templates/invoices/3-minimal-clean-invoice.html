@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice - {{invoice_no}}</title>
+  <style>
+    /* Minimal Clean Invoice - Modern & Simple */
+    @page {
+      size: A4;
+      margin: 15mm;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      font-size: 11px;
+      line-height: 1.6;
+      color: #333;
+      background: white;
+    }
+    
+    .invoice-container {
+      max-width: 210mm;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    /* Minimal Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 30px;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 30px;
+    }
+    
+    .company-info h1 {
+      font-size: 28px;
+      font-weight: 300;
+      color: #111;
+      letter-spacing: -0.5px;
+    }
+    
+    .company-info p {
+      font-size: 10px;
+      color: #888;
+      margin-top: 5px;
+    }
+    
+    .invoice-meta {
+      text-align: right;
+    }
+    
+    .invoice-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: #888;
+      font-weight: 500;
+    }
+    
+    .invoice-num {
+      font-size: 24px;
+      font-weight: 600;
+      color: #111;
+      margin: 5px 0;
+    }
+    
+    .invoice-date {
+      font-size: 11px;
+      color: #666;
+    }
+    
+    /* Two Column Layout */
+    .info-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      margin-bottom: 40px;
+    }
+    
+    .info-block label {
+      display: block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #999;
+      margin-bottom: 8px;
+    }
+    
+    .info-block h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #111;
+      margin-bottom: 8px;
+    }
+    
+    .info-block p {
+      font-size: 11px;
+      color: #555;
+      line-height: 1.8;
+    }
+    
+    .gstin-badge {
+      display: inline-block;
+      font-size: 10px;
+      background: #f5f5f5;
+      padding: 4px 10px;
+      border-radius: 3px;
+      color: #666;
+      margin-top: 10px;
+      font-family: 'Courier New', monospace;
+    }
+    
+    /* Minimal Table */
+    .items-section {
+      margin-bottom: 40px;
+    }
+    
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .items-table thead th {
+      background: transparent;
+      padding: 12px 0;
+      text-align: left;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #999;
+      font-weight: 500;
+      border-bottom: 2px solid #111;
+    }
+    
+    .items-table thead th:last-child {
+      text-align: right;
+    }
+    
+    .items-table tbody td {
+      padding: 16px 0;
+      border-bottom: 1px solid #f0f0f0;
+      vertical-align: top;
+    }
+    
+    .items-table tbody td:last-child {
+      text-align: right;
+    }
+    
+    .item-name {
+      font-weight: 500;
+      color: #111;
+      font-size: 12px;
+    }
+    
+    .item-desc {
+      font-size: 10px;
+      color: #888;
+      margin-top: 3px;
+    }
+    
+    .item-hsn {
+      font-size: 10px;
+      color: #999;
+      font-family: 'Courier New', monospace;
+    }
+    
+    .item-qty, .item-rate {
+      color: #555;
+    }
+    
+    .item-amount {
+      font-weight: 600;
+      color: #111;
+      font-size: 12px;
+    }
+    
+    /* Totals - Right Aligned */
+    .totals-section {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 40px;
+    }
+    
+    .totals-box {
+      width: 280px;
+    }
+    
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .totals-row:last-child {
+      border-bottom: none;
+    }
+    
+    .totals-label {
+      color: #666;
+      font-size: 11px;
+    }
+    
+    .totals-value {
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .totals-grand {
+      border-top: 2px solid #111;
+      border-bottom: 2px solid #111;
+      padding: 12px 0;
+      margin-top: 8px;
+    }
+    
+    .totals-grand .totals-label,
+    .totals-grand .totals-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #111;
+    }
+    
+    /* Amount in Words */
+    .amount-words {
+      background: #fafafa;
+      padding: 15px 20px;
+      margin-bottom: 30px;
+      border-left: 3px solid #111;
+    }
+    
+    .amount-words span {
+      font-size: 10px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .amount-words p {
+      font-size: 12px;
+      color: #333;
+      margin-top: 5px;
+      font-weight: 500;
+    }
+    
+    /* Bank Details - Compact */
+    .bank-section {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      padding: 20px 0;
+      border-top: 1px solid #eee;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 30px;
+    }
+    
+    .bank-item label {
+      display: block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #999;
+      margin-bottom: 4px;
+    }
+    
+    .bank-item span {
+      font-size: 11px;
+      color: #333;
+      font-weight: 500;
+    }
+    
+    /* Footer */
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    
+    .terms {
+      max-width: 60%;
+    }
+    
+    .terms label {
+      display: block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #999;
+      margin-bottom: 10px;
+    }
+    
+    .terms ol {
+      padding-left: 15px;
+      font-size: 9px;
+      color: #666;
+    }
+    
+    .terms li {
+      margin-bottom: 3px;
+    }
+    
+    .signature {
+      text-align: right;
+      min-width: 180px;
+    }
+    
+    .signature-line {
+      border-top: 1px solid #ccc;
+      padding-top: 8px;
+      margin-top: 50px;
+    }
+    
+    .signature-name {
+      font-size: 11px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .signature-designation {
+      font-size: 9px;
+      color: #888;
+    }
+    
+    /* Note */
+    .note {
+      text-align: center;
+      margin-top: 30px;
+      font-size: 9px;
+      color: #aaa;
+    }
+    
+    /* Print */
+    @media print {
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <!-- Minimal Header -->
+    <div class="header">
+      <div class="company-info">
+        <h1>{{seller_company_name}}</h1>
+        <p>{{seller_address}}, {{seller_city}}, {{seller_state}} - {{seller_pincode}}</p>
+        <p>GSTIN: {{seller_gstin}} | {{seller_phone}}</p>
+      </div>
+      <div class="invoice-meta">
+        <div class="invoice-label">Invoice</div>
+        <div class="invoice-num">{{invoice_no}}</div>
+        <div class="invoice-date">{{invoice_date}}</div>
+      </div>
+    </div>
+    
+    <!-- Party Info -->
+    <div class="info-row">
+      <div class="info-block">
+        <label>Bill To</label>
+        <h3>{{buyer_name}}</h3>
+        <p>
+          {{buyer_address}}<br>
+          {{buyer_city}}, {{buyer_state}} - {{buyer_pincode}}
+          {{#if buyer_phone}}<br>{{buyer_phone}}{{/if}}
+        </p>
+        <div class="gstin-badge">{{buyer_gstin}}</div>
+      </div>
+      <div class="info-block">
+        <label>Ship To</label>
+        {{#if ship_to_name}}
+        <h3>{{ship_to_name}}</h3>
+        <p>
+          {{ship_to_address}}<br>
+          {{ship_to_city}}, {{ship_to_state}} - {{ship_to_pincode}}
+        </p>
+        {{else}}
+        <h3>Same as billing address</h3>
+        {{/if}}
+      </div>
+    </div>
+    
+    <!-- Items -->
+    <div class="items-section">
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 50%;">Description</th>
+            <th>HSN</th>
+            <th>Qty</th>
+            <th>Rate</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each items}}
+          <tr>
+            <td>
+              <div class="item-name">{{this.name}}</div>
+              {{#if this.description}}<div class="item-desc">{{this.description}}</div>{{/if}}
+            </td>
+            <td class="item-hsn">{{this.hsn_code}}</td>
+            <td class="item-qty">{{this.quantity}} {{this.unit}}</td>
+            <td class="item-rate">₹{{this.rate}}</td>
+            <td class="item-amount">₹{{this.amount}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- Totals -->
+    <div class="totals-section">
+      <div class="totals-box">
+        <div class="totals-row">
+          <span class="totals-label">Subtotal</span>
+          <span class="totals-value">₹{{subtotal}}</span>
+        </div>
+        {{#if is_igst}}
+        <div class="totals-row">
+          <span class="totals-label">IGST ({{igst_rate}}%)</span>
+          <span class="totals-value">₹{{igst_amount}}</span>
+        </div>
+        {{else}}
+        <div class="totals-row">
+          <span class="totals-label">CGST ({{cgst_rate}}%)</span>
+          <span class="totals-value">₹{{cgst_amount}}</span>
+        </div>
+        <div class="totals-row">
+          <span class="totals-label">SGST ({{sgst_rate}}%)</span>
+          <span class="totals-value">₹{{sgst_amount}}</span>
+        </div>
+        {{/if}}
+        {{#if round_off}}
+        <div class="totals-row">
+          <span class="totals-label">Round Off</span>
+          <span class="totals-value">₹{{round_off}}</span>
+        </div>
+        {{/if}}
+        <div class="totals-row totals-grand">
+          <span class="totals-label">Total</span>
+          <span class="totals-value">₹{{grand_total}}</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Amount in Words -->
+    <div class="amount-words">
+      <span>Amount in Words</span>
+      <p>Indian Rupees {{amount_in_words}} Only</p>
+    </div>
+    
+    <!-- Bank Details -->
+    <div class="bank-section">
+      <div class="bank-item">
+        <label>Bank</label>
+        <span>{{bank_name}}</span>
+      </div>
+      <div class="bank-item">
+        <label>Account No.</label>
+        <span>{{bank_account_no}}</span>
+      </div>
+      <div class="bank-item">
+        <label>IFSC</label>
+        <span>{{bank_ifsc}}</span>
+      </div>
+      <div class="bank-item">
+        <label>Branch</label>
+        <span>{{bank_branch}}</span>
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="footer">
+      <div class="terms">
+        <label>Terms & Conditions</label>
+        <ol>
+          {{#each terms}}
+          <li>{{this}}</li>
+          {{/each}}
+        </ol>
+      </div>
+      <div class="signature">
+        <div class="signature-line">
+          <div class="signature-name">{{seller_company_name}}</div>
+          <div class="signature-designation">Authorized Signatory</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Note -->
+    <div class="note">
+      This is a computer-generated invoice.
+    </div>
+  </div>
+</body>
+</html>

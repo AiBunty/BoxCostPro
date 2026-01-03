@@ -112,8 +112,20 @@ export function downloadExcel(
 export function generateSampleUploadTemplate(): XLSX.WorkBook {
   const workbook = XLSX.utils.book_new();
   
-  // Valid dropdown options
-  const PAPER_SHADES = ["Kraft/Natural", "Semi Kraft", "Golden (Red)", "Golden (Brown)", "Duplex LWC"];
+  // Valid dropdown options - CANONICAL SHADE NAMES (from paper_shades master table)
+  const PAPER_SHADES = [
+    "Kraft/Natural",
+    "Testliner",
+    "Virgin Kraft Liner",
+    "White Kraft Liner",
+    "White Top Testliner",
+    "Duplex Grey Back (LWC)",
+    "Duplex Grey Back (HWC)",
+    "Semi Chemical Fluting",
+    "Recycled Fluting",
+    "Bagasse (Agro based)",
+    "Golden Kraft"
+  ];
   const TYPES = ["rsc", "sheet"];
   const PLY_OPTIONS = ["1", "3", "5", "7", "9"];
   
@@ -195,7 +207,12 @@ export function generateSampleUploadTemplate(): XLSX.WorkBook {
     ["Instructions:"],
     ["1. Type must be: rsc (for box) or sheet (for flat sheet)"],
     ["2. Ply must be: 1, 3, 5, 7, or 9"],
-    ["3. Paper Shade options: Kraft/Natural, Semi Kraft, Golden (Red), Golden (Brown), Duplex LWC"],
+    ["3. Paper Shade options (from Master Table):"],
+    ["   - Kraft/Natural (KRA), Testliner (TST), Virgin Kraft Liner (VKL)"],
+    ["   - White Kraft Liner (WKL), White Top Testliner (WTT)"],
+    ["   - Duplex Grey Back LWC (LWC), Duplex Grey Back HWC (HWC)"],
+    ["   - Semi Chemical Fluting (SCF), Recycled Fluting (RCF)"],
+    ["   - Bagasse (BAG), Golden Kraft (GOL)"],
     ["4. For sheets, leave Height column empty"],
     ["5. Fill layer columns based on ply count:"],
     ["   - 3-Ply: L1, F1, L2 (3 layers)"],

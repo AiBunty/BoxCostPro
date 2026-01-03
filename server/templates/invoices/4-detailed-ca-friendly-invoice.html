@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tax Invoice - {{invoice_no}}</title>
+  <style>
+    /* Detailed CA-Friendly Invoice - Audit Ready */
+    @page {
+      size: A4;
+      margin: 8mm;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #000;
+      background: white;
+    }
+    
+    .invoice-container {
+      max-width: 210mm;
+      margin: 0 auto;
+      border: 2px solid #000;
+    }
+    
+    /* Header with Original/Duplicate Marker */
+    .copy-type {
+      text-align: right;
+      padding: 5px 10px;
+      font-weight: bold;
+      font-size: 11px;
+      border-bottom: 1px solid #000;
+    }
+    
+    /* Title Section */
+    .title-section {
+      text-align: center;
+      padding: 8px;
+      border-bottom: 2px solid #000;
+      background: #f0f0f0;
+    }
+    
+    .title-section h1 {
+      font-size: 18px;
+      letter-spacing: 2px;
+      margin-bottom: 3px;
+    }
+    
+    .title-section h2 {
+      font-size: 14px;
+      font-weight: normal;
+    }
+    
+    /* Company & Invoice Details Row */
+    .detail-row {
+      display: flex;
+      border-bottom: 1px solid #000;
+    }
+    
+    .detail-cell {
+      padding: 8px;
+      flex: 1;
+      border-right: 1px solid #000;
+    }
+    
+    .detail-cell:last-child {
+      border-right: none;
+    }
+    
+    .detail-cell.w-60 {
+      flex: 1.5;
+    }
+    
+    .detail-cell.w-40 {
+      flex: 1;
+    }
+    
+    .company-name {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .company-address {
+      font-size: 10px;
+      line-height: 1.5;
+    }
+    
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .detail-table td {
+      padding: 3px 5px;
+      font-size: 10px;
+    }
+    
+    .detail-table .label {
+      width: 40%;
+      font-weight: bold;
+    }
+    
+    /* Party Details Section */
+    .party-section {
+      display: flex;
+      border-bottom: 1px solid #000;
+    }
+    
+    .party-box {
+      flex: 1;
+      padding: 8px;
+      border-right: 1px solid #000;
+    }
+    
+    .party-box:last-child {
+      border-right: none;
+    }
+    
+    .party-box h3 {
+      font-size: 10px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      padding-bottom: 3px;
+      border-bottom: 1px solid #ccc;
+    }
+    
+    .party-name {
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .party-detail {
+      font-size: 10px;
+      margin-bottom: 3px;
+    }
+    
+    .party-gstin {
+      font-weight: bold;
+      margin-top: 5px;
+    }
+    
+    /* Main Items Table */
+    .items-table-container {
+      min-height: 200px;
+    }
+    
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .items-table th {
+      background: #e0e0e0;
+      padding: 6px 4px;
+      text-align: center;
+      font-size: 9px;
+      font-weight: bold;
+      border: 1px solid #000;
+      vertical-align: middle;
+    }
+    
+    .items-table td {
+      padding: 5px 4px;
+      border: 1px solid #000;
+      font-size: 10px;
+      vertical-align: top;
+    }
+    
+    .text-center {
+      text-align: center;
+    }
+    
+    .text-right {
+      text-align: right;
+    }
+    
+    .item-desc {
+      font-weight: bold;
+    }
+    
+    .item-sub-desc {
+      font-size: 9px;
+      color: #333;
+      margin-top: 2px;
+    }
+    
+    /* GST Breakup Table */
+    .gst-breakup-section {
+      border-top: 2px solid #000;
+    }
+    
+    .gst-breakup-section h4 {
+      background: #e0e0e0;
+      padding: 5px 8px;
+      font-size: 10px;
+      border-bottom: 1px solid #000;
+    }
+    
+    .gst-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .gst-table th,
+    .gst-table td {
+      padding: 5px 8px;
+      border: 1px solid #000;
+      font-size: 9px;
+      text-align: center;
+    }
+    
+    .gst-table th {
+      background: #f0f0f0;
+      font-weight: bold;
+    }
+    
+    /* Totals & Amount Summary */
+    .summary-section {
+      display: flex;
+      border-top: 2px solid #000;
+    }
+    
+    .amount-words-box {
+      flex: 1.5;
+      padding: 10px;
+      border-right: 1px solid #000;
+    }
+    
+    .amount-words-label {
+      font-size: 9px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .amount-words-text {
+      font-size: 11px;
+      font-weight: bold;
+      font-style: italic;
+    }
+    
+    .totals-box {
+      flex: 1;
+      padding: 0;
+    }
+    
+    .totals-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .totals-table td {
+      padding: 5px 8px;
+      font-size: 10px;
+      border-bottom: 1px solid #ccc;
+    }
+    
+    .totals-table .label {
+      text-align: left;
+    }
+    
+    .totals-table .value {
+      text-align: right;
+      font-weight: bold;
+    }
+    
+    .totals-table .grand-total td {
+      background: #e0e0e0;
+      font-size: 12px;
+      font-weight: bold;
+      border: none;
+      padding: 8px;
+    }
+    
+    /* Bank Details */
+    .bank-section {
+      border-top: 2px solid #000;
+      padding: 10px;
+    }
+    
+    .bank-section h4 {
+      font-size: 10px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    
+    .bank-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    
+    .bank-row {
+      display: flex;
+    }
+    
+    .bank-label {
+      width: 100px;
+      font-weight: bold;
+    }
+    
+    .bank-value {
+      flex: 1;
+    }
+    
+    /* Declaration */
+    .declaration-section {
+      border-top: 1px solid #000;
+      padding: 8px;
+      font-size: 9px;
+    }
+    
+    .declaration-section h5 {
+      margin-bottom: 5px;
+    }
+    
+    .declaration-section p {
+      line-height: 1.4;
+    }
+    
+    /* Footer Section */
+    .footer-section {
+      display: flex;
+      border-top: 2px solid #000;
+    }
+    
+    .terms-box {
+      flex: 1.5;
+      padding: 8px;
+      border-right: 1px solid #000;
+    }
+    
+    .terms-box h4 {
+      font-size: 10px;
+      margin-bottom: 8px;
+    }
+    
+    .terms-list {
+      padding-left: 15px;
+      font-size: 9px;
+    }
+    
+    .terms-list li {
+      margin-bottom: 3px;
+    }
+    
+    .signature-box {
+      flex: 1;
+      padding: 8px;
+      text-align: center;
+    }
+    
+    .signature-space {
+      height: 50px;
+      border-bottom: 1px solid #000;
+      margin: 10px 20px;
+    }
+    
+    .signature-text {
+      font-size: 10px;
+      font-weight: bold;
+    }
+    
+    .signature-designation {
+      font-size: 9px;
+    }
+    
+    /* E-Invoice Section */
+    .einvoice-section {
+      border-top: 1px solid #000;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      font-size: 9px;
+    }
+    
+    .einvoice-item {
+      display: flex;
+    }
+    
+    .einvoice-label {
+      font-weight: bold;
+      width: 80px;
+    }
+    
+    .qr-code-box {
+      border: 1px solid #000;
+      width: 80px;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: #666;
+    }
+    
+    /* Acknowledgment Section */
+    .ack-section {
+      border-top: 2px dashed #000;
+      margin-top: 10px;
+      padding: 10px;
+      text-align: center;
+    }
+    
+    .ack-section h4 {
+      font-size: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .ack-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 10px;
+    }
+    
+    .ack-sign-space {
+      width: 150px;
+      border-bottom: 1px solid #000;
+      margin: 0 20px;
+    }
+    
+    /* Print */
+    @media print {
+      body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      
+      .ack-section {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <!-- Copy Type -->
+    <div class="copy-type">{{copy_type}}</div>
+    
+    <!-- Title -->
+    <div class="title-section">
+      <h1>TAX INVOICE</h1>
+      <h2>(Under Section 31 of CGST Act, 2017 read with Rule 46 of CGST Rules, 2017)</h2>
+    </div>
+    
+    <!-- Company & Invoice Details -->
+    <div class="detail-row">
+      <div class="detail-cell w-60">
+        <div class="company-name">{{seller_company_name}}</div>
+        <div class="company-address">
+          {{seller_address}}<br>
+          {{seller_city}}, {{seller_state}} - {{seller_pincode}}<br>
+          <strong>GSTIN:</strong> {{seller_gstin}} &nbsp;|&nbsp; <strong>State Code:</strong> {{seller_state_code}}<br>
+          <strong>Phone:</strong> {{seller_phone}} &nbsp;|&nbsp; <strong>Email:</strong> {{seller_email}}<br>
+          {{#if seller_pan}}<strong>PAN:</strong> {{seller_pan}}{{/if}}
+        </div>
+      </div>
+      <div class="detail-cell w-40">
+        <table class="detail-table">
+          <tr><td class="label">Invoice No.:</td><td>{{invoice_no}}</td></tr>
+          <tr><td class="label">Invoice Date:</td><td>{{invoice_date}}</td></tr>
+          {{#if due_date}}<tr><td class="label">Due Date:</td><td>{{due_date}}</td></tr>{{/if}}
+          {{#if po_number}}<tr><td class="label">P.O. Number:</td><td>{{po_number}}</td></tr>{{/if}}
+          {{#if po_date}}<tr><td class="label">P.O. Date:</td><td>{{po_date}}</td></tr>{{/if}}
+          <tr><td class="label">Place of Supply:</td><td>{{place_of_supply}}</td></tr>
+          <tr><td class="label">Reverse Charge:</td><td>{{#if reverse_charge}}Yes{{else}}No{{/if}}</td></tr>
+        </table>
+      </div>
+    </div>
+    
+    <!-- Party Details -->
+    <div class="party-section">
+      <div class="party-box">
+        <h3>Details of Receiver (Billed To)</h3>
+        <div class="party-name">{{buyer_name}}</div>
+        <div class="party-detail">{{buyer_address}}</div>
+        <div class="party-detail">{{buyer_city}}, {{buyer_state}} - {{buyer_pincode}}</div>
+        <div class="party-detail">State Code: {{buyer_state_code}}</div>
+        {{#if buyer_phone}}<div class="party-detail">Phone: {{buyer_phone}}</div>{{/if}}
+        {{#if buyer_email}}<div class="party-detail">Email: {{buyer_email}}</div>{{/if}}
+        <div class="party-gstin">GSTIN/UIN: {{buyer_gstin}}</div>
+        {{#if buyer_pan}}<div class="party-detail">PAN: {{buyer_pan}}</div>{{/if}}
+      </div>
+      <div class="party-box">
+        <h3>Details of Consignee (Shipped To)</h3>
+        {{#if ship_to_name}}
+        <div class="party-name">{{ship_to_name}}</div>
+        <div class="party-detail">{{ship_to_address}}</div>
+        <div class="party-detail">{{ship_to_city}}, {{ship_to_state}} - {{ship_to_pincode}}</div>
+        <div class="party-detail">State Code: {{ship_to_state_code}}</div>
+        {{#if ship_to_gstin}}<div class="party-gstin">GSTIN/UIN: {{ship_to_gstin}}</div>{{/if}}
+        {{else}}
+        <div class="party-name">Same as Receiver</div>
+        {{/if}}
+      </div>
+    </div>
+    
+    <!-- Items Table -->
+    <div class="items-table-container">
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 30px;">S.No.</th>
+            <th style="width: 35%;">Description of Goods/Services</th>
+            <th style="width: 60px;">HSN/SAC</th>
+            <th style="width: 50px;">Qty</th>
+            <th style="width: 40px;">Unit</th>
+            <th style="width: 70px;">Rate (₹)</th>
+            <th style="width: 60px;">Disc. %</th>
+            <th style="width: 80px;">Taxable Value (₹)</th>
+            <th style="width: 50px;">GST Rate</th>
+            <th style="width: 70px;">GST Amt (₹)</th>
+            <th style="width: 80px;">Total (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each items}}
+          <tr>
+            <td class="text-center">{{this.sno}}</td>
+            <td>
+              <div class="item-desc">{{this.name}}</div>
+              {{#if this.description}}<div class="item-sub-desc">{{this.description}}</div>{{/if}}
+              {{#if this.box_size}}<div class="item-sub-desc">Size: {{this.box_size}}</div>{{/if}}
+              {{#if this.paper_spec}}<div class="item-sub-desc">Paper: {{this.paper_spec}}</div>{{/if}}
+            </td>
+            <td class="text-center">{{this.hsn_code}}</td>
+            <td class="text-right">{{this.quantity}}</td>
+            <td class="text-center">{{this.unit}}</td>
+            <td class="text-right">{{this.rate}}</td>
+            <td class="text-center">{{this.discount_percent}}</td>
+            <td class="text-right">{{this.taxable_value}}</td>
+            <td class="text-center">{{this.gst_rate}}%</td>
+            <td class="text-right">{{this.gst_amount}}</td>
+            <td class="text-right"><strong>{{this.total}}</strong></td>
+          </tr>
+          {{/each}}
+          <!-- Total Row -->
+          <tr style="background: #f0f0f0; font-weight: bold;">
+            <td colspan="3" class="text-center">TOTAL</td>
+            <td class="text-right">{{total_qty}}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="text-right">{{total_taxable_value}}</td>
+            <td></td>
+            <td class="text-right">{{total_gst_amount}}</td>
+            <td class="text-right">{{subtotal_with_gst}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- GST Breakup -->
+    <div class="gst-breakup-section">
+      <h4>TAX AMOUNT BREAKUP (As per HSN/SAC)</h4>
+      <table class="gst-table">
+        <thead>
+          <tr>
+            <th>HSN/SAC</th>
+            <th>Taxable Value (₹)</th>
+            {{#if is_igst}}
+            <th>IGST Rate</th>
+            <th>IGST Amount (₹)</th>
+            {{else}}
+            <th>CGST Rate</th>
+            <th>CGST Amount (₹)</th>
+            <th>SGST Rate</th>
+            <th>SGST Amount (₹)</th>
+            {{/if}}
+            <th>Total Tax (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each gst_breakup}}
+          <tr>
+            <td>{{this.hsn_code}}</td>
+            <td>{{this.taxable_value}}</td>
+            {{#if ../is_igst}}
+            <td>{{this.igst_rate}}%</td>
+            <td>{{this.igst_amount}}</td>
+            {{else}}
+            <td>{{this.cgst_rate}}%</td>
+            <td>{{this.cgst_amount}}</td>
+            <td>{{this.sgst_rate}}%</td>
+            <td>{{this.sgst_amount}}</td>
+            {{/if}}
+            <td>{{this.total_tax}}</td>
+          </tr>
+          {{/each}}
+          <tr style="font-weight: bold; background: #e0e0e0;">
+            <td>TOTAL</td>
+            <td>{{total_taxable_value}}</td>
+            {{#if is_igst}}
+            <td></td>
+            <td>{{total_igst}}</td>
+            {{else}}
+            <td></td>
+            <td>{{total_cgst}}</td>
+            <td></td>
+            <td>{{total_sgst}}</td>
+            {{/if}}
+            <td>{{total_gst_amount}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- Summary -->
+    <div class="summary-section">
+      <div class="amount-words-box">
+        <div class="amount-words-label">TOTAL INVOICE AMOUNT (IN WORDS):</div>
+        <div class="amount-words-text">Indian Rupees {{amount_in_words}} Only</div>
+      </div>
+      <div class="totals-box">
+        <table class="totals-table">
+          <tr><td class="label">Subtotal:</td><td class="value">₹ {{subtotal}}</td></tr>
+          {{#if is_igst}}
+          <tr><td class="label">IGST:</td><td class="value">₹ {{total_igst}}</td></tr>
+          {{else}}
+          <tr><td class="label">CGST:</td><td class="value">₹ {{total_cgst}}</td></tr>
+          <tr><td class="label">SGST:</td><td class="value">₹ {{total_sgst}}</td></tr>
+          {{/if}}
+          {{#if other_charges}}<tr><td class="label">Other Charges:</td><td class="value">₹ {{other_charges}}</td></tr>{{/if}}
+          {{#if round_off}}<tr><td class="label">Round Off:</td><td class="value">₹ {{round_off}}</td></tr>{{/if}}
+          <tr class="grand-total"><td class="label">GRAND TOTAL:</td><td class="value">₹ {{grand_total}}</td></tr>
+        </table>
+      </div>
+    </div>
+    
+    <!-- Bank Details -->
+    <div class="bank-section">
+      <h4>Bank Details for NEFT/RTGS/IMPS</h4>
+      <div class="bank-grid">
+        <div class="bank-row">
+          <span class="bank-label">Bank Name:</span>
+          <span class="bank-value">{{bank_name}}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label">Account No.:</span>
+          <span class="bank-value">{{bank_account_no}}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label">IFSC Code:</span>
+          <span class="bank-value">{{bank_ifsc}}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label">Branch:</span>
+          <span class="bank-value">{{bank_branch}}</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Declaration -->
+    <div class="declaration-section">
+      <h5>DECLARATION:</h5>
+      <p>We declare that this invoice shows the actual price of the goods/services described and that all particulars are true and correct. The goods/services are being supplied for the purpose of business and the amount of tax charged is in accordance with the provisions of the GST Act.</p>
+    </div>
+    
+    <!-- E-Invoice Details (if applicable) -->
+    {{#if irn}}
+    <div class="einvoice-section">
+      <div class="einvoice-item">
+        <span class="einvoice-label">IRN:</span>
+        <span>{{irn}}</span>
+      </div>
+      <div class="einvoice-item">
+        <span class="einvoice-label">Ack. No.:</span>
+        <span>{{ack_no}}</span>
+      </div>
+      <div class="einvoice-item">
+        <span class="einvoice-label">Ack. Date:</span>
+        <span>{{ack_date}}</span>
+      </div>
+    </div>
+    {{/if}}
+    
+    <!-- Footer -->
+    <div class="footer-section">
+      <div class="terms-box">
+        <h4>TERMS AND CONDITIONS:</h4>
+        <ol class="terms-list">
+          {{#each terms}}
+          <li>{{this}}</li>
+          {{/each}}
+        </ol>
+      </div>
+      <div class="signature-box">
+        <div style="margin-bottom: 10px; font-weight: bold;">For {{seller_company_name}}</div>
+        <div class="signature-space"></div>
+        <div class="signature-text">Authorized Signatory</div>
+        <div class="signature-designation">Name: ________________</div>
+      </div>
+    </div>
+    
+    <!-- Acknowledgment Section (Optional for printing) -->
+    {{#if show_acknowledgment}}
+    <div class="ack-section">
+      <h4>✂️ ACKNOWLEDGMENT SLIP ✂️</h4>
+      <div class="ack-line">
+        <span>Invoice No.: <strong>{{invoice_no}}</strong></span>
+        <span>Date: <strong>{{invoice_date}}</strong></span>
+        <span>Amount: <strong>₹{{grand_total}}</strong></span>
+      </div>
+      <div class="ack-line">
+        <span>Received from {{seller_company_name}} the goods as per above invoice in good condition.</span>
+      </div>
+      <div class="ack-line" style="justify-content: flex-end; margin-top: 20px;">
+        <span>Receiver's Signature:</span>
+        <span class="ack-sign-space"></span>
+        <span>Date:</span>
+        <span class="ack-sign-space" style="width: 80px;"></span>
+      </div>
+    </div>
+    {{/if}}
+  </div>
+</body>
+</html>

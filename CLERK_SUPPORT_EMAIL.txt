@@ -1,0 +1,35 @@
+Subject: URGENT: Revoke Compromised Secret Key
+
+Hello Clerk Support Team,
+
+My Clerk secret key was accidentally committed to a public GitHub repository and is now compromised.
+
+Application Name: BoxCostPro
+Clerk Application ID: (You can find this in your Clerk dashboard)
+
+COMPROMISED SECRET KEY (PLEASE REVOKE IMMEDIATELY):
+[INSERT YOUR OLD COMPROMISED KEY HERE - starts with sk_test_]
+
+I have already:
+✅ Generated a new secret key from the Clerk dashboard
+✅ Updated my application with the new key
+✅ Tested that the new key works correctly
+✅ Removed .env files from git tracking
+✅ Installed pre-commit hooks to prevent future accidents
+
+The new key is working correctly in both development and production environments.
+
+Please revoke/delete the compromised key listed above immediately to prevent any unauthorized access to my application.
+
+Thank you for your urgent assistance with this security matter.
+
+Best regards,
+[Your Name]
+
+---
+Instructions:
+1. Copy this email content
+2. Send to: support@clerk.com
+3. Replace [Your Name] with your actual name
+4. Add your Clerk Application ID (found in Clerk dashboard)
+5. Send immediately

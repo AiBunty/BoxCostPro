@@ -11,6 +11,10 @@ import { getClerkUser } from "./clerkAuth";
 import { ensureTenantContext } from "./tenantContext";
 import { logAuthEventAsync, notifyAdminAsync, sendWelcomeEmail } from "./services/authService";
 import { registerAdminRoutes } from "./routes/adminRoutes";
+import { registerTemplateRoutes } from "./routes/templateRoutes";
+import { registerSupportRoutes } from "./routes/supportRoutes";
+import { registerAuditRoutes } from "./routes/auditRoutes";
+import subscriptionRoutes from "./routes/subscriptionRoutes";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { validateGSTIN, extractPANFromGST, getStateFromGST, LOCKED_LEGAL_FIELDS, type LockedLegalField } from "./utils/gstValidation";
@@ -5952,6 +5956,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ========== ADMIN PANEL ROUTES (Enterprise Admin System) ==========
   registerAdminRoutes(app);
+
+  // ========== ENTERPRISE SYSTEM ROUTES ==========
+  // Template management (invoice, email, WhatsApp templates)
+  registerTemplateRoutes(app, combinedAuth, requireAdminAuth);
+  
+  // Support ticket system
+  registerSupportRoutes(app, combinedAuth, requireAdminAuth);
+  
+  // Audit logging and exports
+  registerAuditRoutes(app, combinedAuth, requireAdminAuth);
+
+  // ========== SUBSCRIPTION MANAGEMENT ROUTES (Enterprise) ==========
+  app.use("/api/subscription", subscriptionRoutes);
 
   // Register Admin User Management routes
   const { registerAdminUserManagement } = await import('./adminUserManagement');

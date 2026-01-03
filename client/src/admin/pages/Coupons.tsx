@@ -39,10 +39,11 @@ function CouponStatusBadge({ status, discountPercent }: { status: string; discou
     expired: 'bg-gray-100 text-gray-800',
     disabled: 'bg-red-100 text-red-800',
   };
+  const displayStatus = status || 'disabled';
   return (
     <div className="flex items-center gap-2">
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[status] || colors.disabled}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[displayStatus] || colors.disabled}`}>
+        {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
       </span>
       {discountPercent === 100 && (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
