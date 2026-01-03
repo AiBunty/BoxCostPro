@@ -90,8 +90,8 @@ function AuthenticatedRouter() {
     queryKey: ["/api/flute-settings/status"],
   });
 
-  const { data: onboardingStatus } = useQuery<any>({
-    queryKey: ["/api/onboarding/status"],
+  const { data: setupStatus } = useQuery<any>({
+    queryKey: ["/api/user/setup/status"],
   });
 
   if (userLoading || setupLoading) {
@@ -181,19 +181,12 @@ function AuthenticatedRouter() {
   }
 
   // ========== VERIFICATION GATE WITH NON-DISMISSIBLE MODAL ==========
-  const verificationStatus = onboardingStatus?.verificationStatus;
-  const isVerified = verificationStatus === 'approved';
+  const verificationStatus = (setupStatus?.verificationStatus || 'NOT_SUBMITTED').toUpperCase();
+  const isVerified = verificationStatus === 'APPROVED';
   const isOnOnboarding = location === "/onboarding";
-  const isSubmitted = onboardingStatus?.submittedForVerification;
-  const isPending = verificationStatus === 'pending' || (isSubmitted && verificationStatus !== 'approved' && verificationStatus !== 'rejected');
-  const isRejected = verificationStatus === 'rejected';
-
-  // Calculate if all steps are complete
-  const allStepsComplete = !!(onboardingStatus?.businessProfileDone && 
-    onboardingStatus?.paperSetupDone && 
-    onboardingStatus?.fluteSetupDone && 
-    onboardingStatus?.taxSetupDone && 
-    onboardingStatus?.termsSetupDone);
+  const isSubmitted = !!setupStatus?.submittedForVerification;
+  const isPending = verificationStatus === 'PENDING' || (isSubmitted && verificationStatus !== 'APPROVED' && verificationStatus !== 'REJECTED');
+  const isRejected = verificationStatus === 'REJECTED';
 
   const blockedPaths = ['/dashboard', '/create-quote', '/quotes', '/reports', '/bulk-upload'];
   const isOnBlockedPath = blockedPaths.some(path => location.startsWith(path)) || location === '/';
@@ -207,7 +200,7 @@ function AuthenticatedRouter() {
         <>
           <ApprovalBlockModal 
             status="pending" 
-            submittedAt={onboardingStatus?.submittedAt}
+            submittedAt={setupStatus?.submittedAt}
           />
           {/* Render app shell behind modal so user sees context */}
           <AppShell>
@@ -232,7 +225,7 @@ function AuthenticatedRouter() {
           <>
             <ApprovalBlockModal 
               status="rejected" 
-              rejectionReason={onboardingStatus?.rejectionReason}
+              rejectionReason={setupStatus?.rejectionReason}
             />
             <AppShell>
               <div className="opacity-50 pointer-events-none">

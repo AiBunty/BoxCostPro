@@ -4086,6 +4086,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/user/setup/update", combinedAuth, async (req: any, res) => {
+    console.log("🔥 SETUP UPDATE HIT");
+    console.log("USER ID:", req.userId);
+    console.log("TENANT ID:", req.tenantId);
+    console.log("BODY:", req.body);
+
     try {
       const { stepKey } = req.body;
       const allowedSteps: Array<keyof SetupStatus['steps']> = ['businessProfile', 'paperPricing', 'fluteSettings', 'taxDefaults', 'quoteTerms'];
@@ -4093,10 +4098,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid stepKey' });
       }
 
+      console.log("✅ Step validation passed, calling storage.completeSetupStep");
       const status = await storage.completeSetupStep(req.userId, stepKey, req.tenantId);
+      console.log("✅ Setup step completed, new progress:", status.setupProgress);
       res.json(status);
     } catch (error: any) {
-      console.error('Error updating setup step:', error);
+      console.error('❌ Error updating setup step:', error);
       res.status(500).json({ error: error?.message || 'Failed to update setup step' });
     }
   });

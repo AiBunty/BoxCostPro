@@ -20,6 +20,15 @@ export default function PaperSetup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [defaultsInitialized, setDefaultsInitialized] = useState(false);
+
+  const markPaperSetupStep = async () => {
+    try {
+      await apiRequest("POST", "/api/user/setup/update", { stepKey: "paperPricing" });
+      queryClient.invalidateQueries({ queryKey: ["/api/user/setup/status"] });
+    } catch (error) {
+      console.error("Failed to mark paper pricing setup step", error);
+    }
+  };
   
   // BF Price dialog state
   const [isBfDialogOpen, setIsBfDialogOpen] = useState(false);
@@ -196,9 +205,10 @@ export default function PaperSetup() {
     mutationFn: async (data: typeof rules & { paperSetupCompleted: boolean }) => {
       return await apiRequest("POST", "/api/paper-pricing-rules", data);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/paper-pricing-rules"] });
       queryClient.invalidateQueries({ queryKey: ["/api/paper-setup-status"] });
+      await markPaperSetupStep();
       toast({ title: "Settings saved successfully" });
       setLocation("/");
     },

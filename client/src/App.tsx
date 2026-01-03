@@ -92,8 +92,8 @@ function AuthenticatedRouter() {
     queryKey: ["/api/flute-settings/status"],
   });
 
-  const { data: onboardingStatus } = useQuery<any>({
-    queryKey: ["/api/onboarding/status"],
+  const { data: setupStatus } = useQuery<any>({
+    queryKey: ["/api/user/setup/status"],
   });
 
   const adminRoles = ["admin", "super_admin", "owner", "support_agent", "support_manager"];
@@ -153,14 +153,24 @@ function AuthenticatedRouter() {
   }
 
   // After setup steps, enforce verification gate
-  const isVerified = onboardingStatus?.verificationStatus === 'approved';
+  const verificationStatus = (setupStatus?.verificationStatus || 'NOT_SUBMITTED').toUpperCase();
+  const isSetupComplete = !!setupStatus?.isSetupComplete;
+  const isVerified = verificationStatus === 'APPROVED';
   const isOnOnboarding = location === "/onboarding";
 
   // Block access to main features if not verified
   const blockedPaths = ['/dashboard', '/create-quote', '/quotes', '/reports', '/bulk-upload'];
   const isOnBlockedPath = blockedPaths.some(path => location.startsWith(path)) || location === '/';
 
-  if (!isAdmin && !sessionOnlyAuth && !isVerified && isOnBlockedPath && !isOnOnboarding && !isOnAccount && !isOnCompleteProfile) {
+  if (
+    !isAdmin &&
+    !sessionOnlyAuth &&
+    (!isSetupComplete || !isVerified) &&
+    isOnBlockedPath &&
+    !isOnOnboarding &&
+    !isOnAccount &&
+    !isOnCompleteProfile
+  ) {
     return <Redirect to="/onboarding" />;
   }
 

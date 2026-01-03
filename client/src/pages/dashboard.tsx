@@ -56,9 +56,9 @@ export default function Dashboard() {
   const totalValue = quotes?.reduce((sum, q) => sum + (q.totalAmount || 0), 0) || 0;
 
   // Show subtle card linking to onboarding when approval is pending and subscription is not paid-active
-  const { data: onboardingStatus } = useQuery<any>({ queryKey: ["/api/onboarding/status"] });
-  const isPaidActive = !!onboardingStatus?.paidActive;
-  const showPendingApprovalCard = !isPaidActive;
+  const { data: setupStatus } = useQuery<any>({ queryKey: ["/api/user/setup/status"] });
+  const verificationStatus = setupStatus?.verificationStatus || "NOT_SUBMITTED";
+  const showPendingApprovalCard = verificationStatus !== "APPROVED";
 
   // Admin: show approvals shortcut if there are pending verifications
   const adminRoles = ["admin", "super_admin", "owner"];

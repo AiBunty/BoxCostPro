@@ -31,6 +31,15 @@ export default function BusinessDefaultsSettings() {
   });
   const [hasChanges, setHasChanges] = useState(false);
 
+  const markTaxDefaultsStep = async () => {
+    try {
+      await apiRequest('POST', '/api/user/setup/update', { stepKey: 'taxDefaults' });
+      queryClient.invalidateQueries({ queryKey: ['/api/user/setup/status'] });
+    } catch (error) {
+      console.error('Failed to mark tax defaults setup step', error);
+    }
+  };
+
   const { data: existingDefaults, isLoading } = useQuery<BusinessDefaults>({
     queryKey: ['/api/business-defaults'],
   });
@@ -45,8 +54,9 @@ export default function BusinessDefaultsSettings() {
     mutationFn: async (data: BusinessDefaults) => {
       return await apiRequest('POST', '/api/business-defaults', data);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['/api/business-defaults'] });
+      await markTaxDefaultsStep();
       setHasChanges(false);
       toast({
         title: "Settings Saved",

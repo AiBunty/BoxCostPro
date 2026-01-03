@@ -28,6 +28,15 @@ export default function MasterSettings() {
   const [editContent, setEditContent] = useState("");
   const [editName, setEditName] = useState("");
 
+  const markQuoteTermsStep = async () => {
+    try {
+      await apiRequest("POST", "/api/user/setup/update", { stepKey: "quoteTerms" });
+      queryClient.invalidateQueries({ queryKey: ["/api/user/setup/status"] });
+    } catch (error) {
+      console.error("Failed to mark quote terms setup step", error);
+    }
+  };
+
   const { data: templates = [], isLoading: templatesLoading } = useQuery<QuoteTemplate[]>({
     queryKey: ["/api/quote-templates", templateChannel],
     queryFn: async () => {
@@ -45,8 +54,9 @@ export default function MasterSettings() {
     mutationFn: async (templateId: string) => {
       return apiRequest("POST", `/api/quote-templates/${templateId}/duplicate`);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/quote-templates", templateChannel] });
+      await markQuoteTermsStep();
       toast({ title: "Template Duplicated", description: "You can now customize this template." });
     },
     onError: () => toast({ title: "Error", description: "Failed to duplicate template", variant: "destructive" })
@@ -56,8 +66,9 @@ export default function MasterSettings() {
     mutationFn: async (templateId: string) => {
       return apiRequest("POST", `/api/quote-templates/${templateId}/set-default`);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/quote-templates", templateChannel] });
+      await markQuoteTermsStep();
       toast({ title: "Default Set", description: "This template will be used by default." });
     },
     onError: () => toast({ title: "Error", description: "Failed to set default template", variant: "destructive" })
@@ -67,8 +78,9 @@ export default function MasterSettings() {
     mutationFn: async (templateId: string) => {
       return apiRequest("DELETE", `/api/quote-templates/${templateId}`);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/quote-templates", templateChannel] });
+      await markQuoteTermsStep();
       toast({ title: "Template Deleted" });
     },
     onError: () => toast({ title: "Error", description: "Failed to delete template", variant: "destructive" })
@@ -78,8 +90,9 @@ export default function MasterSettings() {
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
       return apiRequest("PATCH", `/api/quote-templates/${id}`, data);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/quote-templates", templateChannel] });
+      await markQuoteTermsStep();
       toast({ title: "Template Updated" });
       setIsEditOpen(false);
     },
@@ -90,8 +103,9 @@ export default function MasterSettings() {
     mutationFn: async (columns: Record<string, boolean>) => {
       return apiRequest("POST", "/api/show-columns", columns);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/show-columns"] });
+      await markQuoteTermsStep();
       toast({ title: "Columns Updated" });
     },
     onError: () => toast({ title: "Error", description: "Failed to update columns", variant: "destructive" })

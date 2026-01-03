@@ -93,6 +93,15 @@ export default function Account() {
   const [gstError, setGstError] = useState<string | null>(null);
   const [isGSTValid, setIsGSTValid] = useState(false);
 
+  const markBusinessProfileStep = async () => {
+    try {
+      await apiRequest("POST", "/api/user/setup/update", { stepKey: "businessProfile" });
+      queryClient.invalidateQueries({ queryKey: ["/api/user/setup/status"] });
+    } catch (error) {
+      console.error("Failed to mark business profile setup step", error);
+    }
+  };
+
   const { data: companyProfiles, isLoading: profilesLoading } = useQuery<CompanyProfile[]>({
     queryKey: ["/api/company-profiles"],
   });
@@ -166,9 +175,10 @@ export default function Account() {
         return apiRequest("POST", "/api/company-profiles", { ...data, isDefault: true });
       }
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-profiles"] });
       toast({ title: "Business Profile Saved", description: "Your company details have been updated." });
+      await markBusinessProfileStep();
     },
     onError: (error: any) => {
       const errorMessage = error?.message || "Failed to save business profile";

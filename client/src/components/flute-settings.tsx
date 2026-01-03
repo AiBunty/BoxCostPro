@@ -38,6 +38,15 @@ export default function FluteSettings() {
   const [settings, setSettings] = useState<Record<string, FluteSetting>>({});
   const [hasChanges, setHasChanges] = useState(false);
 
+  const markFluteSetupStep = async () => {
+    try {
+      await apiRequest('POST', '/api/user/setup/update', { stepKey: 'fluteSettings' });
+      queryClient.invalidateQueries({ queryKey: ['/api/user/setup/status'] });
+    } catch (error) {
+      console.error('Failed to mark flute setup step', error);
+    }
+  };
+
   const { data: existingSettings, isLoading } = useQuery<FluteSetting[]>({
     queryKey: ['/api/flute-settings'],
   });
@@ -67,8 +76,9 @@ export default function FluteSettings() {
     mutationFn: async (settingsToSave: FluteSetting[]) => {
       return await apiRequest('POST', '/api/flute-settings', { settings: settingsToSave });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['/api/flute-settings'] });
+      await markFluteSetupStep();
       setHasChanges(false);
       toast({
         title: "Settings Saved",

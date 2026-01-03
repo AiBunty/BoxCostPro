@@ -1,5 +1,4 @@
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -107,9 +106,6 @@ export function AppShell({ children }: AppShellProps) {
     if (path === "/masters") return location.startsWith("/masters");
     return location === path || location.startsWith(path + "/");
   };
-
-  const { data: onboardingStatus } = useQuery<any>({ queryKey: ["/api/onboarding/status"] });
-  const isPaidActive = !!onboardingStatus?.paidActive;
 
   if (isMobile) {
     return (

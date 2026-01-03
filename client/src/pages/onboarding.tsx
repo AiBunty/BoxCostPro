@@ -22,19 +22,23 @@ import {
   AlertTriangle
 } from "lucide-react";
 
-interface OnboardingStatus {
-  id: string;
+interface SetupStatusResponse {
   userId: string;
-  businessProfileDone: boolean;
-  paperSetupDone: boolean;
-  fluteSetupDone: boolean;
-  taxSetupDone: boolean;
-  termsSetupDone: boolean;
+  tenantId?: string;
+  steps: {
+    businessProfile: boolean;
+    paperPricing: boolean;
+    fluteSettings: boolean;
+    taxDefaults: boolean;
+    quoteTerms: boolean;
+  };
+  setupProgress: number;
+  isSetupComplete: boolean;
+  verificationStatus: 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
   submittedForVerification: boolean;
-  verificationStatus: string;
-  rejectionReason: string | null;
-  submittedAt: string | null;
-  approvedAt: string | null;
+  rejectionReason?: string | null;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
 }
 
 const onboardingSteps = [
@@ -85,19 +89,36 @@ const onboardingSteps = [
   }
 ];
 
+const mapStepKey = (legacyKey: string): keyof SetupStatusResponse['steps'] => {
+  switch (legacyKey) {
+    case 'businessProfileDone':
+      return 'businessProfile';
+    case 'paperSetupDone':
+      return 'paperPricing';
+    case 'fluteSetupDone':
+      return 'fluteSettings';
+    case 'taxSetupDone':
+      return 'taxDefaults';
+    case 'termsSetupDone':
+      return 'quoteTerms';
+    default:
+      return 'businessProfile';
+  }
+};
+
 export default function Onboarding() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
 
-  const { data: onboardingStatus, isLoading } = useQuery<OnboardingStatus>({
-    queryKey: ['/api/onboarding/status'],
+  const { data: onboardingStatus, isLoading } = useQuery<SetupStatusResponse>({
+    queryKey: ['/api/user/setup/status'],
     staleTime: 10000,
   });
 
   const submitMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/onboarding/submit-for-verification'),
+    mutationFn: () => apiRequest('POST', '/api/user/submit-verification'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/onboarding/status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user/setup/status'] });
       toast({
         title: "Submitted for Verification",
         description: "Your account is now pending admin approval. You'll be notified once reviewed.",
@@ -112,16 +133,15 @@ export default function Onboarding() {
     },
   });
 
-  const completedSteps = onboardingSteps.filter(step => 
-    onboardingStatus?.[step.key as keyof OnboardingStatus]
-  ).length;
+  const completedSteps = onboardingSteps.filter(step => onboardingStatus?.steps?.[mapStepKey(step.key)]).length;
 
   const allStepsCompleted = completedSteps === onboardingSteps.length;
-  const progress = (completedSteps / onboardingSteps.length) * 100;
+  const progress = onboardingStatus?.setupProgress ?? (completedSteps / onboardingSteps.length) * 100;
 
-  const isApproved = onboardingStatus?.verificationStatus === 'approved';
-  const isPending = onboardingStatus?.submittedForVerification && onboardingStatus?.verificationStatus === 'pending';
-  const isRejected = onboardingStatus?.verificationStatus === 'rejected';
+  const verificationStatus = onboardingStatus?.verificationStatus || 'NOT_SUBMITTED';
+  const isApproved = verificationStatus === 'APPROVED';
+  const isPending = verificationStatus === 'PENDING' || (onboardingStatus?.submittedForVerification && verificationStatus !== 'APPROVED');
+  const isRejected = verificationStatus === 'REJECTED';
 
   if (isApproved) {
     return (
@@ -214,7 +234,7 @@ export default function Onboarding() {
           <CardContent className="space-y-4">
             {onboardingSteps.map((step, index) => {
               const StepIcon = step.icon;
-              const isCompleted = onboardingStatus?.[step.key as keyof OnboardingStatus];
+              const isCompleted = onboardingStatus?.steps?.[mapStepKey(step.key)];
               
               return (
                 <div

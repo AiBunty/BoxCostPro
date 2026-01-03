@@ -142,65 +142,41 @@ export function createOnboardingGuard(storage: Storage) {
 
     // ========== CHECK ONBOARDING STATUS ==========
     try {
-      const onboardingStatus = await storage.getOnboardingStatus(req.userId);
+      const setupStatus = await storage.getUserSetupStatus(req.userId, req.tenantId);
 
-      // No onboarding record at all - block access
-      if (!onboardingStatus) {
+      if (!setupStatus || !setupStatus.isSetupComplete) {
         return res.status(403).json({
-          code: 'ONBOARDING_NOT_STARTED',
+          code: 'ONBOARDING_INCOMPLETE',
           redirect: '/onboarding',
-          message: 'Complete onboarding to access the application',
-          verificationStatus: 'not_started',
-          submittedForVerification: false,
+          message: 'Complete all setup steps and submit for verification',
+          verificationStatus: setupStatus?.verificationStatus || 'NOT_SUBMITTED',
+          submittedForVerification: setupStatus?.submittedForVerification || false,
         });
       }
 
-      // Check verification status
-      const verificationStatus = onboardingStatus.verificationStatus;
-      const isSubmitted = onboardingStatus.submittedForVerification;
+      const verificationStatus = setupStatus.verificationStatus;
 
-      // ONLY allow if APPROVED
-      if (verificationStatus !== 'approved') {
-        // Determine specific message based on status
+      if (verificationStatus !== 'APPROVED') {
         let message = 'Complete onboarding to access the application';
         let code = 'ONBOARDING_INCOMPLETE';
 
-        if (verificationStatus === 'pending' || isSubmitted) {
+        if (verificationStatus === 'PENDING') {
           message = 'Your account is under review. You will be notified once approved.';
           code = 'VERIFICATION_PENDING';
-        } else if (verificationStatus === 'rejected') {
-          message = onboardingStatus.rejectionReason || 'Your verification was rejected. Please update your profile and resubmit.';
+        } else if (verificationStatus === 'REJECTED') {
+          message = 'Your verification was rejected. Please update your profile and resubmit.';
           code = 'VERIFICATION_REJECTED';
-        } else {
-          // Check which steps are incomplete
-          const stepsCompleted = [
-            onboardingStatus.businessProfileDone,
-            onboardingStatus.paperSetupDone,
-            onboardingStatus.fluteSetupDone,
-            onboardingStatus.taxSetupDone,
-            onboardingStatus.termsSetupDone,
-          ].filter(Boolean).length;
-
-          if (stepsCompleted === 0) {
-            message = 'Complete all 5 setup steps and submit for verification';
-          } else if (stepsCompleted < 5) {
-            message = `Complete ${5 - stepsCompleted} remaining setup steps and submit for verification`;
-          } else {
-            message = 'Submit your profile for verification to activate your account';
-          }
         }
 
         return res.status(403).json({
           code,
           redirect: '/onboarding',
           message,
-          verificationStatus: verificationStatus || 'in_progress',
-          submittedForVerification: isSubmitted || false,
-          rejectionReason: onboardingStatus.rejectionReason || null,
+          verificationStatus,
+          submittedForVerification: setupStatus.submittedForVerification,
         });
       }
 
-      // ========== VERIFICATION APPROVED - ALLOW ACCESS ==========
       next();
     } catch (error) {
       console.error('Onboarding guard error:', error);

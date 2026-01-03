@@ -74,6 +74,12 @@ export const users = pgTable("users", {
   twoFactorEnabled: boolean("two_factor_enabled").default(false), // DEPRECATED: Clerk handles 2FA
   twoFactorMethod: varchar("two_factor_method"), // DEPRECATED: Clerk handles 2FA methods
   twoFactorVerifiedAt: timestamp("two_factor_verified_at"), // When 2FA was last verified
+  // Setup & Verification
+  isSetupComplete: boolean("is_setup_complete").default(false), // True when all setup steps completed
+  setupProgress: integer("setup_progress").default(0), // Percentage 0-100 driven by user_setup table
+  verificationStatus: varchar("verification_status").default("NOT_SUBMITTED"), // NOT_SUBMITTED | PENDING | APPROVED | REJECTED
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
 });
 
 // User Profile for tracking onboarding/setup progress
@@ -1076,7 +1082,30 @@ export type TransportSnapshot = z.infer<typeof transportSnapshotSchema>;
 
 // ========== ADMIN VERIFICATION & ONBOARDING SYSTEM ==========
 
-// Onboarding Status - tracks tenant's onboarding steps and verification
+// User Setup - per-tenant setup checklist powering progress + gating
+export const userSetup = pgTable("user_setup", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  businessProfile: boolean("business_profile").default(false),
+  paperPricing: boolean("paper_pricing").default(false),
+  fluteSettings: boolean("flute_settings").default(false),
+  taxDefaults: boolean("tax_defaults").default(false),
+  quoteTerms: boolean("quote_terms").default(false),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_user_setup_user").on(table.userId),
+  index("idx_user_setup_tenant").on(table.tenantId),
+  index("idx_user_setup_user_tenant").on(table.userId, table.tenantId),
+]);
+
+export const insertUserSetupSchema = createInsertSchema(userSetup).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserSetup = z.infer<typeof insertUserSetupSchema>;
+export type UserSetup = typeof userSetup.$inferSelect;
+
+// Onboarding Status - legacy table kept for compatibility; kept in sync with user_setup + users
 export const onboardingStatus = pgTable("onboarding_status", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id).unique(),
