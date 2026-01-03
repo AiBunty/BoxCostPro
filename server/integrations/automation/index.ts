@@ -3,9 +3,8 @@
  */
 
 // Interface and types
-export {
+export type {
   IAutomationProvider,
-  BaseAutomationProvider,
   AutomationProviderConfig,
   AutomationProviderCode,
   AutomationEventType,
@@ -14,6 +13,8 @@ export {
   WorkflowTrigger,
   AutomationHealthCheckResult,
 } from './IAutomationProvider';
+
+export { BaseAutomationProvider } from './IAutomationProvider';
 
 // Adapters
 export { N8nAdapter } from './adapters/N8nAdapter';

@@ -5,9 +5,8 @@
  */
 
 // Interface and types
-export {
+export type {
   IMessagingProvider,
-  BaseMessagingProvider,
   MessagingProviderConfig,
   MessagingProviderCode,
   TextMessageRequest,
@@ -17,6 +16,8 @@ export {
   WebhookVerificationResult,
   MessagingHealthCheckResult,
 } from './IMessagingProvider';
+
+export { BaseMessagingProvider } from './IMessagingProvider';
 
 // Adapters
 export { WABACloudAdapter } from './adapters/WABACloudAdapter';

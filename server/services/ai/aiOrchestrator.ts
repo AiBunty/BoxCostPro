@@ -18,12 +18,12 @@
  */
 
 import crypto from 'crypto';
-import { LLMProviderFactory, LLMCompletionRequest, LLMCompletionResponse, LLMProviderCode } from '../integrations/llm';
-import type { 
-  SupportTicketExtended, 
-  SupportMessageExtended, 
-  AiKnowledgeBase 
-} from '../../shared/schema';
+import { LLMProviderFactory, LLMCompletionRequest, LLMCompletionResponse, LLMProviderCode } from '../../integrations/llm';
+import type {
+  SupportTicketExtended,
+  SupportMessageExtended,
+  AiKnowledgeBase
+} from '../../../shared/schema';
 
 // ========== TYPE DEFINITIONS ==========
 

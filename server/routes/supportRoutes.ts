@@ -15,7 +15,7 @@ import supportTicketService from '../services/supportTicket';
 import { publishEvent } from '../integrations/automation';
 import { assignTicket, getAssignmentRecommendations, getAgentWorkloadStats } from '../services/ticketAutoAssignmentService';
 import { getTicketSLAStatus, getSLAMetrics, runSLACheck } from '../services/slaMonitorService';
-import { generateDraftReply } from '../services/ai/aiOrchestrator';
+import { createAIOrchestrator } from '../services/ai';
 
 const router = Router();
 
@@ -576,33 +576,30 @@ router.post('/tickets/:id/auto-assign', async (req: Request, res: Response) => {
  */
 router.post('/tickets/:id/ai-draft', async (req: Request, res: Response) => {
   try {
-    const { userRole, userId } = req as any;
-    const ticketId = parseInt(req.params.id, 10);
-    const { recentMessages, userContext } = req.body;
-    
+    const { userRole, userId, db, tenantId } = req as any;
+    const ticketId = req.params.id;
+
     // Only support staff can use AI drafts
     if (!['support_agent', 'support_manager', 'admin', 'super_admin'].includes(userRole)) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
-    const result = await generateDraftReply({
+
+    const aiOrchestrator = createAIOrchestrator(db);
+    const result = await aiOrchestrator.generateDraftReply({
       ticketId,
-      recentMessages: recentMessages || [],
-      userContext,
-      requestedBy: {
-        userId,
-        role: userRole,
-      },
+      requestedBy: userId,
+      tenantId,
     });
-    
+
     res.json({
-      success: true,
+      success: result.success,
       data: {
-        draftReply: result.draftReply,
-        confidence: result.confidence,
-        suggestedCategory: result.suggestedCategory,
-        requiresEscalation: result.requiresEscalation,
-        escalationReason: result.escalationReason,
+        draftReply: result.reply,
+        confidenceScore: result.confidenceScore,
+        confidenceLevel: result.confidenceLevel,
+        actionDecision: result.actionDecision,
+        requiresHumanApproval: result.requiresHumanApproval,
+        suggestedActions: result.suggestedActions,
         knowledgeUsed: result.knowledgeUsed,
         // CRITICAL: This is a DRAFT - agent must review and send manually
         status: 'DRAFT_PENDING_APPROVAL',
