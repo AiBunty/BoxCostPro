@@ -56,9 +56,9 @@ export default function Dashboard() {
   const totalValue = quotes?.reduce((sum, q) => sum + (q.totalAmount || 0), 0) || 0;
 
   // Show subtle card linking to onboarding when approval is pending and subscription is not paid-active
-  const { data: onboardingStatus } = useQuery<any>({ queryKey: ["/api/onboarding/status"] });
-  const isPaidActive = !!onboardingStatus?.paidActive;
-  const showPendingApprovalCard = !isPaidActive;
+  const { data: setupStatus } = useQuery<any>({ queryKey: ["/api/user/setup/status"] });
+  const verificationStatus = setupStatus?.verificationStatus || "NOT_SUBMITTED";
+  const showPendingApprovalCard = verificationStatus !== "APPROVED";
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -213,10 +213,35 @@ export default function Dashboard() {
 
         <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">Getting Started</CardTitle>
-            <CardDescription>Quick tips to get the most out of BoxCost</CardDescription>
+            <CardTitle className="text-lg">Account Setup Progress</CardTitle>
+            <CardDescription>Complete setup to unlock full access</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Setup Completion</span>
+                <span className="text-sm text-muted-foreground">
+                  {setupStatus?.setupProgress ?? 0}%
+                </span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-500"
+                  style={{ width: `${setupStatus?.setupProgress ?? 0}%` }}
+                />
+              </div>
+            </div>
+
+            {(setupStatus?.setupProgress ?? 0) < 100 && (
+              <Link href="/onboarding">
+                <Button variant="outline" className="w-full gap-2">
+                  <UserCheck className="h-4 w-4" />
+                  Complete Setup ({5 - (setupStatus?.steps ? Object.values(setupStatus.steps).filter(Boolean).length : 0)} steps remaining)
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            )}
+
             <div className="flex gap-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
               <div className="shrink-0 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
                 1
