@@ -4,9 +4,8 @@
  * ALWAYS renders - never null
  */
 
-import { useClerk, useUser } from '@clerk/clerk-react';
 import { useLocation } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 // Role badge colors
 const roleBadgeColors: Record<string, string> = {
@@ -24,20 +23,19 @@ const roleLabels: Record<string, string> = {
 };
 
 export function TopBar() {
-  const { signOut } = useClerk();
-  const { user, isLoaded } = useUser();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
-  // Fetch admin profile for role
-  const { data: profile } = useQuery({
-    queryKey: ['admin-profile'],
+  // Fetch admin profile
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ['/api/admin/auth/profile'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/profile', { credentials: 'include' });
-      if (!res.ok) return null;
+      const res = await fetch('/api/admin/auth/profile', { credentials: 'include' });
+      if (!res.ok) throw new Error('Not authenticated');
       return res.json();
     },
     retry: false,
-    staleTime: 60000,
+    staleTime: 5 * 60 * 1000,
   });
 
   const role = profile?.role || 'admin';
@@ -46,8 +44,17 @@ export function TopBar() {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
-      setLocation('/admin/login');
+      // Call logout endpoint
+      await fetch('/api/admin/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      // Clear query cache
+      queryClient.clear();
+      
+      // Redirect to login
+      window.location.href = '/admin/login';
     } catch (error) {
       console.error('[TopBar] Sign out failed:', error);
       window.location.href = '/admin/login';
@@ -81,12 +88,12 @@ export function TopBar() {
 
         {/* User info */}
         <div className="text-right hidden sm:block">
-          {isLoaded ? (
+          {!isLoading && profile ? (
             <>
               <p className="text-sm font-medium text-gray-900">
-                {user?.emailAddresses[0]?.emailAddress || 'Admin'}
+                {profile.email || 'Admin'}
               </p>
-              <p className="text-xs text-gray-500">Administrator</p>
+              <p className="text-xs text-gray-500">{profile.displayName || 'Administrator'}</p>
             </>
           ) : (
             <>
@@ -98,8 +105,8 @@ export function TopBar() {
 
         {/* Avatar */}
         <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
-          {user?.imageUrl ? (
-            <img src={user.imageUrl} alt="Profile" className="w-9 h-9 object-cover" />
+          {profile?.profileImageUrl ? (
+            <img src={profile.profileImageUrl} alt="Profile" className="w-9 h-9 object-cover" />
           ) : (
             <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />

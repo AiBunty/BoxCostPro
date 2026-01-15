@@ -1,13 +1,13 @@
 /**
  * Approvals Page - Admin User Approval Workflow
- * Review and approve/reject new user signups
+ * Review and approve/reject new user signups with SLA tracking
  * 
- * CRITICAL WORKFLOW:
- * - New users cannot access dashboard until approved
- * - Admin reviews business details, GST, email config
- * - Admin can APPROVE or REJECT with reason
- * 
- * NEVER renders blank - always shows content
+ * Features:
+ * - Approve/Reject buttons with mandatory reason
+ * - SLA timer (24-48 hour badges)
+ * - Bulk approve functionality
+ * - Auto-emails on approval/rejection
+ * - Full audit logging
  */
 
 import { useState } from 'react';
@@ -24,40 +24,17 @@ interface PendingUser {
   gstin?: string;
   phone?: string;
   signupDate: string;
+  submittedAt?: string;
   onboardingProgress: number;
   status: 'pending' | 'approved' | 'rejected';
   emailConfigured?: boolean;
   subscriptionPlan?: string;
   rejectionReason?: string;
+  slaStatus?: 'OK' | 'WARNING' | 'BREACHED';
+  hoursPending?: number;
+  businessComplete?: boolean;
+  company?: any; // Pass full company profile object for modal
 }
-
-// Mock data for development - will be replaced with API calls
-const mockPendingUsers: PendingUser[] = [
-  {
-    id: '1',
-    email: 'manufacturer@example.com',
-    businessName: 'ABC Packaging Ltd',
-    gstin: '27AABCT1234F1ZH',
-    phone: '+91 98765 43210',
-    signupDate: '2026-01-01T10:30:00Z',
-    onboardingProgress: 100,
-    status: 'pending',
-    emailConfigured: true,
-    subscriptionPlan: 'Professional',
-  },
-  {
-    id: '2',
-    email: 'boxmaker@gmail.com',
-    businessName: 'XYZ Corrugators',
-    gstin: '29AABCT5678G2ZK',
-    phone: '+91 87654 32109',
-    signupDate: '2026-01-01T14:45:00Z',
-    onboardingProgress: 85,
-    status: 'pending',
-    emailConfigured: false,
-    subscriptionPlan: 'Starter',
-  },
-];
 
 type ViewMode = 'cards' | 'table';
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -70,19 +47,45 @@ export function Approvals() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
 
-  // Fetch pending approvals
+  // Fetch pending approvals with SLA data
   const { data: pendingUsers = [], isLoading, error } = useQuery({
     queryKey: ['admin', 'approvals', statusFilter],
     queryFn: async () => {
-      const response = await fetch(`/api/admin/approvals?status=${statusFilter}`);
+      const response = await fetch(`/api/admin/verifications/pending`);
       if (!response.ok) {
-        // Return mock data for development
-        return mockPendingUsers.filter(u => 
-          statusFilter === 'all' ? true : u.status === statusFilter
-        );
+        throw new Error('Failed to fetch approvals');
       }
-      return response.json();
+      const data = await response.json();
+      
+      // Transform data to match PendingUser interface, but include full company object
+      return data.map((item: any) => ({
+        id: item.userId,
+        email: item.user?.email || '',
+        businessName: item.company?.companyName || item.user?.companyName || 'Unknown',
+        gstin: item.company?.gstNo || '',
+        phone: item.company?.phone || item.user?.mobileNo || '',
+        signupDate: item.user?.createdAt || new Date().toISOString(),
+        submittedAt: item.submittedAt,
+        onboardingProgress: item.user?.setupProgress || 0,
+        status: item.user?.accountStatus === 'verification_pending' ? 'pending' : 
+                item.user?.accountStatus === 'approved' ? 'approved' : 
+                item.user?.accountStatus === 'rejected' ? 'rejected' : 'pending',
+        emailConfigured: true,
+        subscriptionPlan: item.user?.subscriptionStatus || 'Trial',
+        rejectionReason: item.user?.approvalNote,
+        slaStatus: item.slaStatus || 'OK',
+        hoursPending: item.hoursPending || 0,
+        businessComplete: (item.user?.setupProgress || 0) >= 100 || !!item.company?.companyName,
+        company: item.company, // Pass full company profile object
+      })).filter((u: PendingUser) => {
+        if (statusFilter === 'all') return true;
+        if (statusFilter === 'pending') return u.status === 'pending';
+        if (statusFilter === 'approved') return u.status === 'approved';
+        if (statusFilter === 'rejected') return u.status === 'rejected';
+        return true;
+      });
     },
     staleTime: 30000,
   });
@@ -90,12 +93,14 @@ export function Approvals() {
   // Approve user mutation
   const approveMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const response = await fetch(`/api/admin/approvals/${userId}/approve`, {
+      const response = await fetch(`/api/admin/approvals/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
       });
       if (!response.ok) {
-        throw new Error('Failed to approve user');
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to approve user');
       }
       return response.json();
     },
@@ -108,13 +113,14 @@ export function Approvals() {
   // Reject user mutation
   const rejectMutation = useMutation({
     mutationFn: async ({ userId, reason }: { userId: string; reason: string }) => {
-      const response = await fetch(`/api/admin/approvals/${userId}/reject`, {
+      const response = await fetch(`/api/admin/approvals/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ userId, reason }),
       });
       if (!response.ok) {
-        throw new Error('Failed to reject user');
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to reject user');
       }
       return response.json();
     },
@@ -126,8 +132,28 @@ export function Approvals() {
     },
   });
 
+  // Bulk approve mutation
+  const bulkApproveMutation = useMutation({
+    mutationFn: async (userIds: string[]) => {
+      const response = await fetch(`/api/admin/approvals/bulk-approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to bulk approve users');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'approvals'] });
+      setSelectedUserIds(new Set());
+    },
+  });
+
   const handleApprove = (userId: string) => {
-    if (confirm('Are you sure you want to approve this user? They will gain full dashboard access.')) {
+    if (confirm('Are you sure you want to approve this user? They will gain full dashboard access and receive an approval email.')) {
       approveMutation.mutate(userId);
     }
   };
@@ -139,7 +165,7 @@ export function Approvals() {
   };
 
   const handleRejectConfirm = () => {
-    if (selectedUser && rejectReason.trim()) {
+    if (selectedUser && rejectReason.trim().length >= 10) {
       rejectMutation.mutate({ userId: selectedUser.id, reason: rejectReason });
     }
   };
@@ -150,16 +176,82 @@ export function Approvals() {
     setShowDetailsModal(true);
   };
 
+  const handleSelectUser = (userId: string, checked: boolean) => {
+    const newSet = new Set(selectedUserIds);
+    if (checked) {
+      newSet.add(userId);
+    } else {
+      newSet.delete(userId);
+    }
+    setSelectedUserIds(newSet);
+  };
+
+  const handleSelectAll = () => {
+    const pendingOnly = pendingUsers.filter((u: PendingUser) => u.status === 'pending');
+    if (selectedUserIds.size === pendingOnly.length) {
+      setSelectedUserIds(new Set());
+    } else {
+      setSelectedUserIds(new Set(pendingOnly.map(u => u.id)));
+    }
+  };
+
+  const handleBulkApprove = () => {
+    if (selectedUserIds.size === 0) return;
+    if (confirm(`Are you sure you want to approve ${selectedUserIds.size} user(s)? They will receive approval emails.`)) {
+      bulkApproveMutation.mutate(Array.from(selectedUserIds));
+    }
+  };
+
+  // SLA Badge Component
+  const SLABadge = ({ slaStatus, hours }: { slaStatus: string; hours: number }) => {
+    const badges = {
+      OK: { bg: 'bg-green-100', text: 'text-green-700', icon: '🟢', label: 'On Time' },
+      WARNING: { bg: 'bg-orange-100', text: 'text-orange-700', icon: '🟠', label: 'Due Soon' },
+      BREACHED: { bg: 'bg-red-100', text: 'text-red-700', icon: '🔴', label: 'SLA Breached' },
+    };
+    const badge = badges[slaStatus as keyof typeof badges] || badges.OK;
+    
+    return (
+      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
+        <span>{badge.icon}</span>
+        <span>{badge.label}</span>
+        <span className="font-mono">({Math.round(hours)}h)</span>
+      </div>
+    );
+  };
+
   // Stats calculation
   const stats = {
     pending: pendingUsers.filter((u: PendingUser) => u.status === 'pending').length,
     approved: pendingUsers.filter((u: PendingUser) => u.status === 'approved').length,
     rejected: pendingUsers.filter((u: PendingUser) => u.status === 'rejected').length,
     total: pendingUsers.length,
+    breached: pendingUsers.filter((u: PendingUser) => u.slaStatus === 'BREACHED').length,
   };
 
   // Table columns for table view
   const columns = [
+    {
+      key: 'select',
+      header: (
+        <input
+          type="checkbox"
+          checked={selectedUserIds.size > 0 && selectedUserIds.size === pendingUsers.filter(u => u.status === 'pending').length}
+          onChange={handleSelectAll}
+          className="w-4 h-4 text-blue-600 rounded"
+        />
+      ),
+      render: (user: PendingUser) => (
+        user.status === 'pending' ? (
+          <input
+            type="checkbox"
+            checked={selectedUserIds.has(user.id)}
+            onChange={(e) => handleSelectUser(user.id, e.target.checked)}
+            className="w-4 h-4 text-blue-600 rounded"
+          />
+        ) : null
+      ),
+    },
     {
       key: 'businessName',
       header: 'Business',
@@ -168,6 +260,15 @@ export function Approvals() {
           <p className="font-medium text-gray-900">{user.businessName || 'Not Provided'}</p>
           <p className="text-sm text-gray-500">{user.email}</p>
         </div>
+      ),
+    },
+    {
+      key: 'sla',
+      header: 'SLA Status',
+      render: (user: PendingUser) => (
+        user.slaStatus && user.hoursPending !== undefined ? (
+          <SLABadge slaStatus={user.slaStatus} hours={user.hoursPending} />
+        ) : null
       ),
     },
     {
@@ -233,12 +334,14 @@ export function Approvals() {
               <button
                 onClick={() => handleRejectClick(user.id)}
                 className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded hover:bg-red-100 transition-colors"
+                disabled={approveMutation.isPending || rejectMutation.isPending}
               >
                 Reject
               </button>
               <button
                 onClick={() => handleApprove(user.id)}
                 className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
+                disabled={approveMutation.isPending || rejectMutation.isPending}
               >
                 Approve
               </button>
@@ -272,6 +375,7 @@ export function Approvals() {
           <div>
             <p className="font-medium text-orange-800">
               {stats.pending} user{stats.pending > 1 ? 's' : ''} awaiting approval
+              {stats.breached > 0 && ` (${stats.breached} SLA breached)`}
             </p>
             <p className="text-sm text-orange-600">
               These users have completed onboarding and are waiting for admin review.
@@ -281,10 +385,14 @@ export function Approvals() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-sm text-gray-500 mb-1">Pending</p>
           <p className="text-2xl font-bold text-orange-600">{stats.pending}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-sm text-gray-500 mb-1">SLA Breached</p>
+          <p className="text-2xl font-bold text-red-600">{stats.breached}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-sm text-gray-500 mb-1">Approved</p>
@@ -302,6 +410,28 @@ export function Approvals() {
 
       {/* Controls */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        {/* Bulk Actions */}
+        {selectedUserIds.size > 0 && statusFilter === 'pending' && (
+          <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+            <span className="text-sm font-medium text-blue-900">
+              {selectedUserIds.size} user{selectedUserIds.size > 1 ? 's' : ''} selected
+            </span>
+            <button
+              onClick={handleBulkApprove}
+              disabled={bulkApproveMutation.isPending}
+              className="px-4 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              {bulkApproveMutation.isPending ? 'Approving...' : '✓ Bulk Approve'}
+            </button>
+            <button
+              onClick={() => setSelectedUserIds(new Set())}
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Status Filter */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-gray-700">Filter:</label>
@@ -426,15 +556,18 @@ export function Approvals() {
             </h2>
             <p className="text-sm text-gray-600 mb-4">
               You are about to reject the application for <strong>{selectedUser.businessName}</strong>.
-              Please provide a reason that will be shown to the user.
+              Please provide a detailed reason (minimum 10 characters) that will be shown to the user via email.
             </p>
             <textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Enter rejection reason..."
-              rows={3}
+              placeholder="Enter rejection reason (minimum 10 characters)..."
+              rows={4}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              {rejectReason.length}/10 characters minimum
+            </p>
             <div className="flex gap-3 mt-4">
               <button
                 onClick={() => {
@@ -448,8 +581,8 @@ export function Approvals() {
               </button>
               <button
                 onClick={handleRejectConfirm}
-                disabled={!rejectReason.trim() || rejectMutation.isPending}
-                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                disabled={rejectReason.trim().length < 10 || rejectMutation.isPending}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {rejectMutation.isPending ? 'Rejecting...' : 'Confirm Rejection'}
               </button>
@@ -488,24 +621,52 @@ export function Approvals() {
               {/* Business Information */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3">
-                  Business Information
+                  Business Profile (Full Details)
                 </h3>
                 <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Business Name</p>
-                    <p className="font-medium text-gray-900">{selectedUser.businessName || 'Not Provided'}</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.companyName || selectedUser.businessName || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Owner Name</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.ownerName || 'Not Provided'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Email</p>
-                    <p className="font-medium text-gray-900">{selectedUser.email}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">GSTIN</p>
-                    <p className="font-mono font-medium text-gray-900">{selectedUser.gstin || 'Not Provided'}</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.email || selectedUser.email || 'Not Provided'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Phone</p>
-                    <p className="font-medium text-gray-900">{selectedUser.phone || 'Not Provided'}</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.phone || selectedUser.phone || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">GSTIN</p>
+                    <p className="font-mono font-medium text-gray-900">{selectedUser.company?.gstNo || selectedUser.gstin || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">PAN</p>
+                    <p className="font-mono font-medium text-gray-900">{selectedUser.company?.panNo || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">State</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.stateName || selectedUser.company?.stateCode || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Address 1</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.address1 || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Address 2</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.address2 || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Pincode</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.pincode || 'Not Provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Website</p>
+                    <p className="font-medium text-gray-900">{selectedUser.company?.website || 'Not Provided'}</p>
                   </div>
                 </div>
               </div>

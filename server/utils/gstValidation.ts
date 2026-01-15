@@ -145,7 +145,7 @@ export function validateGSTIN(gstin: string | null | undefined): { valid: boolea
   if (!validateGSTINChecksum(trimmedGSTIN)) {
     return {
       valid: false,
-      error: 'GSTIN checksum validation failed. Please verify the GSTIN.'
+      error: 'GSTIN checksum validation failed. Please verify the GSTIN.',
     };
   }
 

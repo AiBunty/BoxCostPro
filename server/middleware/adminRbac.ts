@@ -47,6 +47,7 @@ const PERMISSION_MATRIX: Record<AdminRole, Set<string>> = {
     // Configuration
     'configure_payment_gateways',
     'configure_roles',
+    'manage_settings',
     'view_audit_logs',
     'export_audit_logs',
     
@@ -155,8 +156,9 @@ export const verifyAdminAuth = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Get user ID from Clerk auth
-    const userId = req.userId || req.user?.claims?.sub;
+    // Get user ID from Clerk auth (@clerk/express adds req.auth)
+    const auth = typeof req.auth === 'function' ? req.auth() : req.auth;
+    const userId = auth?.userId || req.userId || req.user?.claims?.sub;
     
     if (!userId) {
       res.status(401).json({ message: "Unauthorized: No user" });

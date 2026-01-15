@@ -8,7 +8,7 @@
  */
 
 import { ReactNode, useEffect } from 'react';
-import { useAuth } from '@clerk/clerk-react';
+import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { TopBar } from '../components/TopBar';
 import { Sidebar } from '../components/Sidebar';
@@ -17,16 +17,31 @@ interface AdminLayoutProps {
   children: ReactNode;
 }
 
+// Session-based admin authentication hook
+function useAdminAuth() {
+  return useQuery({
+    queryKey: ['/api/admin/auth/profile'],
+    queryFn: async () => {
+      const response = await fetch('/api/admin/auth/profile', {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Not authenticated');
+      return response.json();
+    },
+    retry: false,
+  });
+}
+
 export function AdminLayout({ children }: AdminLayoutProps) {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { data: admin, isLoading, error } = useAdminAuth();
   const [, setLocation] = useLocation();
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
+    if (!isLoading && (error || !admin)) {
       setLocation('/admin/login');
     }
-  }, [isLoaded, isSignedIn, setLocation]);
+  }, [isLoading, error, admin, setLocation]);
 
   // Console warning if content area is empty (for debugging)
   useEffect(() => {
@@ -40,7 +55,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   }, [children]);
 
   // LOADING STATE - shows visible loading UI
-  if (!isLoaded) {
+  if (isLoading) {
     return (
       <div 
         className="min-h-screen bg-gray-50 flex items-center justify-center"
@@ -55,7 +70,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   }
 
   // NOT AUTHENTICATED - shows redirect message (will redirect via useEffect)
-  if (!isSignedIn) {
+  if (error || !admin) {
     return (
       <div 
         className="min-h-screen bg-gray-50 flex items-center justify-center"

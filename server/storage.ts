@@ -84,6 +84,8 @@ import {
   type InsertAdminAuditLog,
   type AdminEmailSettings,
   type InsertAdminEmailSettings,
+  type Admin,
+  type InsertAdmin,
   type EmailProvider,
   type InsertEmailProvider,
   type EmailTaskRouting,
@@ -138,6 +140,7 @@ import {
   staffMetrics,
   adminAuditLogs,
   adminEmailSettings,
+  admins,
   emailProviders,
   emailTaskRouting,
   emailSendLogs,
@@ -166,7 +169,7 @@ import {
   userFeatureOverrides,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, ilike, sql, desc } from "drizzle-orm";
+import { eq, and, or, ilike, sql, desc, inArray } from "drizzle-orm";
 import crypto from "crypto";
 
 export type VerificationStatusCode = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -197,6 +200,11 @@ export interface IStorage {
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<UpsertUser>): Promise<User | undefined>;
   
+  // Admin operations (separate identity store)
+  getAdmin(id: string): Promise<Admin | undefined>;
+  getAdminByEmail(email: string): Promise<Admin | undefined>;
+  createAdmin(admin: InsertAdmin): Promise<Admin>;
+  
   // User Profiles (onboarding/setup tracking)
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
@@ -206,6 +214,9 @@ export interface IStorage {
   getUserSetupStatus(userId: string, tenantId?: string): Promise<SetupStatus>;
   completeSetupStep(userId: string, stepKey: keyof SetupStatus['steps'], tenantId?: string): Promise<SetupStatus>;
   submitSetupForVerification(userId: string, tenantId?: string): Promise<SetupStatus>;
+  approveUser(userId: string, adminUserId: string): Promise<OnboardingStatus | undefined>;
+  rejectUser(userId: string, adminUserId: string, reason: string): Promise<OnboardingStatus | undefined>;
+  bulkApproveUsers(userIds: string[], adminUserId: string): Promise<number>;
   
   // Company Profiles (tenant-aware)
   getCompanyProfile(id: string, tenantId?: string): Promise<CompanyProfile | undefined>;
@@ -436,6 +447,7 @@ export interface IStorage {
   createEmailProvider(provider: InsertEmailProvider): Promise<EmailProvider>;
   updateEmailProvider(id: string, updates: Partial<InsertEmailProvider>): Promise<EmailProvider | undefined>;
   deleteEmailProvider(id: string): Promise<boolean>;
+  setPrimaryEmailProvider(id: string): Promise<boolean>;
   updateProviderHealth(id: string, success: boolean, errorMessage?: string): Promise<void>;
   
   // Email Task Routing
@@ -617,6 +629,22 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  // Admin identities (separate table)
+  async getAdmin(id: string): Promise<Admin | undefined> {
+    const [admin] = await db.select().from(admins).where(eq(admins.id, id));
+    return admin;
+  }
+
+  async getAdminByEmail(email: string): Promise<Admin | undefined> {
+    const [admin] = await db.select().from(admins).where(eq(admins.email, email));
+    return admin;
+  }
+
+  async createAdmin(adminData: InsertAdmin): Promise<Admin> {
+    const [created] = await db.insert(admins).values(adminData).returning();
+    return created;
+  }
+
   async upsertUser(userData: UpsertUser): Promise<User> {
     // Check by Clerk ID first, then by email, then by id
     let existingUser: User | undefined;
@@ -650,9 +678,9 @@ export class DatabaseStorage implements IStorage {
       return user;
     }
     
-    // New user - insert with role='user', then atomically promote to owner if none exists
+    // New user - do NOT manually assign role, use database default
     const now = new Date();
-    
+
     try {
       const [insertedUser] = await db
         .insert(users)
@@ -665,26 +693,12 @@ export class DatabaseStorage implements IStorage {
           firstName: userData.firstName,
           lastName: userData.lastName,
           profileImageUrl: userData.profileImageUrl,
-          role: 'user',
-          authProvider: userData.authProvider || 'clerk',
+          // role: default will be used from schema definition
+          authProvider: userData.authProvider || 'native',
           createdAt: now,
           updatedAt: now,
         })
         .returning();
-      
-      // Atomically promote to owner if no owner exists yet
-      try {
-        await db.execute(sql`
-          UPDATE users 
-          SET role = 'owner', updated_at = NOW()
-          WHERE id = ${insertedUser.id}
-          AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner')
-        `);
-      } catch (promoteError: any) {
-        if (!promoteError.message?.includes('unique')) {
-          console.log('Owner promotion note:', promoteError.message);
-        }
-      }
       
       // Create user profile for onboarding tracking
       await this.createUserProfile({ userId: insertedUser.id });
@@ -1805,10 +1819,8 @@ export class DatabaseStorage implements IStorage {
       setup.businessProfile,
       setup.paperPricing,
       setup.fluteSettings,
-      setup.taxDefaults,
-      setup.quoteTerms,
     ].filter(Boolean).length;
-    return stepsCompleted * 20; // 5 steps
+    return Math.round((stepsCompleted / 3) * 100); // 3 steps
   }
 
   private async ensureUserSetup(userId: string, tenantId?: string): Promise<UserSetup> {
@@ -1944,31 +1956,53 @@ export class DatabaseStorage implements IStorage {
   }
 
   async completeSetupStep(userId: string, stepKey: keyof SetupStatus['steps'], tenantId?: string): Promise<SetupStatus> {
+    console.log("\n🔧 completeSetupStep CALLED");
+    console.log("  👤 userId:", userId);
+    console.log("  🔑 stepKey:", stepKey);
+    console.log("  🏢 tenantId:", tenantId);
+    
     const setupRow = await this.ensureUserSetup(userId, tenantId);
+    console.log("  📄 Setup row retrieved:", { id: setupRow.id, userId: setupRow.userId });
+    
     const now = new Date();
 
     await db.transaction(async (tx) => {
+      console.log("  🔄 Starting transaction...");
+      
       const [updated] = await tx.update(userSetup)
         .set({ [stepKey]: true, updatedAt: now })
         .where(eq(userSetup.id, setupRow.id))
         .returning();
+      
+      console.log("  ✅ Step marked as complete in user_setup table");
+      console.log("  📊 Updated setup row:", JSON.stringify(updated));
 
       const progress = this.computeSetupProgress(updated);
+      console.log("  📈 Computed progress:", progress, "%");
+      
       const isSetupComplete = progress === 100;
       const completedAt = isSetupComplete ? (updated.completedAt || now) : null;
 
       await tx.update(userSetup)
         .set({ completedAt, updatedAt: now })
         .where(eq(userSetup.id, updated.id));
+      
+      console.log("  ✅ Updated completedAt in user_setup");
 
       await tx.update(users)
         .set({ setupProgress: progress, isSetupComplete })
         .where(eq(users.id, userId));
+      
+      console.log("  ✅ Updated users table with progress:", progress);
 
       await this.syncOnboardingStatusFromSetup(tx, userId, { ...updated, completedAt } as UserSetup, {});
+      console.log("  ✅ Synced onboarding_status table");
     });
 
-    return this.getUserSetupStatus(userId, tenantId);
+    console.log("  🎉 Transaction completed successfully!");
+    const finalStatus = await this.getUserSetupStatus(userId, tenantId);
+    console.log("  📊 Final status:", JSON.stringify(finalStatus));
+    return finalStatus;
   }
 
   async submitSetupForVerification(userId: string, tenantId?: string): Promise<SetupStatus> {
@@ -1983,9 +2017,12 @@ export class DatabaseStorage implements IStorage {
     await db.transaction(async (tx) => {
       await tx.update(users)
         .set({
+          accountStatus: 'verification_pending',
           verificationStatus: 'PENDING',
+          submittedForVerificationAt: now,
           approvedAt: null,
           approvedBy: null,
+          approvalNote: null,
         })
         .where(eq(users.id, userId));
 
@@ -2077,9 +2114,11 @@ export class DatabaseStorage implements IStorage {
     await db.transaction(async (tx) => {
       await tx.update(users)
         .set({
+          accountStatus: 'approved',
           verificationStatus: 'APPROVED',
           approvedAt: now,
           approvedBy: adminUserId,
+          approvalNote: null,
         })
         .where(eq(users.id, userId));
 
@@ -2108,9 +2147,11 @@ export class DatabaseStorage implements IStorage {
     await db.transaction(async (tx) => {
       await tx.update(users)
         .set({
+          accountStatus: 'rejected',
           verificationStatus: 'REJECTED',
           approvedAt: null,
           approvedBy: null,
+          approvalNote: reason,
         })
         .where(eq(users.id, userId));
 
@@ -2133,11 +2174,54 @@ export class DatabaseStorage implements IStorage {
     
     return this.getOnboardingStatus(userId);
   }
-  
-  async getPendingVerifications(): Promise<OnboardingStatus[]> {
-    const pendingUsers = await db.select().from(users)
-      .where(eq(users.verificationStatus, 'PENDING'));
 
+  async bulkApproveUsers(userIds: string[], adminUserId: string): Promise<number> {
+    const now = new Date();
+    
+    await db.transaction(async (tx) => {
+      // Update all users to approved status
+      await tx.update(users)
+        .set({
+          accountStatus: 'approved',
+          verificationStatus: 'APPROVED',
+          approvedAt: now,
+          approvedBy: adminUserId,
+          approvalNote: null,
+        })
+        .where(inArray(users.id, userIds));
+
+      // Update onboarding status for all users
+      await tx.update(onboardingStatus)
+        .set({
+          verificationStatus: 'approved',
+          submittedForVerification: true,
+          approvedAt: now,
+          approvedBy: adminUserId,
+          rejectionReason: null,
+          updatedAt: now,
+        })
+        .where(inArray(onboardingStatus.userId, userIds));
+    });
+
+    // Log audit trail for each user
+    for (const userId of userIds) {
+      await this.createAdminAction({
+        adminUserId,
+        targetUserId: userId,
+        action: 'bulk_approved',
+        remarks: `Bulk approved with ${userIds.length} other users`
+      });
+    }
+
+    return userIds.length;
+  }
+
+  async getPendingVerifications(): Promise<OnboardingStatus[]> {
+    const pendingUsers = await db.select()
+      .from(users)
+      .where(eq(users.accountStatus, 'verification_pending'))
+      .orderBy(users.submittedForVerificationAt);
+    
     const results: OnboardingStatus[] = [];
     for (const u of pendingUsers) {
       const status = await this.getOnboardingStatus(u.id);
@@ -2287,15 +2371,12 @@ export class DatabaseStorage implements IStorage {
     revenueChange: number;
   }> {
     const allUsers = await db.select({ count: sql`count(*)` }).from(users);
-    const pendingResult = await db.select({ count: sql`count(*)` }).from(onboardingStatus)
-      .where(and(
-        eq(onboardingStatus.submittedForVerification, true),
-        eq(onboardingStatus.verificationStatus, 'pending')
-      ));
-    const approvedResult = await db.select({ count: sql`count(*)` }).from(onboardingStatus)
-      .where(eq(onboardingStatus.verificationStatus, 'approved'));
-    const rejectedResult = await db.select({ count: sql`count(*)` }).from(onboardingStatus)
-      .where(eq(onboardingStatus.verificationStatus, 'rejected'));
+    const pendingResult = await db.select({ count: sql`count(*)` }).from(users)
+      .where(eq(users.accountStatus, 'verification_pending'));
+    const approvedResult = await db.select({ count: sql`count(*)` }).from(users)
+      .where(eq(users.accountStatus, 'approved'));
+    const rejectedResult = await db.select({ count: sql`count(*)` }).from(users)
+      .where(eq(users.accountStatus, 'rejected'));
     
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -2714,6 +2795,30 @@ export class DatabaseStorage implements IStorage {
       .where(eq(emailProviders.id, id))
       .returning();
     return result.length > 0;
+  }
+
+  async setPrimaryEmailProvider(id: string): Promise<boolean> {
+    const providers = await this.getAllEmailProviders();
+    if (!providers || providers.length === 0) return false;
+
+    const target = providers.find(p => p.id === id);
+    if (!target) return false;
+
+    // Build new priority order: target -> 1, others follow in existing order
+    const others = providers.filter(p => p.id !== id);
+    let order = 2;
+    await db.update(emailProviders)
+      .set({ priorityOrder: 1, updatedAt: new Date() })
+      .where(eq(emailProviders.id, id));
+
+    for (const p of others) {
+      await db.update(emailProviders)
+        .set({ priorityOrder: order, updatedAt: new Date() })
+        .where(eq(emailProviders.id, p.id));
+      order += 1;
+    }
+
+    return true;
   }
 
   async updateProviderHealth(id: string, success: boolean, errorMessage?: string): Promise<void> {

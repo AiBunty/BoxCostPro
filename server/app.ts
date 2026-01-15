@@ -11,6 +11,7 @@ import { clerkMiddleware } from "@clerk/express";
 
 import { registerRoutes } from "./routes";
 import { initializeSentry, Sentry } from "./sentry";
+import { scheduleConsistencyJob } from "./jobs/consistencyJob";
 
 // ========== AUTH STARTUP GUARDS ==========
 // Prevent server startup if forbidden auth env vars are present
@@ -187,6 +188,11 @@ export default async function runApp(
     res.status(status).json({ message });
     console.error("Server error:", err);
   });
+
+  // Schedule nightly consistency job (default 02:00 AM)
+  const consistencyJobTime = process.env.CONSISTENCY_JOB_TIME || '02:00';
+  scheduleConsistencyJob(consistencyJobTime);
+  console.log(`[Startup] Consistency job scheduled for ${consistencyJobTime} daily`);
 
   await setup(app, server);
 

@@ -15,6 +15,8 @@ import Account from "@/app/pages/account";
 import Landing from "@/app/pages/landing";
 import CompleteProfilePage from "@/app/pages/complete-profile";
 import Onboarding from "@/app/pages/onboarding";
+import OnboardingWizard from "@/app/pages/onboarding-wizard";
+import OnboardingRejected from "@/app/pages/onboarding-rejected";
 import SellerSetup from "@/app/pages/seller-setup";
 import SignupFlow from "@/app/pages/signup-flow";
 import PaymentSuccess from "@/app/pages/payment-success";
@@ -45,7 +47,8 @@ function AuthCallback() {
   useEffect(() => {
     // Clerk handles auth, just invalidate and redirect
     queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-    setLocation("/");
+    // Route new logins to onboarding; approved users will be redirected forward by gates
+    setLocation("/onboarding");
   }, [setLocation]);
 
   return (
@@ -149,10 +152,17 @@ function AuthenticatedRouter() {
   const isProfileComplete = user?.mobileNo && user?.firstName;
   const isOnCompleteProfile = location === "/complete-profile";
   const isOnAccount = location === "/account";
-  const isBusinessProfileComplete = !!(defaultCompany && defaultCompany.companyName);
+  const isOnOnboardingWizard = location === "/onboarding-wizard";
+  const isBusinessProfileComplete = !!(defaultCompany && defaultCompany.companyName && (defaultCompany.phone || defaultCompany.email));
+  
+  // Get verification status
+  const verificationStatus = setupStatus?.verificationStatus || 'NOT_SUBMITTED';
+  const isPending = verificationStatus === 'PENDING';
+  const isApproved = verificationStatus === 'APPROVED';
+  const setupProgress = setupStatus?.setupProgress || 0;
 
   // User profile completion guard
-  if (!sessionOnlyAuth && !isProfileComplete && !isOnCompleteProfile && !isOnAccount) {
+  if (!sessionOnlyAuth && !isProfileComplete && !isOnCompleteProfile && !isOnAccount && !isOnOnboardingWizard) {
     return (
       <Switch>
         <Route path="/complete-profile" component={CompleteProfilePage} />
@@ -161,31 +171,19 @@ function AuthenticatedRouter() {
     );
   }
 
-  // Business profile completion guard
-  const isPaperSetupComplete = paperSetupStatus?.completed ?? false;
-  const isMachineConfigured = fluteStatus?.configured ?? false;
-  const isOnMasters = location.startsWith("/masters");
-
-  if (!sessionOnlyAuth && !isBusinessProfileComplete && location !== "/account" && !isOnAccount && !isOnCompleteProfile) {
-    return <Redirect to="/account" />;
+  // Business profile setup guard - redirect to wizard if not complete and not approved
+  if (!sessionOnlyAuth && !isBusinessProfileComplete && setupProgress < 100 && !isPending && !isApproved && !isOnOnboardingWizard && !isOnCompleteProfile && !isOnAccount) {
+    return <Redirect to="/onboarding-wizard" />;
   }
 
-  // Paper pricing setup guard
-  if (!sessionOnlyAuth && !isPaperSetupComplete && !isOnMasters && !isOnAccount && !isOnCompleteProfile) {
-    return <Redirect to="/masters?tab=paper" />;
-  }
-
-  // Machine configuration guard
-  if (!sessionOnlyAuth && !isMachineConfigured && !isOnMasters && !isOnAccount && !isOnCompleteProfile && location !== "/account") {
-    return <Redirect to="/masters?tab=flute" />;
+  // Approved users can proceed, everything else is optional post-approval
+  if (!sessionOnlyAuth && setupProgress < 100 && !isPending && !isApproved && !isOnOnboardingWizard && !isOnCompleteProfile && !isOnAccount && location !== "/onboarding") {
+    return <Redirect to="/onboarding-wizard" />;
   }
 
   // ========== VERIFICATION GATE WITH NON-DISMISSIBLE MODAL ==========
-  const verificationStatus = (setupStatus?.verificationStatus || 'NOT_SUBMITTED').toUpperCase();
-  const isVerified = verificationStatus === 'APPROVED';
   const isOnOnboarding = location === "/onboarding";
   const isSubmitted = !!setupStatus?.submittedForVerification;
-  const isPending = verificationStatus === 'PENDING' || (isSubmitted && verificationStatus !== 'APPROVED' && verificationStatus !== 'REJECTED');
   const isRejected = verificationStatus === 'REJECTED';
 
   const blockedPaths = ['/dashboard', '/create-quote', '/quotes', '/reports', '/bulk-upload'];
@@ -193,53 +191,19 @@ function AuthenticatedRouter() {
 
   // CRITICAL: Show NON-DISMISSIBLE modal for pending/rejected status
   // This modal cannot be bypassed by navigation
-  if (!sessionOnlyAuth && !isVerified) {
-    // If submitted and pending - show blocking modal everywhere except onboarding
-    if (isPending) {
-      return (
-        <>
-          <ApprovalBlockModal 
-            status="pending" 
-            submittedAt={setupStatus?.submittedAt}
-          />
-          {/* Render app shell behind modal so user sees context */}
-          <AppShell>
-            <div className="opacity-50 pointer-events-none">
-              <Switch>
-                <Route path="/onboarding" component={Onboarding} />
-                <Route path="/account" component={Account} />
-                <Route path="/support" component={SupportPanel} />
-                <Route component={NotFound} />
-              </Switch>
-            </div>
-          </AppShell>
-        </>
-      );
+  if (!sessionOnlyAuth && !isApproved) {
+    // Pending users: force onboarding experience
+    if (isPending && location !== '/onboarding') {
+      return <Redirect to="/onboarding" />;
     }
 
-    // If rejected - show modal but allow navigation to onboarding/account to fix
-    if (isRejected) {
-      // Only show modal on blocked paths
-      if (isOnBlockedPath) {
-        return (
-          <>
-            <ApprovalBlockModal 
-              status="rejected" 
-              rejectionReason={setupStatus?.rejectionReason}
-            />
-            <AppShell>
-              <div className="opacity-50 pointer-events-none">
-                <Onboarding />
-              </div>
-            </AppShell>
-          </>
-        );
-      }
-      // Allow access to onboarding and account for fixing
+    // Rejected users: send to dedicated rejected page
+    if (isRejected && location !== '/onboarding/rejected') {
+      return <Redirect to="/onboarding/rejected" />;
     }
 
-    // Not yet submitted - redirect to onboarding
-    if (isOnBlockedPath && !isOnOnboarding && !isOnAccount && !isOnCompleteProfile) {
+    // Not yet submitted: block protected pages until onboarding
+    if (!isSubmitted && isOnBlockedPath && !isOnOnboarding && !isOnAccount && !isOnCompleteProfile) {
       return <Redirect to="/onboarding" />;
     }
   }
@@ -261,7 +225,11 @@ function AuthenticatedRouter() {
         <Route path="/account-settings">
           {() => <Redirect to="/account" />}
         </Route>
+        <Route path="/onboarding-wizard" component={OnboardingWizard} />
         <Route path="/onboarding" component={Onboarding} />
+        <Route path="/onboarding/rejected">
+          {() => <OnboardingRejected reason={setupStatus?.rejectionReason} />}
+        </Route>
         <Route path="/seller-setup" component={SellerSetup} />
         <Route path="/support" component={SupportPanel} />
         <Route path="/about" component={About} />

@@ -1,0 +1,55 @@
+There is One user in database but its showing zero Users, So data base is not connected
+
+Please Verifu each Function are hard coded with data base and Linked with user App, Like Support ticket if made, it should be save in databse and Reflect in Admin Panel, And there should be a FLow to CLose the ticket,
+A EMail intimation to admin as well User has to be sent as a Confirmation, All Save Buttons Should have a Successful Message or Erro Message to Debug the problem
+
+Tried to create a coupon and Save but didt work, Also No Error message for Admin, Why its not saved
+
+There is no Proper Busisness profile Creation
+
+Like Company Name
+Address
+State
+PIn Code
+GST
+Contact No
+Email id
+
+All these fields are required for Invoice generation
+
+
+Also, insert 4 to 5 highly detailed Invoice templates ready available and an Import function for importing HTML invoice formats
+
+Also, it should have an in-built editor to design the invoice
+
+
+
+Same Function to be applied for Quotation Format and WhatsApp Generation template in the User App
+Currently There are no templates ready in the user panel, Nor there is and Editor to Create New Templates
+
+
+Add to the above prompt below Items as well
+Generate actual SQL migrations
+
+Write real HTML invoice templates
+
+Add PDF rendering config
+
+Review Copilot’s output line-by-line
+
+Also, Each Trasaction between the user and the admin should always be notified via email, SO Draft all email templates for such Communication 
+Example:  When a New User Account is Created, When the User Submits the account for Approval,
+When the user makes a payment
+When User Create Support Ticket, Email to User that Ur Support Ticked has been created with this No, and also when the ticket is closed by the admin
+
+Likewise all Communication beween User and admin has to be confirmed via email notification
+
+
+
+Just to add Quotation Template for email and whatsap has to be Dynamic and Should Function as per the Selection of Items to Include in Quote, SO only User Selected Items Comes in Quote and for Unchecked Items, Coloums will not appear in email and in WhatsApp that item Will not be shown
+
+So While Design Consider this Logic its very very important function of the quote
+
+
+
+

@@ -15,6 +15,7 @@ import PaperSetup from "@/pages/paper-setup";
 import FluteSettings from "@/components/flute-settings";
 import BusinessDefaultsSettings from "@/components/business-defaults";
 import MasterSettings from "@/components/master-settings";
+import QuoteTerms from "@/components/quote-terms";
 
 interface MasterTab {
   id: string;
@@ -43,6 +44,12 @@ const masterTabs: MasterTab[] = [
     description: "Manage tax rates and GST settings",
   },
   {
+    id: "terms",
+    label: "Quote Terms",
+    icon: FileText,
+    description: "Default quote terms and conditions",
+  },
+  {
     id: "settings",
     label: "Email Settings",
     icon: Building2,
@@ -60,7 +67,7 @@ export default function Masters() {
     // Redirect old 'business' tab to 'tax'
     if (tab === 'business') {
       defaultTab = 'tax';
-    } else if (tab === 'flute' || tab === 'paper' || tab === 'tax' || tab === 'settings') {
+    } else if (tab === 'flute' || tab === 'paper' || tab === 'tax' || tab === 'terms' || tab === 'settings') {
       defaultTab = tab;
     }
   } catch (e) {
@@ -117,6 +124,10 @@ export default function Masters() {
 
           <TabsContent value="tax" className="m-0">
             <BusinessDefaultsSettings />
+          </TabsContent>
+
+          <TabsContent value="terms" className="m-0">
+            <QuoteTerms />
           </TabsContent>
 
           <TabsContent value="settings" className="m-0">

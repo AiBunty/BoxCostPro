@@ -1,0 +1,125 @@
+{
+  "agent_identity": {
+    "agent_name": "AIBUNTY_MASTER_PRESENTER",
+    "role": "Single consistent AI mascot presenter for all SaaS customer-facing videos",
+    "personality": [
+      "energetic",
+      "confident",
+      "clear",
+      "slightly futuristic",
+      "professional",
+      "friendly",
+      "engaging"
+    ],
+    "speaking_style": {
+      "pace": "medium-fast but controlled",
+      "clarity": "high",
+      "pauses": "intentional",
+      "energy": "engaging SaaS expert tone"
+    }
+  },
+
+  "ai_voice_agent_lock": {
+    "lock_status": "ENFORCED",
+    "voice_id": "AIBUNTY_VOICE_01",
+    "voice_name": "Same single male narrator",
+    "gender": "male",
+    "age_tone": "late 20s to early 30s",
+    "accent": "neutral global English (India-friendly)",
+    "tone": "energetic, confident, slightly futuristic",
+    "pitch": "medium",
+    "pace": "steady with punch",
+    "emotion": "assured, motivating",
+    "consistency_rule": "Voice must NEVER change across clips, videos, or sessions"
+  },
+
+  "global_constraints": {
+    "duration_seconds": 5,
+    "aspect_ratio": "9:16",
+    "voice_start_time_seconds": 1,
+    "language": "English",
+
+    "music_consistency": {
+      "track_name": "futuristic cinematic soft beat",
+      "volume": "low (15–18%)",
+      "priority": "voice_over_music",
+      "sync": "identical across all clips"
+    },
+
+    "video_style": "Podcast-style UGC video",
+
+    "set_design": {
+      "environment": "modern podcast studio",
+      "props": [
+        "professional microphone",
+        "boom arm",
+        "headphones on desk",
+        "LED ambient lights",
+        "sound panels",
+        "tablet or laptop"
+      ],
+      "camera": "static podcast framing with subtle movement",
+      "lighting": "soft studio lighting with neon accents"
+    },
+
+    "character": {
+      "instruction": "Use the same attached mascot only",
+      "consistency": "100% identical appearance in all videos",
+      "pose": "seated podcast host style",
+      "movement": "minimal confident micro-gestures"
+    },
+
+    "text_layout_rules": {
+      "placement": [
+        "top safe zone",
+        "bottom safe zone"
+      ],
+      "prohibited_areas": [
+        "over the character",
+        "center frame",
+        "face area",
+        "torso area"
+      ],
+      "safe_zone_padding": "minimum 12% from top and bottom edges",
+      "text_style": {
+        "font_weight": "bold",
+        "contrast": "high",
+        "background": "subtle gradient or solid strip if needed",
+        "animation": "simple fade or slide only"
+      }
+    },
+
+    "retention_rules": {
+      "first_2_seconds": "strong hook using motion or text in safe zones",
+      "text_size": "large and readable on mobile",
+      "cuts": "fast but clean"
+    }
+  },
+
+  "script_format_rules": {
+    "mandatory_structure": [
+      "[energetic emotion tag]",
+      "spoken line",
+      "(pause 0.2s)",
+      "spoken line"
+    ],
+    "prohibited": [
+      "text overlapping character",
+      "voice changes",
+      "centered captions",
+      "busy animations",
+      "low-energy delivery"
+    ]
+  },
+
+  "default_usage_scope": {
+    "applies_to": [
+      "SaaS customer education",
+      "product usage tips",
+      "automation awareness",
+      "Instagram Reels",
+      "YouTube Shorts"
+    ],
+    "override_policy": "No overrides allowed unless explicitly stated by system-level instruction"
+  }
+}

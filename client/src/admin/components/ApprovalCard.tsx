@@ -17,6 +17,8 @@ interface ApprovalUser {
   status: 'pending' | 'approved' | 'rejected';
   emailConfigured?: boolean;
   subscriptionPlan?: string;
+  submittedAt?: string;
+  businessComplete?: boolean;
 }
 
 interface ApprovalCardProps {
@@ -105,19 +107,14 @@ export function ApprovalCard({
       {/* Checklist */}
       <div className="flex flex-wrap gap-2 mb-4">
         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
-          user.businessName ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+          user.businessComplete ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
         }`}>
-          {user.businessName ? '✓' : '○'} Business Profile
+          {user.businessComplete ? '✓' : '○'} Business Profile (required)
         </span>
         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
-          user.gstin ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+          user.submittedAt ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
         }`}>
-          {user.gstin ? '✓' : '○'} GST Info
-        </span>
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
-          user.emailConfigured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-        }`}>
-          {user.emailConfigured ? '✓' : '○'} Email Config
+          {user.submittedAt ? '✓ Submitted' : '○ Not Submitted'}
         </span>
       </div>
 

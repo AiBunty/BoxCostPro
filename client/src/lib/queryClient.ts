@@ -31,6 +31,29 @@ async function getAuthToken(): Promise<string | null> {
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    // Special handling for onboarding guard 403 responses
+    if (res.status === 403) {
+      try {
+        const json = await res.json();
+        if (json.code && ['ONBOARDING_INCOMPLETE', 'VERIFICATION_PENDING', 'VERIFICATION_REJECTED'].includes(json.code)) {
+          const isRejected = json.code === 'VERIFICATION_REJECTED';
+          const target = isRejected ? '/onboarding/rejected' : (json.redirect || '/onboarding');
+          console.log('[Auth] Onboarding/verification required, redirecting to:', target);
+          window.location.href = target;
+          // Throw to prevent further processing
+          throw new Error(`Onboarding required: ${json.message}`);
+        }
+        // If it's a 403 but not from onboarding guard, throw with the JSON message
+        throw new Error(`403: ${json.message || JSON.stringify(json)}`);
+      } catch (parseError) {
+        // If JSON parsing fails, fall through to generic error
+        if (parseError instanceof Error && parseError.message.startsWith('Onboarding required')) {
+          throw parseError; // Re-throw onboarding errors
+        }
+        throw new Error(`403: ${res.statusText}`);
+      }
+    }
+    
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }

@@ -9,7 +9,7 @@
  */
 
 import { Switch, Route, Redirect } from 'wouter';
-import { useAuth } from '@clerk/clerk-react';
+import { useQuery } from '@tanstack/react-query';
 import { AdminLayout } from './AdminLayout';
 
 // Import all pages
@@ -26,13 +26,33 @@ import AuditLogs from '../pages/AuditLogs';
 import Settings from '../pages/Settings';
 
 /**
+ * Hook to check admin authentication via session
+ */
+function useAdminAuth() {
+  return useQuery({
+    queryKey: ['/api/admin/auth/profile'],
+    queryFn: async () => {
+      const response = await fetch('/api/admin/auth/profile', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Not authenticated');
+      }
+      return response.json();
+    },
+    retry: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
  * Protected routes wrapper
  * Redirects to login if not authenticated
  */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { data: admin, isLoading, error } = useAdminAuth();
   
-  if (!isLoaded) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -43,7 +63,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
   
-  if (!isSignedIn) {
+  if (error || !admin) {
     return <Redirect to="/admin/login" />;
   }
   

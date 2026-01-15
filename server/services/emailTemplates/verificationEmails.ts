@@ -145,6 +145,98 @@ BoxCostPro Admin Notification | Do Not Reply`;
 
 // ========== USER - ONBOARDING REMINDER ==========
 
+export function getUserOnboardingCompleteEmailHTML(params: {
+  firstName: string;
+  onboardingUrl: string;
+}): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 30px; text-align: center; }
+    .emoji { font-size: 48px; margin-bottom: 10px; }
+    .content { background: #f9f9f9; padding: 30px; border: 1px solid #ddd; }
+    .success-box { background: #e8f5e9; padding: 20px; margin: 20px 0; border-left: 4px solid #4CAF50; border-radius: 4px; }
+    .button { display: inline-block; background: #4CAF50; color: white; padding: 15px 40px; text-decoration: none; border-radius: 4px; margin: 20px 0; font-size: 16px; font-weight: bold; }
+    .info-box { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; border: 1px solid #ddd; }
+    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="emoji">🎉</div>
+      <h1>Onboarding Complete!</h1>
+    </div>
+    <div class="content">
+      <p>Hi ${params.firstName},</p>
+
+      <div class="success-box">
+        <h3 style="margin-top: 0;">✓ All Setup Steps Completed</h3>
+        <p><strong>Congratulations!</strong> You have successfully completed all onboarding steps for BoxCostPro.</p>
+      </div>
+
+      <div class="info-box">
+        <h3>What's Next?</h3>
+        <p><strong>1. Submit for Verification</strong><br>
+        Click the button below to submit your profile for admin approval.</p>
+        
+        <p><strong>2. Admin Review (24-48 hours)</strong><br>
+        Our team will review your business profile and approve your account.</p>
+        
+        <p><strong>3. Dashboard Access Unlocked</strong><br>
+        Once approved, you'll get full access to all BoxCostPro features including the dashboard, calculator, quotes, and reports.</p>
+      </div>
+
+      <center>
+        <a href="${params.onboardingUrl}" class="button">Submit for Verification →</a>
+      </center>
+
+      <p style="margin-top: 30px; color: #666; font-size: 14px;"><strong>Note:</strong> Your dashboard will remain locked until your account is verified and approved by the admin.</p>
+
+      <p>Need help? Contact us at support@boxcostpro.com</p>
+    </div>
+    <div class="footer">
+      <p>BoxCostPro | Simplify Box Costing & Quoting</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export function getUserOnboardingCompleteEmailText(params: typeof getUserOnboardingCompleteEmailHTML extends (p: infer P) => any ? P : never): string {
+  return `ONBOARDING COMPLETE! 🎉
+
+Hi ${params.firstName},
+
+Congratulations! You have successfully completed all onboarding steps for BoxCostPro.
+
+WHAT'S NEXT?
+
+1. Submit for Verification
+   Click the link below to submit your profile for admin approval.
+
+2. Admin Review (24-48 hours)
+   Our team will review your business profile and approve your account.
+
+3. Dashboard Access Unlocked
+   Once approved, you'll get full access to all BoxCostPro features including the dashboard, calculator, quotes, and reports.
+
+Submit for Verification: ${params.onboardingUrl}
+
+Note: Your dashboard will remain locked until your account is verified and approved by the admin.
+
+Need help? Contact us at support@boxcostpro.com
+
+---
+BoxCostPro | Simplify Box Costing & Quoting`;
+}
+
+// ========== USER - ONBOARDING REMINDER ==========
+
 export function getUserOnboardingReminderEmailHTML(params: {
   firstName: string;
   stepsCompleted: number;

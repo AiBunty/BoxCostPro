@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Headphones,
   UserCheck,
+  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -39,6 +40,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 interface SubNavItem {
   label: string;
@@ -52,7 +54,18 @@ interface NavItem {
   subItems?: SubNavItem[];
 }
 
-const getNavItems = (userRole: string | null | undefined): NavItem[] => {
+const getNavItems = (userRole: string | null | undefined, isApproved: boolean): NavItem[] => {
+  // If user is not approved, only show limited items
+  if (!isApproved) {
+    return [
+      { label: "Onboarding", path: "/onboarding", icon: Shield },
+      { label: "Account", path: "/account", icon: User },
+      { label: "Master Settings", path: "/masters", icon: Settings2 },
+      { label: "Support", path: "/support", icon: Headphones },
+    ];
+  }
+
+  // Full navigation for approved users
   const baseItems: NavItem[] = [
     { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { label: "Create Quote", path: "/create-quote", icon: FilePlus },
@@ -82,7 +95,16 @@ export function AppShell({ children }: AppShellProps) {
   const [location] = useLocation();
   const { user, signOut } = useAuth();
   const isMobile = useIsMobile();
-  const navItems = getNavItems(user?.role);
+  
+  // Check user's verification status
+  const { data: setupStatus } = useQuery<any>({ 
+    queryKey: ["/api/user/setup/status"],
+    enabled: !!user,
+  });
+  const verificationStatus = setupStatus?.verificationStatus || "NOT_SUBMITTED";
+  const isApproved = verificationStatus === "APPROVED";
+  
+  const navItems = getNavItems(user?.role, isApproved);
   const [quotesOpen, setQuotesOpen] = useState(() => {
     // Open the Quotes section by default if we're on a quotes-related page
     return location.startsWith("/quotes") || location.startsWith("/bulk-upload");
@@ -159,6 +181,22 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         </header>
 
+        {!isApproved && verificationStatus !== 'PENDING' && (
+          <div className="bg-orange-500/10 border-b border-orange-500/20 px-4 py-2">
+            <p className="text-xs text-orange-700 dark:text-orange-300 text-center">
+              ⚠️ Complete onboarding and submit for approval to unlock all features
+            </p>
+          </div>
+        )}
+
+        {verificationStatus === 'PENDING' && (
+          <div className="bg-blue-500/10 border-b border-blue-500/20 px-4 py-2">
+            <p className="text-xs text-blue-700 dark:text-blue-300 text-center">
+              ⏳ Your account is under review. Full access will be granted once approved.
+            </p>
+          </div>
+        )}
+
         <main className="flex-1 pb-24 overflow-auto">
           {children}
         </main>
@@ -179,13 +217,21 @@ export function AppShell({ children }: AppShellProps) {
 
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t safe-area-inset-bottom">
           <div className="flex items-center justify-around h-16 px-2">
-            {[
-              { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-              { label: "Quotes", path: "/quotes", icon: FileText },
-              { label: "Reports", path: "/reports", icon: BarChart3 },
-              { label: "Support", path: "/support", icon: Headphones },
-              { label: "Account", path: "/account", icon: User },
-            ].map((item) => {
+            {(isApproved 
+              ? [
+                  { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+                  { label: "Quotes", path: "/quotes", icon: FileText },
+                  { label: "Reports", path: "/reports", icon: BarChart3 },
+                  { label: "Support", path: "/support", icon: Headphones },
+                  { label: "Account", path: "/account", icon: User },
+                ]
+              : [
+                  { label: "Account", path: "/account", icon: User },
+                  { label: "Masters", path: "/masters", icon: Settings2 },
+                  { label: "Support", path: "/support", icon: Headphones },
+                  { label: "Onboarding", path: "/onboarding", icon: Shield },
+                ]
+            ).map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
               return (
@@ -395,6 +441,24 @@ export function AppShell({ children }: AppShellProps) {
             </div>
           </div>
         </header>
+
+        {!isApproved && verificationStatus !== 'PENDING' && (
+          <div className="bg-orange-500/10 border-b border-orange-500/20 px-6 py-3">
+            <p className="text-sm text-orange-700 dark:text-orange-300 flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              <span>⚠️ Complete onboarding and submit for approval to unlock all features. <Link href="/onboarding" className="underline font-medium">Go to Onboarding →</Link></span>
+            </p>
+          </div>
+        )}
+
+        {verificationStatus === 'PENDING' && (
+          <div className="bg-blue-500/10 border-b border-blue-500/20 px-6 py-3">
+            <p className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+              <UserCheck className="h-4 w-4" />
+              <span>⏳ Your account is under review. Full access will be granted once approved by the admin.</span>
+            </p>
+          </div>
+        )}
 
         <main className="flex-1 overflow-auto">
           {children}

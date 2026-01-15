@@ -32,7 +32,7 @@ function KPICard({
             <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
           )}
           {change && !loading && (
-            <p className={`text-xs mt-1 ${change.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
+            <p className={`text-xs mt-1 ${typeof change === 'string' && change.startsWith('+') ? 'text-green-600' : typeof change === 'number' && change > 0 ? 'text-green-600' : 'text-red-600'}`}>
               {change} from last month
             </p>
           )}
@@ -223,7 +223,7 @@ export default function Dashboard() {
             <StatusBadge name="Email Provider (Primary)" status="online" />
             <StatusBadge name="Email Provider (Fallback)" status="online" />
             <StatusBadge name="Database Connection" status="online" />
-            <StatusBadge name="Authentication (Clerk)" status="online" />
+            <StatusBadge name="Admin Authentication (Native)" status="online" />
           </div>
         </div>
 

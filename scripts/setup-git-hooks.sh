@@ -14,12 +14,12 @@ cat > .git/hooks/pre-commit << 'EOF'
 echo "🔍 Checking for secrets and sensitive files..."
 
 # Check if .env files are being committed
-if git diff --cached --name-only | grep -E "^\.env$|^client/\.env$|^server/\.env$"; then
+if git diff --cached --name-only | grep -E -- "^\.env$|^client/\.env$|^server/\.env$"; then
   echo "❌ ERROR: Attempting to commit .env files!"
   echo "   .env files contain secrets and should NEVER be committed."
   echo "   "
   echo "   Found:"
-  git diff --cached --name-only | grep -E "^\.env"
+  git diff --cached --name-only | grep -E -- "^\.env"
   echo "   "
   echo "   To fix:"
   echo "   1. Remove from staging: git reset HEAD .env"
@@ -49,7 +49,7 @@ PATTERNS=(
 
 # Check staged files for patterns
 for pattern in "${PATTERNS[@]}"; do
-  if git diff --cached | grep -E "$pattern" > /dev/null; then
+  if git diff --cached | grep -E -- "$pattern" > /dev/null; then
     echo "⚠️  WARNING: Possible secret detected: $pattern"
     SECRETS_FOUND=true
   fi
@@ -76,8 +76,7 @@ SENSITIVE_FILES=(
   "*.cert"
 )
 
-for pattern in "${SENSITIVE_FILES[@]}"; do
-  if git diff --cached --name-only | grep -E "$pattern" > /dev/null; then
+  if git diff --cached --name-only | grep -E -- "$pattern" > /dev/null; then
     echo "❌ ERROR: Attempting to commit sensitive file: $pattern"
     echo "   This file type should not be committed to version control."
     exit 1

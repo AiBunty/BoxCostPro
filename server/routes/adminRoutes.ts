@@ -1,6 +1,7 @@
 ﻿import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { verifyAdminAuth, enforcePermission, requireRole, hasPermission, getCouponLimits, validateCouponLimits } from "../middleware/adminRbac";
+import { adminAuth } from "../middleware/adminAuth";
 import { 
   logStaffCreated, 
   logStaffDisabled, 
@@ -71,7 +72,7 @@ const AssignCouponSchema = z.object({
 
 // ===== ADMIN ROUTES =====
 
-export function registerAdminRoutes(app: Express): void {
+export function registerAdminRoutes(app: Express, combinedAuth?: any): void {
   // ========== STAFF MANAGEMENT ==========
 
   /**
@@ -950,6 +951,73 @@ export function registerAdminRoutes(app: Express): void {
   });
 
   /**
+   * POST /api/admin/email/test-smtp
+   * Test SMTP connection without saving (for modal preview)
+   * Tests host, port, username, password credentials
+   * Admin only - simple Clerk auth check
+   */
+  app.post("/api/admin/email/test-smtp", adminAuth, async (req: any, res: Response) => {
+    try {
+      const { host, port, username, password, secure } = req.body;
+
+      // Validate required fields
+      if (!host || !port || !username || !password) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: host, port, username, password',
+        });
+      }
+
+      const nodemailer = await import('nodemailer');
+
+      // Create transporter with provided credentials
+      const transporter = nodemailer.createTransport({
+        host,
+        port: parseInt(port),
+        secure: secure === true || secure === 'true',
+        auth: {
+          user: username,
+          pass: password,
+        },
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+
+      // Test the connection
+      await transporter.verify();
+
+      res.json({
+        success: true,
+        message: 'SMTP connection successful',
+      });
+    } catch (error: any) {
+      console.error('[admin routes] SMTP test error:', error);
+      const errorMessage = error.message || error.toString();
+
+      // Handle specific SMTP errors
+      let userFriendlyMessage = errorMessage;
+
+      if (errorMessage.includes('Invalid login') || errorMessage.includes('535')) {
+        userFriendlyMessage = 'Invalid credentials. Check username and password.';
+      } else if (errorMessage.includes('ENOTFOUND')) {
+        userFriendlyMessage = 'SMTP host not found. Check the hostname.';
+      } else if (errorMessage.includes('ECONNREFUSED')) {
+        userFriendlyMessage = 'Connection refused. Check host and port.';
+      } else if (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout')) {
+        userFriendlyMessage = 'Connection timeout. Host may be unreachable.';
+      } else if (errorMessage.includes('requires STARTTLS')) {
+        userFriendlyMessage = 'Server requires TLS. Try toggling secure mode.';
+      }
+
+      res.status(400).json({
+        success: false,
+        error: userFriendlyMessage,
+      });
+    }
+  });
+
+  /**
    * GET /admin/email-logs
    * Get email send history (system-wide)
    * SUPER_ADMIN only
@@ -971,10 +1039,10 @@ export function registerAdminRoutes(app: Express): void {
   // ========== MULTI-PROVIDER EMAIL SYSTEM ==========
 
   /**
-   * GET /admin/email-providers
+   * GET /admin/email-providers (and aliases /admin/email/config, /admin/email/providers)
    * List all email providers
    */
-  app.get("/api/admin/email-providers", verifyAdminAuth, enforcePermission("manage_settings"), async (req: any, res: Response) => {
+  app.get("/api/admin/email-providers", adminAuth, async (req: any, res: Response) => {
     try {
       const providers = await storage.getAllEmailProviders();
       
@@ -993,11 +1061,99 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
+  // Frontend uses these paths
+  app.get("/api/admin/email/config", adminAuth, async (req: any, res: Response) => {
+    try {
+      const providers = await storage.getAllEmailProviders();
+      const safeProviders = providers.map(p => ({
+        ...p,
+        smtpPasswordEncrypted: p.smtpPasswordEncrypted ? '***ENCRYPTED***' : null,
+        apiKeyEncrypted: p.apiKeyEncrypted ? '***ENCRYPTED***' : null,
+        apiSecretEncrypted: p.apiSecretEncrypted ? '***ENCRYPTED***' : null,
+      }));
+      res.json({ providers: safeProviders });
+    } catch (error: any) {
+      console.error("[admin routes] GET /admin/email/config error:", error);
+      res.status(500).json({ message: "Failed to fetch email providers" });
+    }
+  });
+
+  app.get("/api/admin/email/providers", adminAuth, async (req: any, res: Response) => {
+    try {
+      const providers = await storage.getAllEmailProviders();
+      const safeProviders = providers.map(p => ({
+        ...p,
+        smtpPasswordEncrypted: p.smtpPasswordEncrypted ? '***ENCRYPTED***' : null,
+        apiKeyEncrypted: p.apiKeyEncrypted ? '***ENCRYPTED***' : null,
+        apiSecretEncrypted: p.apiSecretEncrypted ? '***ENCRYPTED***' : null,
+      }));
+      res.json({ providers: safeProviders });
+    } catch (error: any) {
+      console.error("[admin routes] GET /admin/email/providers error:", error);
+      res.status(500).json({ message: "Failed to fetch email providers" });
+    }
+  });
+
+  /**
+   * POST /api/admin/email/test
+   * Alias for admin test email sending using primary provider
+   */
+  app.post("/api/admin/email/test", adminAuth, async (req: any, res: Response) => {
+    try {
+      const to: string = req.body?.email || req.body?.to;
+      if (!to) {
+        return res.status(400).json({ error: "Recipient email is required" });
+      }
+
+      const nodemailer = await import('nodemailer');
+      const { decrypt } = await import('../utils/encryption');
+
+      const providers = await storage.getAllEmailProviders();
+      const primary = providers.find(p => p.isActive) || providers[0];
+      if (!primary) {
+        return res.status(400).json({ error: 'No email provider configured' });
+      }
+
+      const password = primary.smtpPasswordEncrypted ? decrypt(primary.smtpPasswordEncrypted) : undefined;
+      if (!password) {
+        return res.status(400).json({ error: 'SMTP password missing or could not be decrypted' });
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: primary.smtpHost,
+        port: primary.smtpPort || 587,
+        secure: primary.smtpEncryption === 'SSL',
+        auth: {
+          user: primary.smtpUsername,
+          pass: password,
+        },
+      });
+
+      await transporter.sendMail({
+        from: `"${primary.fromName || 'BoxCostPro'}" <${primary.fromEmail}>`,
+        to,
+        subject: 'BoxCostPro Email Test',
+        html: `<p>This is a test email from BoxCostPro Admin Panel.</p>`,
+        text: `This is a test email from BoxCostPro Admin Panel.`,
+      });
+
+      res.json({ success: true, message: `Test email sent to ${to}` });
+    } catch (error: any) {
+      console.error('[admin routes] POST /api/admin/email/test error:', error);
+      const msg = error?.message || String(error);
+      let hint: string | undefined;
+      if (msg.includes('Invalid login') || msg.includes('535')) hint = 'Invalid credentials - check SMTP username/password';
+      else if (msg.includes('ENOTFOUND')) hint = 'SMTP host not found - check hostname';
+      else if (msg.includes('requires STARTTLS')) hint = 'Server requires TLS/STARTTLS - adjust encryption settings';
+      res.status(500).json({ error: 'Failed to send test email', details: msg, hint });
+    }
+  });
+
   /**
    * GET /admin/email-providers/:id
    * Get single provider details
    */
-  app.get("/api/admin/email-providers/:id", verifyAdminAuth, enforcePermission("manage_settings"), async (req: any, res: Response) => {
+  app.get("/api/admin/email-providers/:id", adminAuth, async (req: any, res: Response) => {
     try {
       const provider = await storage.getEmailProvider(req.params.id);
       
@@ -1021,18 +1177,38 @@ export function registerAdminRoutes(app: Express): void {
   });
 
   /**
-   * POST /admin/email-providers
+   * POST /admin/email-providers (and /admin/email/providers alias)
    * Create new email provider
    */
-  app.post("/api/admin/email-providers", verifyAdminAuth, enforcePermission("manage_settings"), async (req: any, res: Response) => {
+  const createEmailProvider = async (req: any, res: Response) => {
     try {
       const { encrypt } = await import('../utils/encryption.js');
       
       const providerData = req.body;
 
+      // Normalize email for consistent uniqueness (case-insensitive)
+      if (providerData.fromEmail && typeof providerData.fromEmail === 'string') {
+        providerData.fromEmail = providerData.fromEmail.trim().toLowerCase();
+      }
+
+        // Check for duplicate email address
+        const existingProviders = await storage.getAllEmailProviders();
+        const duplicateProvider = existingProviders.find(
+          (p) => p.fromEmail && p.fromEmail.toLowerCase() === providerData.fromEmail?.toLowerCase()
+        );
+      
+        if (duplicateProvider) {
+          return res.status(400).json({ 
+            message: "Email address already exists", 
+            error: `An email provider with the address "${providerData.fromEmail}" already exists. Each email address can only be added once.`
+          });
+        }
+
       // Encrypt credentials before storing
       if (providerData.smtpPassword) {
-        providerData.smtpPasswordEncrypted = encrypt(providerData.smtpPassword);
+        // Remove spaces (Gmail App Passwords have spaces when copied)
+        const cleanedPassword = providerData.smtpPassword.replace(/\s+/g, '');
+        providerData.smtpPasswordEncrypted = encrypt(cleanedPassword);
         delete providerData.smtpPassword;
       }
       if (providerData.apiKey) {
@@ -1044,9 +1220,99 @@ export function registerAdminRoutes(app: Express): void {
         delete providerData.apiSecret;
       }
 
-      providerData.createdBy = req.user?.id || req.adminStaff?.userId;
+      providerData.createdBy = req.admin?.id || req.adminId;
 
       const provider = await storage.createEmailProvider(providerData);
+
+      // Send confirmation email automatically using nodemailer directly
+      let confirmationSent = false;
+      let confirmationError = null;
+      
+      try {
+        console.log(`[admin routes] Sending confirmation email to ${provider.fromEmail}...`);
+        
+        const nodemailer = await import('nodemailer');
+        const { decrypt } = await import('../utils/encryption');
+
+        if (!provider.smtpPasswordEncrypted) {
+          throw new Error('No SMTP password configured');
+        }
+
+        const password = decrypt(provider.smtpPasswordEncrypted);
+        
+        const transporter = nodemailer.createTransport({
+          host: provider.smtpHost,
+          port: provider.smtpPort || 587,
+          secure: provider.smtpEncryption === 'SSL',
+          auth: {
+            user: provider.smtpUsername,
+            pass: password,
+          },
+          tls: {
+            rejectUnauthorized: false, // Allow self-signed certs for testing
+          },
+        });
+
+        await transporter.sendMail({
+          from: `"${provider.fromName || 'BoxCostPro'}" <${provider.fromEmail}>`,
+          to: provider.fromEmail,
+          subject: '✅ Email Provider Added to BoxCostPro',
+          html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: #667eea; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+    .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+    .success { background: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>✅ Email Provider Configured Successfully!</h1>
+    </div>
+    <div class="content">
+      <div class="success">
+        <p><strong>Great news!</strong> Your email provider has been added to BoxCostPro.</p>
+      </div>
+      <p>The following email address is now active for sending:</p>
+      <p><strong>${provider.fromEmail}</strong></p>
+      <p><strong>Provider:</strong> ${provider.providerName}</p>
+      <p><strong>Type:</strong> ${provider.providerType.toUpperCase()}</p>
+      <p>You can now send emails through the BoxCostPro platform using this provider.</p>
+      <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+        This is a confirmation email from BoxCostPro Admin Panel.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+          `,
+          text: `Email Provider Added to BoxCostPro\n\nYour email provider has been successfully configured.\n\nEmail: ${provider.fromEmail}\nProvider: ${provider.providerName}\nType: ${provider.providerType.toUpperCase()}\n\nYou can now send emails through BoxCostPro using this provider.`,
+        });
+        
+        // Update verification status
+        await storage.updateEmailProvider(provider.id, {
+          isVerified: true,
+          lastTestAt: new Date(),
+          consecutiveFailures: 0,
+        });
+        
+        confirmationSent = true;
+        console.log(`[admin routes] ✅ Confirmation email sent successfully to ${provider.fromEmail}`);
+      } catch (err: any) {
+        confirmationError = err.message;
+        console.error('[admin routes] ❌ Failed to send confirmation email:', err.message);
+        console.error('[admin routes] Error details:', {
+          host: provider.smtpHost,
+          port: provider.smtpPort,
+          user: provider.smtpUsername,
+          error: err.message,
+        });
+      }
 
       res.status(201).json({
         message: "Email provider created successfully",
@@ -1056,18 +1322,25 @@ export function registerAdminRoutes(app: Express): void {
           apiKeyEncrypted: provider.apiKeyEncrypted ? '***ENCRYPTED***' : null,
           apiSecretEncrypted: provider.apiSecretEncrypted ? '***ENCRYPTED***' : null,
         },
+        confirmationEmail: {
+          sent: confirmationSent,
+          error: confirmationError,
+        },
       });
     } catch (error: any) {
       console.error("[admin routes] POST /admin/email-providers error:", error);
       res.status(500).json({ message: "Failed to create email provider", error: error.message });
     }
-  });
+  };
+
+  app.post("/api/admin/email-providers", adminAuth, createEmailProvider);
+  app.post("/api/admin/email/providers", adminAuth, createEmailProvider); // Frontend uses this path
 
   /**
-   * PATCH /admin/email-providers/:id
+   * PATCH /admin/email-providers/:id (and /admin/email/providers/:id alias)
    * Update email provider
    */
-  app.patch("/api/admin/email-providers/:id", verifyAdminAuth, enforcePermission("manage_settings"), async (req: any, res: Response) => {
+  const updateEmailProvider = async (req: any, res: Response) => {
     try {
       const { encrypt } = await import('../utils/encryption.js');
       
@@ -1087,7 +1360,7 @@ export function registerAdminRoutes(app: Express): void {
         delete updates.apiSecret;
       }
 
-      updates.updatedBy = req.user?.id || req.adminStaff?.userId;
+      updates.updatedBy = req.admin?.id || req.adminId;
 
       const provider = await storage.updateEmailProvider(req.params.id, updates);
 
@@ -1108,13 +1381,37 @@ export function registerAdminRoutes(app: Express): void {
       console.error("[admin routes] PATCH /admin/email-providers/:id error:", error);
       res.status(500).json({ message: "Failed to update email provider", error: error.message });
     }
-  });
+  };
+
+  app.patch("/api/admin/email-providers/:id", adminAuth, updateEmailProvider);
+  app.patch("/api/admin/email/providers/:id", adminAuth, updateEmailProvider); // Frontend uses this
 
   /**
-   * DELETE /admin/email-providers/:id
+   * POST /api/admin/email-providers/:id/primary (and alias /api/admin/email/providers/:id/primary)
+   * Promote provider to primary (priority 1) and reindex others
+   */
+  const setPrimaryEmailProvider = async (req: any, res: Response) => {
+    try {
+      const ok = await storage.setPrimaryEmailProvider(req.params.id);
+      if (!ok) {
+        return res.status(404).json({ success: false, message: 'Provider not found' });
+      }
+      const providers = await storage.getAllEmailProviders();
+      res.json({ success: true, providers });
+    } catch (error: any) {
+      console.error('[admin routes] POST /admin/email-providers/:id/primary error:', error);
+      res.status(500).json({ success: false, message: 'Failed to set primary provider', error: error.message });
+    }
+  };
+
+  app.post("/api/admin/email-providers/:id/primary", adminAuth, setPrimaryEmailProvider);
+  app.post("/api/admin/email/providers/:id/primary", adminAuth, setPrimaryEmailProvider); // Frontend uses this
+
+  /**
+   * DELETE /admin/email-providers/:id (and /admin/email/providers/:id alias)
    * Delete email provider
    */
-  app.delete("/api/admin/email-providers/:id", verifyAdminAuth, enforcePermission("manage_settings"), async (req: any, res: Response) => {
+  const deleteEmailProvider = async (req: any, res: Response) => {
     try {
       const deleted = await storage.deleteEmailProvider(req.params.id);
 
@@ -1127,13 +1424,16 @@ export function registerAdminRoutes(app: Express): void {
       console.error("[admin routes] DELETE /admin/email-providers/:id error:", error);
       res.status(500).json({ message: "Failed to delete email provider", error: error.message });
     }
-  });
+  };
+
+  app.delete("/api/admin/email-providers/:id", adminAuth, deleteEmailProvider);
+  app.delete("/api/admin/email/providers/:id", adminAuth, deleteEmailProvider); // Frontend uses this
 
   /**
-   * POST /admin/email-providers/:id/test
+   * POST /admin/email-providers/:id/test (and /admin/email/providers/:id/test alias)
    * Test email provider connection
    */
-  app.post("/api/admin/email-providers/:id/test", verifyAdminAuth, enforcePermission("manage_settings"), async (req: any, res: Response) => {
+  const testEmailProvider = async (req: any, res: Response) => {
     try {
       const provider = await storage.getEmailProvider(req.params.id);
       
@@ -1176,6 +1476,91 @@ export function registerAdminRoutes(app: Express): void {
         success: false,
         message: "Failed to test provider", 
         error: error.message 
+      });
+    }
+  };
+
+  app.post("/api/admin/email-providers/:id/test", adminAuth, testEmailProvider);
+  app.post("/api/admin/email/providers/:id/test", adminAuth, testEmailProvider); // Frontend uses this
+
+  /**
+   * GET /api/admin/email/health
+   * Get email provider health status and metrics
+   * Returns health for all configured providers
+   */
+  app.get("/api/admin/email/health", async (req: any, res: Response) => {
+    try {
+      const providers = await storage.getAllEmailProviders();
+
+      if (!providers || providers.length === 0) {
+        return res.json({
+          providers: [],
+          message: 'No email providers configured',
+        });
+      }
+
+      // Get health for each provider
+      const health = providers.map(provider => {
+        // Determine health status based on:
+        // - isVerified
+        // - consecutiveFailures
+        // - lastTestAt
+        
+        let status = 'healthy';
+        if (!provider.isVerified) {
+          status = 'error';
+        } else if (provider.consecutiveFailures && provider.consecutiveFailures > 3) {
+          status = 'critical';
+        } else if (provider.consecutiveFailures && provider.consecutiveFailures > 0) {
+          status = 'warning';
+        }
+
+        return {
+          id: provider.id,
+          name: provider.name,
+          provider: provider.provider,
+          status,
+          isVerified: provider.isVerified,
+          lastTestAt: provider.lastTestAt,
+          lastErrorMessage: provider.lastErrorMessage,
+          consecutiveFailures: provider.consecutiveFailures || 0,
+          createdAt: provider.createdAt,
+        };
+      });
+
+      res.json({
+        providers: health,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('[admin routes] GET /admin/email/health error:', error);
+      res.status(500).json({
+        message: 'Failed to fetch email health',
+        error: error.message,
+      });
+    }
+  });
+
+  /**
+   * GET /api/admin/email/logs
+   * Get recent email logs
+   */
+  app.get("/api/admin/email/logs", adminAuth, async (req: any, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      
+      // For now, return empty array since we don't have email logs table yet
+      // TODO: Implement email logging table
+      res.json({ 
+        logs: [],
+        total: 0,
+        message: 'Email logging not yet implemented'
+      });
+    } catch (error: any) {
+      console.error('[admin routes] GET /admin/email/logs error:', error);
+      res.status(500).json({
+        message: 'Failed to fetch email logs',
+        error: error.message,
       });
     }
   });

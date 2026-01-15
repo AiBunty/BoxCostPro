@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import EmailConfigurationTab from "@/components/EmailConfigurationTab";
 import EmailAnalyticsTab from "@/components/EmailAnalyticsTab";
+import { EmailHealthDashboard } from "@/components/EmailHealthDashboard";
 import type { QuoteTemplate } from "@shared/schema";
 import { Mail, MessageSquare, Columns3, Eye, Edit2, Copy, Star, Trash2, Loader2, Check } from "lucide-react";
 
@@ -161,7 +162,10 @@ export default function MasterSettings() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="config">
-              <EmailConfigurationTab />
+              <div className="space-y-4">
+                <EmailConfigurationTab />
+                <EmailHealthDashboard />
+              </div>
             </TabsContent>
             <TabsContent value="analytics">
               <EmailAnalyticsTab />

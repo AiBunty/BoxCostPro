@@ -18,12 +18,10 @@ function calculateOnboardingProgress(status: any): number {
     status.businessProfileDone,
     status.paperSetupDone,
     status.fluteSetupDone,
-    status.taxSetupDone,
-    status.termsSetupDone,
   ];
 
   const completedSteps = steps.filter(Boolean).length;
-  return Math.round((completedSteps / steps.length) * 100);
+  return Math.round((completedSteps / 3) * 100);
 }
 
 /**
@@ -35,8 +33,6 @@ function getIncompleteSteps(status: any): string[] {
   if (!status.businessProfileDone) steps.push('Business Profile');
   if (!status.paperSetupDone) steps.push('Paper Master Settings');
   if (!status.fluteSetupDone) steps.push('Flute Settings');
-  if (!status.taxSetupDone) steps.push('Tax & GST Settings');
-  if (!status.termsSetupDone) steps.push('Terms & Conditions');
 
   return steps;
 }

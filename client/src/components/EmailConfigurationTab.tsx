@@ -142,6 +142,34 @@ export default function EmailConfigurationTab() {
     }
   }, [selectedProvider, providers]);
 
+  const smtpTestMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return apiRequest("POST", "/api/admin/test-smtp", {
+        host: data.smtpHost,
+        port: data.smtpPort,
+        secure: data.smtpSecure,
+        auth: data.smtpPassword ? {
+          user: data.smtpUsername,
+          pass: data.smtpPassword,
+        } : undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "SMTP Connection Successful!",
+        description: "Your SMTP configuration is valid. You can now save it.",
+      });
+    },
+    onError: (error: any) => {
+      const errorMessage = error.details || error.message || "SMTP connection failed";
+      toast({
+        title: "SMTP Connection Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    },
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
       return apiRequest("POST", "/api/email-settings/smtp", {
@@ -551,6 +579,38 @@ export default function EmailConfigurationTab() {
                           </FormItem>
                         )}
                       />
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full gap-2"
+                        disabled={smtpTestMutation.isPending || !smtpForm.getValues('smtpPassword')}
+                        onClick={() => {
+                          const values = smtpForm.getValues();
+                          if (!values.smtpPassword) {
+                            toast({
+                              title: "Password Required",
+                              description: "Please enter your SMTP password first",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          smtpTestMutation.mutate(values);
+                        }}
+                        data-testid="button-test-smtp"
+                      >
+                        {smtpTestMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Testing Connection...
+                          </>
+                        ) : (
+                          <>
+                            <Mail className="h-4 w-4" />
+                            Test SMTP Connection
+                          </>
+                        )}
+                      </Button>
 
                       <Button
                         type="submit"

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, real, integer, boolean, jsonb, timestamp, index, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, real, integer, boolean, jsonb, timestamp, index, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -35,8 +35,20 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User account status enum
-export const userAccountStatus = z.enum(['new_user', 'email_verified', 'mobile_verified', 'fully_verified', 'suspended', 'deleted']);
+// User account status enum (CANONICAL - use this everywhere)
+export const userAccountStatus = z.enum([
+  'new_user', 
+  'setup_incomplete',
+  'setup_completed',
+  'verification_pending', 
+  'approved', 
+  'rejected',
+  'email_verified', 
+  'mobile_verified', 
+  'fully_verified', 
+  'suspended', 
+  'deleted'
+]);
 export type UserAccountStatus = z.infer<typeof userAccountStatus>;
 
 // User storage table (Clerk Authentication)
@@ -78,9 +90,69 @@ export const users = pgTable("users", {
   isSetupComplete: boolean("is_setup_complete").default(false), // True when all setup steps completed
   setupProgress: integer("setup_progress").default(0), // Percentage 0-100 driven by user_setup table
   verificationStatus: varchar("verification_status").default("NOT_SUBMITTED"), // NOT_SUBMITTED | PENDING | APPROVED | REJECTED
+  submittedForVerificationAt: timestamp("submitted_for_verification_at"), // When user submitted for approval
   approvedAt: timestamp("approved_at"),
   approvedBy: varchar("approved_by").references(() => users.id),
+  approvalNote: text("approval_note"), // Admin note for rejection reason or approval notes
 });
+
+// Platform Admins (separate identity store from business users)
+export const admins = pgTable("admins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name"),
+  role: varchar("role", { length: 20 }).notNull(), // 'super_admin' | 'admin'
+  isActive: boolean("is_active").default(true),
+  twofaEnabled: boolean("twofa_enabled").default(false),
+  twofaSecretEncrypted: text("twofa_secret"),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const insertAdminSchema = createInsertSchema(admins).omit({ id: true, createdAt: true, lastLoginAt: true });
+export type InsertAdmin = z.infer<typeof insertAdminSchema>;
+export type Admin = typeof admins.$inferSelect;
+
+// Admin sessions
+export const adminSessions = pgTable("admin_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: varchar("admin_id").references(() => admins.id).notNull(),
+  sessionToken: varchar("session_token", { length: 255 }).notNull().unique(),
+  ipAddress: varchar("ip_address", { length: 64 }),
+  userAgent: text("user_agent"),
+  impersonatedUserId: varchar("impersonated_user_id"),
+  lastActivityAt: timestamp("last_activity_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_admin_sessions_token").on(t.sessionToken),
+  index("idx_admin_sessions_admin").on(t.adminId),
+]);
+
+// Admin login / security audit logs
+export const adminLoginAuditLogs = pgTable("admin_login_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: varchar("admin_id").references(() => admins.id),
+  action: varchar("action", { length: 32 }).notNull(), // LOGIN_SUCCESS, LOGIN_FAILED, LOGOUT, SESSION_EXPIRED, 2FA_FAILED, IMPERSONATION_START, IMPERSONATION_END
+  ipAddress: varchar("ip_address", { length: 64 }),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_admin_login_logs_admin").on(t.adminId),
+  index("idx_admin_login_logs_action").on(t.action),
+]);
+
+// Admin allowed IPs (CIDR or single IP)
+export const adminAllowedIps = pgTable("admin_allowed_ips", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: varchar("admin_id").references(() => admins.id), // null = global allow
+  ipAddressCidr: varchar("ip_address", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_admin_ips_admin").on(t.adminId),
+  index("idx_admin_ips_cidr").on(t.ipAddressCidr),
+]);
 
 // User Profile for tracking onboarding/setup progress
 export const userProfiles = pgTable("user_profiles", {
@@ -527,7 +599,11 @@ export const companyProfiles = pgTable("company_profiles", {
   panNo: text("pan_no"), // Auto-derived from GSTIN (positions 3-12)
   stateCode: varchar("state_code", { length: 2 }), // Auto-derived from GSTIN (positions 1-2)
   stateName: text("state_name"), // Auto-derived from state code lookup
-  address: text("address"),
+  address: text("address"), // Legacy field, kept for backward compatibility
+  address1: text("address_1"), // Line 1 (required)
+  address2: text("address_2"), // Line 2 (optional)
+  pincode: varchar("pincode", { length: 6 }), // 6-digit pin code (required)
+  countryCode: varchar("country_code", { length: 5 }).default("+91"), // Country code for phone
   website: text("website"),
   mapLink: text("map_link"), // Google Maps link for templates
   socialMedia: text("social_media"),
@@ -1597,6 +1673,7 @@ export const emailProviders = pgTable("email_providers", {
   index("idx_email_providers_priority").on(table.priorityOrder),
   index("idx_email_providers_type").on(table.providerType),
   index("idx_email_providers_user").on(table.userId),
+  uniqueIndex("uniq_email_providers_from_email").on(table.fromEmail),
 ]);
 
 export const insertEmailProviderSchema = createInsertSchema(emailProviders).omit({ id: true, createdAt: true, updatedAt: true });

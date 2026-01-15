@@ -13,6 +13,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Toaster, toast } from '../../components/Toast';
 
 // Supported email provider types
 type ProviderType = 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'postmark' | 'resend';
@@ -33,20 +34,27 @@ interface EmailProvider {
 }
 
 // Provider status badge
-function ProviderStatusBadge({ status, isPrimary }: { status: string; isPrimary?: boolean }) {
+function ProviderStatusBadge({ status, isPrimary, isVerified }: { status?: string; isPrimary?: boolean; isVerified?: boolean }) {
   const colors: Record<string, string> = {
     active: 'bg-green-100 text-green-800',
     inactive: 'bg-gray-100 text-gray-800',
     error: 'bg-red-100 text-red-800',
   };
+  const safeStatus = (status || 'inactive').toLowerCase();
+  const label = safeStatus.charAt(0).toUpperCase() + safeStatus.slice(1);
   return (
     <div className="flex items-center gap-2">
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[status] || colors.inactive}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[safeStatus] || colors.inactive}`}>
+        {label}
       </span>
       {isPrimary && (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
           Primary
+        </span>
+      )}
+      {isVerified && (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+          Verified
         </span>
       )}
     </div>
@@ -54,7 +62,7 @@ function ProviderStatusBadge({ status, isPrimary }: { status: string; isPrimary?
 }
 
 // Delivery status badge
-function DeliveryStatusBadge({ status }: { status: string }) {
+function DeliveryStatusBadge({ status }: { status?: string }) {
   const colors: Record<string, string> = {
     sent: 'bg-green-100 text-green-800',
     delivered: 'bg-green-100 text-green-800',
@@ -62,11 +70,63 @@ function DeliveryStatusBadge({ status }: { status: string }) {
     deferred: 'bg-yellow-100 text-yellow-800',
     bounced: 'bg-orange-100 text-orange-800',
   };
+  const safe = (status || 'sent').toLowerCase();
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-800'}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[safe] || 'bg-gray-100 text-gray-800'}`}>
+      {safe.charAt(0).toUpperCase() + safe.slice(1)}
     </span>
   );
+}
+
+// Email Domain Validator
+function getEmailDomain(email: string): string {
+  return email.includes('@') ? email.split('@')[1].toLowerCase() : '';
+}
+
+function validateFromEmailDomain(fromEmail: string, providerType: ProviderType, username: string): { valid: boolean; error?: string; warning?: string } {
+  // SendGrid and SES allow any verified domain (must be verified in their console first)
+  if (providerType === 'sendgrid') {
+    if (!fromEmail.includes('@')) {
+      return { valid: false, error: 'Invalid From Email address' };
+    }
+    return { 
+      valid: true, 
+      warning: 'Domain must be verified in SendGrid console'
+    };
+  }
+
+  if (providerType === 'ses') {
+    if (!fromEmail.includes('@')) {
+      return { valid: false, error: 'Invalid From Email address' };
+    }
+    return { 
+      valid: true, 
+      warning: 'Domain must be verified in AWS SES console'
+    };
+  }
+
+  // For SMTP providers, FROM domain must match username domain (CRITICAL for deliverability)
+  if (providerType === 'smtp') {
+    const fromDomain = getEmailDomain(fromEmail);
+    const usernameDomain = getEmailDomain(username);
+    
+    if (!fromEmail.includes('@')) {
+      return { valid: false, error: 'Invalid From Email address' };
+    }
+
+    if (!username.includes('@')) {
+      return { valid: false, error: 'Invalid SMTP username - must be email address' };
+    }
+    
+    if (fromDomain !== usernameDomain) {
+      return { 
+        valid: false, 
+        error: `⚠️ CRITICAL: From Email domain (@${fromDomain}) must match SMTP username domain (@${usernameDomain}). Mail servers will reject mismatched domains.`
+      };
+    }
+  }
+
+  return { valid: true };
 }
 
 // Add Provider Modal
@@ -78,10 +138,15 @@ function AddProviderModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: Partial<EmailProvider>) => void;
+  onSubmit: (data: any) => void;
   isSubmitting: boolean;
 }) {
   const [providerType, setProviderType] = useState<ProviderType>('smtp');
+  const [smtpPreset, setSmtpPreset] = useState('gmail');
+  const [testingSmtp, setTestingSmtp] = useState(false);
+  const [testError, setTestError] = useState('');
+  const [validationError, setValidationError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     host: '',
@@ -93,19 +158,205 @@ function AddProviderModal({
     fromName: '',
   });
 
+  // Provider Presets Configuration
+  const PROVIDER_PRESETS: Record<string, Record<string, { host?: string; port?: number; username?: string; note: string }>> = {
+    smtp: {
+      gmail: { 
+        host: 'smtp.gmail.com', 
+        port: 587,
+        note: 'Use App Password, not your Gmail password'
+      },
+      outlook: { 
+        host: 'smtp.office365.com', 
+        port: 587,
+        note: 'Supports Microsoft 365 accounts'
+      },
+      zoho: { 
+        host: 'smtp.zoho.in', 
+        port: 587,
+        note: 'Use Zoho mail credentials'
+      },
+      titan: { 
+        host: 'smtp.titan.email', 
+        port: 587,
+        note: 'Professional email hosting'
+      },
+      yahoo: { 
+        host: 'smtp.mail.yahoo.com', 
+        port: 587,
+        note: 'Requires App Password'
+      },
+      custom: { 
+        host: '',
+        port: 587,
+        note: 'Enter custom SMTP server details'
+      },
+    },
+    sendgrid: {
+      default: {
+        host: 'smtp.sendgrid.net',
+        port: 587,
+        username: 'apikey',
+        note: 'Use "apikey" as username, paste API key as password'
+      },
+    },
+    ses: {
+      default: {
+        host: 'email-smtp.{region}.amazonaws.com',
+        port: 587,
+        note: 'Use SMTP credentials from AWS SES (not IAM access keys)'
+      },
+    },
+  };
+
+  const SMTP_PRESETS: Record<string, { host: string; port: number; fromName: string; note?: string }> = {
+    gmail: { 
+      host: 'smtp.gmail.com', 
+      port: 587, 
+      fromName: 'Gmail/Google Workspace',
+      note: 'Use App Password (not your Gmail login password)'
+    },
+    outlook: { 
+      host: 'smtp.office365.com', 
+      port: 587, 
+      fromName: 'Outlook/Hotmail/Microsoft 365'
+    },
+    zoho: { 
+      host: 'smtp.zoho.in', 
+      port: 587, 
+      fromName: 'Zoho Mail'
+    },
+    titan: { 
+      host: 'smtp.titan.email', 
+      port: 587, 
+      fromName: 'Titan Email'
+    },
+    yahoo: { 
+      host: 'smtp.mail.yahoo.com', 
+      port: 587, 
+      fromName: 'Yahoo Mail'
+    },
+    custom: { 
+      host: '', 
+      port: 587, 
+      fromName: 'Custom SMTP'
+    },
+  };
+
+  const handleSmtpPresetChange = (preset: string) => {
+    setSmtpPreset(preset);
+    setValidationError('');
+    setTestError('');
+    const config = PROVIDER_PRESETS['smtp'][preset];
+    setFormData({
+      ...formData,
+      host: config.host || '',
+      port: config.port?.toString() || '587',
+    });
+  };
+
+  const handleProviderTypeChange = (type: ProviderType) => {
+    setProviderType(type);
+    setValidationError('');
+    setTestError('');
+    if (type === 'sendgrid' && smtpPreset !== 'default') {
+      setSmtpPreset('default');
+      const config = PROVIDER_PRESETS['sendgrid']['default'];
+      setFormData(prev => ({
+        ...prev,
+        username: config.username || '',
+      }));
+    } else if (type === 'ses' && smtpPreset !== 'default') {
+      setSmtpPreset('default');
+    }
+  };
+
+  const handleTestSmtp = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setTestError('');
+    
+    // Validate required fields
+    if (!formData.host || !formData.port || !formData.username || !formData.password || !formData.fromEmail) {
+      setTestError('All fields required: Host, Port, Username, Password, From Email');
+      return;
+    }
+
+    setTestingSmtp(true);
+    try {
+      const res = await fetch('/api/admin/email/test-smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          host: formData.host,
+          port: parseInt(formData.port),
+          username: formData.username,
+          password: formData.password,
+          secure: false,
+        }),
+      });
+
+      const text = await res.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch {
+        console.error('Non-JSON response:', text.substring(0, 200));
+        setTestError(`Server returned invalid response: ${res.status} ${res.statusText}`);
+        return;
+      }
+
+      if (!res.ok) {
+        setTestError(result.error || `Request failed: ${res.status}`);
+        return;
+      }
+
+      if (result.success) {
+        setTestError('');
+        toast.success('✓ SMTP connection successful!');
+      } else {
+        setTestError(result.error || 'Connection test failed');
+      }
+    } catch (err: any) {
+      setTestError(err.message || 'Network error');
+    } finally {
+      setTestingSmtp(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError('');
+    setTestError('');
+
+    // Validate FROM email domain matches SMTP domain
+    const validation = validateFromEmailDomain(formData.fromEmail, providerType, formData.username);
+    if (!validation.valid) {
+      setValidationError(validation.error || 'Invalid email configuration');
+      return;
+    }
+
+    // Warn about SendGrid/SES domain verification
+    if ((providerType === 'sendgrid' || providerType === 'ses') && validation.warning) {
+      // Still allow submission but user should know about warning
+      console.warn('Domain verification warning:', validation.warning);
+    }
+
+    // All validations passed - submit in backend field names
     onSubmit({
-      name: formData.name,
-      type: providerType,
-      host: providerType === 'smtp' ? formData.host : undefined,
-      port: providerType === 'smtp' ? parseInt(formData.port) : undefined,
-      username: providerType === 'smtp' ? formData.username : undefined,
-      apiKey: providerType !== 'smtp' ? formData.apiKey : undefined,
+      providerType,
+      providerName: formData.name || formData.fromName || providerType.toUpperCase(),
       fromEmail: formData.fromEmail,
-      fromName: formData.fromName,
+      fromName: formData.fromName || formData.name,
+      connectionType: providerType === 'smtp' ? 'smtp' : 'api',
+      smtpHost: providerType === 'smtp' ? formData.host : undefined,
+      smtpPort: providerType === 'smtp' ? parseInt(formData.port) : undefined,
+      smtpUsername: formData.username || undefined,
+      smtpPassword: providerType === 'smtp' ? formData.password || undefined : undefined,
+      apiKey: providerType !== 'smtp' ? formData.password || formData.apiKey : undefined,
+      isActive: true,
     });
   };
 
@@ -143,7 +394,7 @@ function AddProviderModal({
             </label>
             <select
               value={providerType}
-              onChange={(e) => setProviderType(e.target.value as ProviderType)}
+              onChange={(e) => handleProviderTypeChange(e.target.value as ProviderType)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               {providerOptions.map((opt) => (
@@ -160,7 +411,15 @@ function AddProviderModal({
             <input
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) => {
+                const newName = e.target.value;
+                setFormData({ 
+                  ...formData, 
+                  name: newName,
+                  // Auto-populate fromName if it's empty or was auto-filled
+                  fromName: formData.fromName === '' || formData.fromName === formData.name ? newName : formData.fromName
+                });
+              }}
               placeholder="e.g., Primary SMTP Server"
               required
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -170,6 +429,30 @@ function AddProviderModal({
           {/* SMTP-specific fields */}
           {providerType === 'smtp' && (
             <>
+              {/* SMTP Provider Preset */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Provider Preset (Optional)
+                </label>
+                <select
+                  value={smtpPreset}
+                  onChange={(e) => handleSmtpPresetChange(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="gmail">Gmail / Google Workspace</option>
+                  <option value="outlook">Outlook / Hotmail / Microsoft 365</option>
+                  <option value="zoho">Zoho Mail</option>
+                  <option value="titan">Titan Email</option>
+                  <option value="yahoo">Yahoo Mail</option>
+                  <option value="custom">Custom SMTP</option>
+                </select>
+                {smtpPreset !== 'custom' && PROVIDER_PRESETS.smtp[smtpPreset] && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ⚠️ {PROVIDER_PRESETS.smtp[smtpPreset].note}
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -200,12 +483,20 @@ function AddProviderModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Username
+                  Username / Email
                 </label>
                 <input
                   type="text"
                   value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  onChange={(e) => {
+                    const newUsername = e.target.value;
+                    setFormData({ 
+                      ...formData, 
+                      username: newUsername,
+                      // Auto-populate fromEmail if it's empty or was auto-filled
+                      fromEmail: formData.fromEmail === '' || formData.fromEmail === formData.username ? newUsername : formData.fromEmail
+                    });
+                  }}
                   placeholder="user@example.com"
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -213,38 +504,256 @@ function AddProviderModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Password
+                  Password / App Password
                 </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="••••••••"
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="••••••••"
+                    required
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                {smtpPreset === 'gmail' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Generate an <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">App Password</a>
+                  </p>
+                )}
+              </div>
+
+              {/* Test SMTP Connection Button */}
+              <div>
+                <button
+                  onClick={handleTestSmtp}
+                  disabled={testingSmtp}
+                  className="w-full px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {testingSmtp ? 'Testing Connection...' : 'Test SMTP Connection'}
+                </button>
+                {testError && (
+                  <p className="text-xs text-red-600 mt-2 p-2 bg-red-50 rounded">
+                    {testError}
+                  </p>
+                )}
               </div>
             </>
           )}
 
-          {/* API-based providers */}
-          {providerType !== 'smtp' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                API Key
-              </label>
-              <input
-                type="password"
-                value={formData.apiKey}
-                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder="Your API key"
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Get your API key from the {providerOptions.find(p => p.value === providerType)?.label} dashboard.
+          {/* SendGrid specific fields */}
+          {providerType === 'sendgrid' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  API Key (use as password) <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="SG.xxxxxxxxxxxxx"
+                    required
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                    title={showPassword ? "Hide API key" : "Show API key"}
+                  >
+                    {showPassword ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  📋 Get API key from <a href="https://app.sendgrid.com/settings/api_keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">SendGrid Dashboard</a>
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠️ Ensure your domain is verified in SendGrid
+                </p>
+              </div>
+              {/* Test SendGrid */}
+              <div>
+                <button
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    setTestError('');
+                    if (!formData.password || !formData.fromEmail) {
+                      setTestError('API Key and From Email required');
+                      return;
+                    }
+                    setTestingSmtp(true);
+                    try {
+                      const res = await fetch('/api/admin/email/test-smtp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({
+                          host: 'smtp.sendgrid.net',
+                          port: 587,
+                          username: 'apikey',
+                          password: formData.password,
+                          secure: false,
+                        }),
+                      });
+                      const text = await res.text();
+                      let result;
+                      try {
+                        result = JSON.parse(text);
+                      } catch {
+                        console.error('Non-JSON response:', text.substring(0, 200));
+                        setTestError(`Server returned invalid response: ${res.status}`);
+                        return;
+                      }
+                      if (res.ok) {
+                        alert('SendGrid connection successful! ✓');
+                      } else {
+                        setTestError(result.error || `Connection failed: ${res.status}`);
+                      }
+                    } catch (err: any) {
+                      setTestError(err.message);
+                    } finally {
+                      setTestingSmtp(false);
+                    }
+                  }}
+                  disabled={testingSmtp}
+                  className="w-full px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {testingSmtp ? 'Testing Connection...' : 'Test SendGrid Connection'}
+                </button>
+                {testError && (
+                  <p className="text-xs text-red-600 mt-2 p-2 bg-red-50 rounded">
+                    ❌ {testError}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Amazon SES specific fields */}
+          {providerType === 'ses' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  SMTP Region Endpoint <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.host}
+                  onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                  placeholder="email-smtp.us-east-1.amazonaws.com"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  📋 From AWS Console → SES → SMTP Settings → Server Name
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Username <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    placeholder="AKIA..."
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Password <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={(e) => {
+                        // Auto-remove spaces (Gmail App Passwords have spaces when copied)
+                        const cleanedPassword = e.target.value.replace(/\s+/g, '');
+                        setFormData({ ...formData, password: cleanedPassword });
+                      }}
+                      onPaste={(e) => {
+                        // Remove spaces from pasted content (common with Gmail App Passwords)
+                        e.preventDefault();
+                        const pastedText = e.clipboardData.getData('text');
+                        const cleanedPassword = pastedText.replace(/\s+/g, '');
+                        setFormData({ ...formData, password: cleanedPassword });
+                      }}
+                      placeholder="••••••••"
+                      required
+                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  {smtpPreset === 'gmail' && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      💡 Paste your 16-character Gmail App Password. Spaces are removed automatically.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-amber-600 -mt-2">
+                ⚠️ Use SMTP credentials from AWS Console, NOT IAM access keys
               </p>
-            </div>
+              {/* Test SES */}
+              <div>
+                <button
+                  onClick={handleTestSmtp}
+                  disabled={testingSmtp}
+                  className="w-full px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {testingSmtp ? 'Testing Connection...' : 'Test SES Connection'}
+                </button>
+                {testError && (
+                  <p className="text-xs text-red-600 mt-2 p-2 bg-red-50 rounded">
+                    ❌ {testError}
+                  </p>
+                )}
+              </div>
+            </>
           )}
 
           {/* Sender Info */}
@@ -253,20 +762,56 @@ function AddProviderModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  From Email
+                  From Email <span className="text-red-500">*</span>
+                  {formData.fromEmail === formData.username && formData.username && (
+                    <span className="text-xs text-blue-600 ml-2">(Auto-filled)</span>
+                  )}
                 </label>
                 <input
                   type="email"
                   value={formData.fromEmail}
-                  onChange={(e) => setFormData({ ...formData, fromEmail: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, fromEmail: e.target.value });
+                    setValidationError('');
+                  }}
                   placeholder="noreply@yourdomain.com"
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                    validationError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
                 />
+                {/* Real-time domain validation feedback */}
+                {formData.fromEmail && formData.username && (
+                  (() => {
+                    const validation = validateFromEmailDomain(formData.fromEmail, providerType, formData.username);
+                    return (
+                      <>
+                        {validation.error && (
+                          <p className="text-xs text-red-600 mt-1">
+                            ❌ {validation.error}
+                          </p>
+                        )}
+                        {!validation.error && validation.warning && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            ⚠️ {validation.warning}
+                          </p>
+                        )}
+                        {!validation.error && !validation.warning && (
+                          <p className="text-xs text-green-600 mt-1">
+                            ✓ Domain validation passed
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  From Name
+                  From Name <span className="text-red-500">*</span>
+                  {formData.fromName === formData.name && formData.name && (
+                    <span className="text-xs text-blue-600 ml-2">(Auto-filled)</span>
+                  )}
                 </label>
                 <input
                   type="text"
@@ -280,6 +825,13 @@ function AddProviderModal({
             </div>
           </div>
 
+          {/* Validation Error */}
+          {validationError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-700">❌ {validationError}</p>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3 pt-4">
             <button
@@ -291,8 +843,8 @@ function AddProviderModal({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={isSubmitting || !!validationError}
+              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? 'Adding...' : 'Add Provider'}
             </button>
@@ -330,6 +882,18 @@ export default function Email() {
     staleTime: 30000,
   });
 
+  // Fetch email provider health status
+  const { data: healthData, isLoading: healthLoading } = useQuery({
+    queryKey: ['admin-email-health'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/email/health', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch health');
+      return res.json();
+    },
+    refetchInterval: 60000, // Refetch every minute
+    staleTime: 30000,
+  });
+
   // Send test email mutation
   const testEmailMutation = useMutation({
     mutationFn: async (email: string) => {
@@ -339,12 +903,25 @@ export default function Email() {
         credentials: 'include',
         body: JSON.stringify({ email }),
       });
-      if (!res.ok) throw new Error('Failed to send test email');
-      return res.json();
+      const text = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: text };
+      }
+      if (!res.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to send test email');
+      }
+      return data;
     },
     onSuccess: () => {
       setTestEmail('');
       queryClient.invalidateQueries({ queryKey: ['admin-email-logs'] });
+      toast.success('✓ Test email sent successfully');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to send test email');
     },
   });
 
@@ -357,12 +934,35 @@ export default function Email() {
         credentials: 'include',
         body: JSON.stringify(providerData),
       });
-      if (!res.ok) throw new Error('Failed to add provider');
-      return res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error(`Server returned invalid response: ${res.status} ${res.statusText}`);
+      }
+      if (!res.ok) {
+        throw new Error(data.error || `Request failed: ${res.status}`);
+      }
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setShowAddModal(false);
       queryClient.invalidateQueries({ queryKey: ['admin-email-config'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-email-health'] });
+      
+      // Show confirmation email status
+      if (data?.confirmationEmail?.sent) {
+        toast.success('✓ Provider added and confirmation email sent!');
+      } else if (data?.confirmationEmail?.error) {
+        toast.error(`Provider added but confirmation email failed: ${data.confirmationEmail.error}`);
+      } else {
+        toast.success('✓ Provider added successfully');
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to add provider');
     },
   });
 
@@ -373,11 +973,50 @@ export default function Email() {
         method: 'POST',
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to set primary provider');
-      return res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error(`Server returned invalid response: ${res.status}`);
+      }
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to set primary provider');
+      }
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-email-config'] });
+    },
+  });
+
+  // Verify provider connection mutation
+  const verifyProviderMutation = useMutation({
+    mutationFn: async (providerId: string) => {
+      const res = await fetch(`/api/admin/email/providers/${providerId}/test`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error(`Server returned invalid response: ${res.status}`);
+      }
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error || 'Provider verification failed');
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-email-config'] });
+      toast.success('✓ Provider connection verified successfully');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Provider connection failed');
     },
   });
 
@@ -388,15 +1027,51 @@ export default function Email() {
         method: 'DELETE',
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to delete provider');
-      return res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error(`Server returned invalid response: ${res.status}`);
+      }
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete provider');
+      }
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-email-config'] });
     },
   });
 
-  const providers = data?.providers || [];
+  // Normalize providers from backend shape to UI shape
+  const providers = (data?.providers || []).map((p: any, idx: number) => {
+    const isActive = p?.isActive ?? false;
+    const failures = p?.consecutiveFailures ?? 0;
+    const hasError = Boolean(p?.lastErrorAt || p?.lastErrorMessage);
+    let status: 'active' | 'inactive' | 'error' = 'inactive';
+    if (isActive) {
+      status = (failures > 3 || hasError) ? 'error' : 'active';
+    }
+
+    return {
+      // identity
+      id: p?.id,
+      // display
+      name: p?.providerName || p?.fromName || p?.fromEmail || 'Email Provider',
+      type: (p?.providerType || p?.connectionType || 'smtp').toLowerCase(),
+      status,
+      priority: p?.priorityOrder ?? (idx + 1),
+      isVerified: p?.isVerified ?? false,
+      // useful fields for other sections
+      fromEmail: p?.fromEmail,
+      fromName: p?.fromName,
+      lastTestAt: p?.lastTestAt,
+      consecutiveFailures: failures,
+      lastErrorMessage: p?.lastErrorMessage,
+    } as any;
+  });
   const logs = logsData?.logs || [];
 
   // Format date
@@ -411,6 +1086,7 @@ export default function Email() {
 
   return (
     <div className="space-y-6">
+      <Toaster />
       {/* Page Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900" data-testid="page-title">Email</h1>
@@ -475,8 +1151,18 @@ export default function Email() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <ProviderStatusBadge status={provider.status} isPrimary={index === 0} />
+                    <ProviderStatusBadge status={provider.status} isPrimary={index === 0} isVerified={provider.isVerified} />
                     <div className="flex items-center gap-1 ml-2">
+                      <button
+                        onClick={() => verifyProviderMutation.mutate(provider.id)}
+                        disabled={verifyProviderMutation.isPending}
+                        className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                        title="Verify Connection"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
                       {index !== 0 && (
                         <button
                           onClick={() => setPrimaryMutation.mutate(provider.id)}
@@ -545,13 +1231,6 @@ export default function Email() {
             </button>
           </div>
 
-          {testEmailMutation.isSuccess && (
-            <p className="mt-3 text-sm text-green-600">✓ Test email sent successfully</p>
-          )}
-          {testEmailMutation.isError && (
-            <p className="mt-3 text-sm text-red-600">✗ Failed to send test email</p>
-          )}
-
           {/* Delivery Stats */}
           <div className="mt-6 pt-6 border-t border-gray-200">
             <h3 className="text-sm font-medium text-gray-900 mb-3">Delivery Stats (Last 24h)</h3>
@@ -572,6 +1251,79 @@ export default function Email() {
           </div>
         </div>
       </div>
+
+      {/* Provider Health Dashboard */}
+      {providers.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-gray-900">Provider Health</h2>
+            <span className="text-xs text-gray-500">Real-time status</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {providers.map((provider: any, index: number) => {
+              // Determine health color based on status
+              let healthColor = 'bg-green-50 border-green-200';
+              let healthIcon = '🟢';
+              let healthText = 'Healthy';
+
+              if (provider.status === 'error') {
+                healthColor = 'bg-red-50 border-red-200';
+                healthIcon = '🔴';
+                healthText = 'Error';
+              } else if (provider.status === 'critical') {
+                healthColor = 'bg-red-50 border-red-200';
+                healthIcon = '🔴';
+                healthText = 'Critical';
+              } else if (provider.status === 'warning') {
+                healthColor = 'bg-yellow-50 border-yellow-200';
+                healthIcon = '🟡';
+                healthText = 'Warning';
+              }
+
+              return (
+                <div key={provider.id || index} className={`border rounded-lg p-4 ${healthColor}`}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{provider.name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{provider.type?.toUpperCase()}</p>
+                    </div>
+                    <span className="text-lg">{healthIcon}</span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Status:</span>
+                      <span className="font-medium text-gray-900">{healthText}</span>
+                    </div>
+                    {provider.lastTestAt && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Last Test:</span>
+                        <span className="text-gray-700">{formatDate(provider.lastTestAt)}</span>
+                      </div>
+                    )}
+                    {provider.consecutiveFailures > 0 && (
+                      <div className="flex items-center justify-between pt-1 border-t border-current border-opacity-20">
+                        <span className="text-gray-600">Failures:</span>
+                        <span className="font-semibold text-red-700">{provider.consecutiveFailures}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {provider.lastErrorMessage && (
+                    <div className="mt-3 pt-3 border-t border-current border-opacity-20">
+                      <p className="text-xs text-gray-700 bg-black bg-opacity-5 rounded p-2">
+                        <span className="font-medium">Last Error:</span><br />
+                        {provider.lastErrorMessage.substring(0, 100)}...
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Recent Delivery Logs */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
